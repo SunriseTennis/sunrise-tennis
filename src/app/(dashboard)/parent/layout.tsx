@@ -4,6 +4,7 @@ const navItems = [
   { href: '/parent', label: 'Overview' },
   { href: '/parent/programs', label: 'Programs' },
   { href: '/parent/payments', label: 'Payments' },
+  { href: '/parent/teams', label: 'Teams' },
   { href: '/parent/settings', label: 'Settings' },
 ]
 

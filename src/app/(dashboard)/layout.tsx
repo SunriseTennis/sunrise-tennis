@@ -3,6 +3,8 @@ import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { SignoutButton } from '@/components/signout-button'
 import { RoleSwitcher } from '@/components/role-switcher'
+import { NotificationBell } from '@/components/notification-bell'
+import { PushPrompt } from '@/components/push-prompt'
 
 export default async function DashboardLayout({
   children,
@@ -41,12 +43,14 @@ export default async function DashboardLayout({
             )}
           </div>
           <div className="flex items-center gap-4">
+            <NotificationBell />
             <span className="text-sm text-gray-600">{displayName}</span>
             <SignoutButton />
           </div>
         </div>
       </header>
       <main className="mx-auto max-w-7xl px-4 py-6">
+        <PushPrompt />
         {children}
       </main>
     </div>

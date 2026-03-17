@@ -3,6 +3,8 @@
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
+import { sendPushToUser } from '@/lib/push/send'
+import { createClient as createServiceClient } from '@supabase/supabase-js'
 
 async function getParentFamilyId(): Promise<{ userId: string; familyId: string } | null> {
   const supabase = await createClient()
@@ -93,6 +95,48 @@ export async function enrolInProgram(programId: string, familyId: string, formDa
   if (bookingError) {
     // Roster was added but booking record failed — not critical, just log
     console.error('Booking record failed:', bookingError.message)
+  }
+
+  // Send booking confirmation notification
+  try {
+    const { data: programInfo } = await supabase
+      .from('programs')
+      .select('name')
+      .eq('id', programId)
+      .single()
+
+    const serviceClient = createServiceClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    )
+
+    const { data: notification } = await serviceClient
+      .from('notifications')
+      .insert({
+        type: 'booking_confirmation',
+        title: 'Booking Confirmed',
+        body: `Successfully enrolled in ${programInfo?.name ?? 'program'}.`,
+        url: `/parent/programs/${programId}`,
+        target_type: 'family',
+        target_id: familyId,
+        created_by: auth.userId,
+      })
+      .select('id')
+      .single()
+
+    if (notification) {
+      await serviceClient
+        .from('notification_recipients')
+        .insert({ notification_id: notification.id, user_id: auth.userId })
+    }
+
+    await sendPushToUser(auth.userId, {
+      title: 'Booking Confirmed',
+      body: `Successfully enrolled in ${programInfo?.name ?? 'program'}.`,
+      url: `/parent/programs/${programId}`,
+    })
+  } catch (e) {
+    console.error('Booking notification failed:', e)
   }
 
   revalidatePath(`/parent/programs/${programId}`)

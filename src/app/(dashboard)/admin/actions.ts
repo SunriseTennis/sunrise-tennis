@@ -3,6 +3,8 @@
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
+import { sendNotificationToTarget } from '@/lib/push/send'
+import { createClient as createServiceClient } from '@supabase/supabase-js'
 
 // ── Families ────────────────────────────────────────────────────────────
 
@@ -411,6 +413,50 @@ export async function adminBookPlayer(formData: FormData) {
 
   if (error) {
     redirect(`/admin/programs/${programId}?error=${encodeURIComponent(error.message)}`)
+  }
+
+  // Send booking confirmation notification to parent
+  try {
+    const { data: programInfo } = await supabase
+      .from('programs')
+      .select('name')
+      .eq('id', programId)
+      .single()
+
+    const serviceClient = createServiceClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    )
+
+    const { data: notification } = await serviceClient
+      .from('notifications')
+      .insert({
+        type: 'booking_confirmation',
+        title: 'Booking Confirmed',
+        body: `Your child has been enrolled in ${programInfo?.name ?? 'a program'} by the admin.`,
+        url: `/parent/programs/${programId}`,
+        target_type: 'family',
+        target_id: familyId,
+        created_by: user?.id,
+      })
+      .select('id')
+      .single()
+
+    const userIds = await sendNotificationToTarget({
+      title: 'Booking Confirmed',
+      body: `Your child has been enrolled in ${programInfo?.name ?? 'a program'} by the admin.`,
+      url: `/parent/programs/${programId}`,
+      targetType: 'family',
+      targetId: familyId,
+    })
+
+    if (notification && userIds.length > 0) {
+      await serviceClient
+        .from('notification_recipients')
+        .insert(userIds.map((uid) => ({ notification_id: notification.id, user_id: uid })))
+    }
+  } catch (e) {
+    console.error('Booking notification failed:', e)
   }
 
   revalidatePath(`/admin/programs/${programId}`)
