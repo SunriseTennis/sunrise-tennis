@@ -1,9 +1,12 @@
 import { redirect, notFound } from 'next/navigation'
-import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
 import { formatCurrency } from '@/lib/utils/currency'
 import { formatDate, formatTime } from '@/lib/utils/dates'
 import { EnrolForm } from './enrol-form'
+import { PageHeader } from '@/components/page-header'
+import { Badge } from '@/components/ui/badge'
+import { Card, CardContent } from '@/components/ui/card'
+import { AlertCircle, CheckCircle } from 'lucide-react'
 
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
@@ -65,85 +68,92 @@ export default async function ParentProgramDetailPage({
 
   return (
     <div className="max-w-3xl">
-      <div className="flex items-center gap-3">
-        <Link href="/parent/programs" className="text-sm text-gray-500 hover:text-gray-700">&larr; Programs</Link>
-        <span className="text-gray-300">/</span>
-        <h1 className="text-2xl font-bold text-gray-900">{program.name}</h1>
-      </div>
+      <PageHeader
+        title={program.name}
+        breadcrumbs={[{ label: 'Programs', href: '/parent/programs' }]}
+      />
 
       {error && (
-        <div className="mt-4 rounded-md bg-red-50 p-3 text-sm text-red-700">{error}</div>
+        <div className="mt-4 flex items-center gap-2 rounded-lg border border-danger/20 bg-danger-light px-4 py-3 text-sm text-danger">
+          <AlertCircle className="size-4 shrink-0" />
+          {error}
+        </div>
       )}
       {success && (
-        <div className="mt-4 rounded-md bg-green-50 p-3 text-sm text-green-700">{success}</div>
+        <div className="mt-4 flex items-center gap-2 rounded-lg border border-success/20 bg-success-light px-4 py-3 text-sm text-success">
+          <CheckCircle className="size-4 shrink-0" />
+          {success}
+        </div>
       )}
 
       <div className="mt-6 space-y-6">
         {/* Program Details */}
-        <div className="rounded-lg border border-gray-200 bg-white p-6">
-          <div className="flex items-center gap-2">
-            <span className="rounded-full bg-orange-100 px-2.5 py-0.5 text-xs font-medium capitalize text-orange-700">
-              {program.type}
-            </span>
-            <span className="rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium capitalize text-gray-600">
-              {program.level}
-            </span>
-          </div>
-
-          {program.description && (
-            <p className="mt-3 text-sm text-gray-600">{program.description}</p>
-          )}
-
-          <dl className="mt-4 grid gap-3 sm:grid-cols-2">
-            <div>
-              <dt className="text-xs font-medium text-gray-500">Schedule</dt>
-              <dd className="text-sm text-gray-900">
-                {program.day_of_week != null ? DAYS[program.day_of_week] : '-'}
-                {program.start_time && ` · ${formatTime(program.start_time)}`}
-                {program.end_time && ` - ${formatTime(program.end_time)}`}
-              </dd>
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-2">
+              <Badge variant="secondary" className="capitalize">
+                {program.type}
+              </Badge>
+              <Badge variant="outline" className="capitalize">
+                {program.level}
+              </Badge>
             </div>
-            {venue && (
-              <div>
-                <dt className="text-xs font-medium text-gray-500">Venue</dt>
-                <dd className="text-sm text-gray-900">{venue.name}</dd>
-              </div>
+
+            {program.description && (
+              <p className="mt-3 text-sm text-muted-foreground">{program.description}</p>
             )}
-            {program.per_session_cents && (
+
+            <dl className="mt-4 grid gap-3 sm:grid-cols-2">
               <div>
-                <dt className="text-xs font-medium text-gray-500">Per Session</dt>
-                <dd className="text-sm text-gray-900">{formatCurrency(program.per_session_cents)}</dd>
+                <dt className="text-xs font-medium text-muted-foreground">Schedule</dt>
+                <dd className="text-sm text-foreground">
+                  {program.day_of_week != null ? DAYS[program.day_of_week] : '-'}
+                  {program.start_time && ` · ${formatTime(program.start_time)}`}
+                  {program.end_time && ` - ${formatTime(program.end_time)}`}
+                </dd>
               </div>
-            )}
-            {program.term_fee_cents && (
+              {venue && (
+                <div>
+                  <dt className="text-xs font-medium text-muted-foreground">Venue</dt>
+                  <dd className="text-sm text-foreground">{venue.name}</dd>
+                </div>
+              )}
+              {program.per_session_cents && (
+                <div>
+                  <dt className="text-xs font-medium text-muted-foreground">Per Session</dt>
+                  <dd className="text-sm text-foreground">{formatCurrency(program.per_session_cents)}</dd>
+                </div>
+              )}
+              {program.term_fee_cents && (
+                <div>
+                  <dt className="text-xs font-medium text-muted-foreground">Term Fee</dt>
+                  <dd className="text-sm text-foreground">{formatCurrency(program.term_fee_cents)}</dd>
+                </div>
+              )}
               <div>
-                <dt className="text-xs font-medium text-gray-500">Term Fee</dt>
-                <dd className="text-sm text-gray-900">{formatCurrency(program.term_fee_cents)}</dd>
+                <dt className="text-xs font-medium text-muted-foreground">Capacity</dt>
+                <dd className="text-sm text-foreground">
+                  {totalEnrolled}{program.max_capacity ? ` / ${program.max_capacity}` : ''} enrolled
+                  {spotsLeft !== null && spotsLeft <= 3 && spotsLeft > 0 && (
+                    <span className="ml-2 text-xs font-medium text-danger">({spotsLeft} spots left)</span>
+                  )}
+                  {spotsLeft === 0 && (
+                    <span className="ml-2 text-xs font-medium text-danger">(Full)</span>
+                  )}
+                </dd>
               </div>
-            )}
-            <div>
-              <dt className="text-xs font-medium text-gray-500">Capacity</dt>
-              <dd className="text-sm text-gray-900">
-                {totalEnrolled}{program.max_capacity ? ` / ${program.max_capacity}` : ''} enrolled
-                {spotsLeft !== null && spotsLeft <= 3 && spotsLeft > 0 && (
-                  <span className="ml-2 text-xs font-medium text-red-500">({spotsLeft} spots left)</span>
-                )}
-                {spotsLeft === 0 && (
-                  <span className="ml-2 text-xs font-medium text-red-500">(Full)</span>
-                )}
-              </dd>
-            </div>
-          </dl>
-        </div>
+            </dl>
+          </CardContent>
+        </Card>
 
         {/* Enrolled Players */}
         {enrolledPlayers.length > 0 && (
-          <div className="rounded-lg border border-green-200 bg-green-50 p-6">
-            <h2 className="text-lg font-semibold text-green-800">Already Enrolled</h2>
+          <div className="rounded-lg border border-success/20 bg-success-light p-6">
+            <h2 className="text-lg font-semibold text-success">Already Enrolled</h2>
             <div className="mt-3 space-y-2">
               {enrolledPlayers.map((player) => (
-                <div key={player.id} className="flex items-center gap-2 text-sm text-green-700">
-                  <span className="inline-block h-2 w-2 rounded-full bg-green-500"></span>
+                <div key={player.id} className="flex items-center gap-2 text-sm text-success">
+                  <span className="inline-block h-2 w-2 rounded-full bg-success"></span>
                   {player.first_name} {player.last_name}
                 </div>
               ))}
@@ -162,31 +172,33 @@ export default async function ParentProgramDetailPage({
         )}
 
         {eligiblePlayers.length === 0 && enrolledPlayers.length > 0 && (
-          <p className="text-sm text-gray-500">All your players are already enrolled in this program.</p>
+          <p className="text-sm text-muted-foreground">All your players are already enrolled in this program.</p>
         )}
 
         {spotsLeft === 0 && eligiblePlayers.length > 0 && (
-          <div className="rounded-md bg-yellow-50 p-4 text-sm text-yellow-700">
+          <div className="rounded-lg border border-warning/20 bg-warning-light px-4 py-3 text-sm text-warning">
             This program is currently full. Contact your coach if you&apos;d like to be added to a waitlist.
           </div>
         )}
 
         {/* Upcoming Sessions */}
         {upcomingSessions && upcomingSessions.length > 0 && (
-          <div className="rounded-lg border border-gray-200 bg-white p-6">
-            <h2 className="text-lg font-semibold text-gray-900">Upcoming Sessions</h2>
-            <div className="mt-3 space-y-2">
-              {upcomingSessions.map((session) => (
-                <div key={session.id} className="flex items-center justify-between rounded-lg border border-gray-100 px-4 py-2 text-sm">
-                  <span className="text-gray-900">{formatDate(session.date)}</span>
-                  <span className="text-gray-500">
-                    {session.start_time ? formatTime(session.start_time) : '-'}
-                    {session.end_time ? ` - ${formatTime(session.end_time)}` : ''}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
+          <Card>
+            <CardContent className="pt-6">
+              <h2 className="text-lg font-semibold text-foreground">Upcoming Sessions</h2>
+              <div className="mt-3 space-y-2">
+                {upcomingSessions.map((session) => (
+                  <div key={session.id} className="flex items-center justify-between rounded-lg border border-border px-4 py-2 text-sm">
+                    <span className="text-foreground">{formatDate(session.date)}</span>
+                    <span className="text-muted-foreground">
+                      {session.start_time ? formatTime(session.start_time) : '-'}
+                      {session.end_time ? ` - ${formatTime(session.end_time)}` : ''}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
         )}
       </div>
     </div>

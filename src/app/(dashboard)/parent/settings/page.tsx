@@ -2,6 +2,9 @@ import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { ContactInfoForm } from './contact-info-form'
 import { MediaConsentForm } from './media-consent-form'
+import { PageHeader } from '@/components/page-header'
+import { Card, CardContent } from '@/components/ui/card'
+import { AlertCircle, CheckCircle } from 'lucide-react'
 
 export default async function ParentSettingsPage({
   searchParams,
@@ -36,17 +39,18 @@ export default async function ParentSettingsPage({
 
   return (
     <div className="max-w-3xl">
-      <h1 className="text-2xl font-bold text-gray-900">Family Settings</h1>
-      <p className="mt-1 text-sm text-gray-600">Update your contact details and preferences.</p>
+      <PageHeader title="Family Settings" description="Update your contact details and preferences." />
 
       {error && (
-        <div className="mt-4 rounded-md bg-red-50 p-3 text-sm text-red-700">
+        <div className="mt-4 flex items-center gap-2 rounded-lg border border-danger/20 bg-danger-light px-4 py-3 text-sm text-danger">
+          <AlertCircle className="size-4 shrink-0" />
           {error}
         </div>
       )}
 
       {success && (
-        <div className="mt-4 rounded-md bg-green-50 p-3 text-sm text-green-700">
+        <div className="mt-4 flex items-center gap-2 rounded-lg border border-success/20 bg-success-light px-4 py-3 text-sm text-success">
+          <CheckCircle className="size-4 shrink-0" />
           {success}
         </div>
       )}
@@ -61,22 +65,24 @@ export default async function ParentSettingsPage({
 
         {/* Media Consent */}
         {players && players.length > 0 && (
-          <div className="rounded-lg border border-gray-200 bg-white p-6">
-            <h2 className="text-lg font-semibold text-gray-900">Media Consent</h2>
-            <p className="mt-1 text-sm text-gray-500">
-              Control whether photos and videos of your child may be used for coaching and promotional purposes.
-            </p>
-            <div className="mt-4 space-y-3">
-              {players.map((player) => (
-                <MediaConsentForm
-                  key={player.id}
-                  playerId={player.id}
-                  playerName={`${player.first_name} ${player.last_name}`}
-                  currentConsent={player.media_consent ?? false}
-                />
-              ))}
-            </div>
-          </div>
+          <Card>
+            <CardContent className="pt-6">
+              <h2 className="text-lg font-semibold text-foreground">Media Consent</h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Control whether photos and videos of your child may be used for coaching and promotional purposes.
+              </p>
+              <div className="mt-4 space-y-3">
+                {players.map((player) => (
+                  <MediaConsentForm
+                    key={player.id}
+                    playerId={player.id}
+                    playerName={`${player.first_name} ${player.last_name}`}
+                    currentConsent={player.media_consent ?? false}
+                  />
+                ))}
+              </div>
+            </CardContent>
+          </Card>
         )}
       </div>
     </div>

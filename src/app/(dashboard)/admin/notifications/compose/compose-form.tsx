@@ -2,6 +2,10 @@
 
 import { useState } from 'react'
 import { sendNotification } from '../actions'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
 
 const NOTIFICATION_TYPES = [
   { value: 'announcement', label: 'Announcement' },
@@ -12,6 +16,8 @@ const NOTIFICATION_TYPES = [
 ]
 
 const LEVELS = ['red', 'orange', 'green', 'yellow', 'blue', 'competitive']
+
+const selectClass = 'mt-1 block w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary'
 
 interface Props {
   programs: { id: string; name: string }[]
@@ -35,14 +41,14 @@ export function ComposeNotificationForm({ programs, teams, families }: Props) {
   return (
     <form action={handleSubmit} className="space-y-5">
       <div>
-        <label htmlFor="type" className="block text-sm font-medium text-gray-700">
+        <Label htmlFor="type">
           Notification Type
-        </label>
+        </Label>
         <select
           id="type"
           name="type"
           required
-          className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500"
+          className={selectClass}
         >
           {NOTIFICATION_TYPES.map((t) => (
             <option key={t.value} value={t.value}>{t.label}</option>
@@ -51,16 +57,16 @@ export function ComposeNotificationForm({ programs, teams, families }: Props) {
       </div>
 
       <div>
-        <label htmlFor="target_type" className="block text-sm font-medium text-gray-700">
+        <Label htmlFor="target_type">
           Target Audience
-        </label>
+        </Label>
         <select
           id="target_type"
           name="target_type"
           required
           value={targetType}
           onChange={(e) => setTargetType(e.target.value)}
-          className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500"
+          className={selectClass}
         >
           <option value="all">All Users</option>
           <option value="program">Program</option>
@@ -72,14 +78,14 @@ export function ComposeNotificationForm({ programs, teams, families }: Props) {
 
       {targetType === 'program' && (
         <div>
-          <label htmlFor="target_id" className="block text-sm font-medium text-gray-700">
+          <Label htmlFor="target_id">
             Program
-          </label>
+          </Label>
           <select
             id="target_id"
             name="target_id"
             required
-            className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500"
+            className={selectClass}
           >
             <option value="">Select program...</option>
             {programs.map((p) => (
@@ -91,14 +97,14 @@ export function ComposeNotificationForm({ programs, teams, families }: Props) {
 
       {targetType === 'level' && (
         <div>
-          <label htmlFor="target_level" className="block text-sm font-medium text-gray-700">
+          <Label htmlFor="target_level">
             Ball Level
-          </label>
+          </Label>
           <select
             id="target_level"
             name="target_level"
             required
-            className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500"
+            className={selectClass}
           >
             <option value="">Select level...</option>
             {LEVELS.map((l) => (
@@ -110,14 +116,14 @@ export function ComposeNotificationForm({ programs, teams, families }: Props) {
 
       {targetType === 'team' && (
         <div>
-          <label htmlFor="target_id" className="block text-sm font-medium text-gray-700">
+          <Label htmlFor="target_id">
             Team
-          </label>
+          </Label>
           <select
             id="target_id"
             name="target_id"
             required
-            className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500"
+            className={selectClass}
           >
             <option value="">Select team...</option>
             {teams.map((t) => (
@@ -129,14 +135,14 @@ export function ComposeNotificationForm({ programs, teams, families }: Props) {
 
       {targetType === 'family' && (
         <div>
-          <label htmlFor="target_id" className="block text-sm font-medium text-gray-700">
+          <Label htmlFor="target_id">
             Family
-          </label>
+          </Label>
           <select
             id="target_id"
             name="target_id"
             required
-            className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500"
+            className={selectClass}
           >
             <option value="">Select family...</option>
             {families.map((f) => (
@@ -147,55 +153,54 @@ export function ComposeNotificationForm({ programs, teams, families }: Props) {
       )}
 
       <div>
-        <label htmlFor="title" className="block text-sm font-medium text-gray-700">
+        <Label htmlFor="title">
           Title
-        </label>
-        <input
+        </Label>
+        <Input
           id="title"
           name="title"
           type="text"
           required
           maxLength={100}
           placeholder="e.g. Rain cancellation - Tuesday sessions"
-          className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500"
+          className="mt-1"
         />
       </div>
 
       <div>
-        <label htmlFor="body" className="block text-sm font-medium text-gray-700">
+        <Label htmlFor="body">
           Message
-        </label>
-        <textarea
+        </Label>
+        <Textarea
           id="body"
           name="body"
           rows={3}
           placeholder="Notification details..."
-          className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500"
+          className="mt-1"
         />
       </div>
 
       <div>
-        <label htmlFor="url" className="block text-sm font-medium text-gray-700">
-          Link URL <span className="text-gray-400">(optional)</span>
-        </label>
-        <input
+        <Label htmlFor="url">
+          Link URL <span className="text-muted-foreground">(optional)</span>
+        </Label>
+        <Input
           id="url"
           name="url"
           type="text"
           placeholder="/parent/programs"
-          className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500"
+          className="mt-1"
         />
-        <p className="mt-1 text-xs text-gray-500">Page to open when notification is tapped.</p>
+        <p className="mt-1 text-xs text-muted-foreground">Page to open when notification is tapped.</p>
       </div>
 
       <div className="flex gap-3 pt-2">
-        <button
+        <Button
           type="submit"
           disabled={sending}
-          className="rounded-md bg-orange-600 px-6 py-2 text-sm font-medium text-white hover:bg-orange-700 disabled:opacity-50"
         >
           {sending ? 'Sending...' : 'Send Notification'}
-        </button>
+        </Button>
       </div>
     </form>
   )

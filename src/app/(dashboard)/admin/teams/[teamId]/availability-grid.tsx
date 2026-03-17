@@ -1,5 +1,14 @@
 'use client'
 
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
+
 interface AvailabilityRecord {
   id: string
   team_id: string
@@ -17,10 +26,10 @@ interface Props {
 }
 
 const STATUS_COLORS: Record<string, string> = {
-  available: 'bg-green-500 text-white',
-  unavailable: 'bg-red-500 text-white',
-  maybe: 'bg-yellow-400 text-gray-900',
-  pending: 'bg-gray-200 text-gray-500',
+  available: 'bg-success text-white',
+  unavailable: 'bg-danger text-white',
+  maybe: 'bg-warning text-foreground',
+  pending: 'bg-muted text-muted-foreground',
 }
 
 export function AvailabilityGrid({ members, dates, availability }: Props) {
@@ -31,40 +40,40 @@ export function AvailabilityGrid({ members, dates, availability }: Props) {
   })
 
   return (
-    <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
-      <table className="min-w-full divide-y divide-gray-200">
-        <thead className="bg-gray-50">
-          <tr>
-            <th className="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">Player</th>
+    <div className="overflow-x-auto rounded-lg border border-border bg-card shadow-card">
+      <Table>
+        <TableHeader>
+          <TableRow className="bg-muted/50 hover:bg-muted/50">
+            <TableHead>Player</TableHead>
             {dates.map((d) => (
-              <th key={d} className="px-3 py-2 text-center text-xs font-medium text-gray-500">
+              <TableHead key={d} className="text-center">
                 {new Date(d + 'T00:00:00').toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })}
-              </th>
+              </TableHead>
             ))}
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-gray-200">
+          </TableRow>
+        </TableHeader>
+        <TableBody>
           {members.map((m) => (
-            <tr key={m.id}>
-              <td className="px-4 py-2 text-sm text-gray-900">{m.name}</td>
+            <TableRow key={m.id}>
+              <TableCell>{m.name}</TableCell>
               {dates.map((d) => {
                 const record = lookup.get(`${m.id}-${d}`)
                 const status = record?.status ?? 'pending'
                 return (
-                  <td key={d} className="px-3 py-2 text-center">
+                  <TableCell key={d} className="text-center">
                     <span
                       className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-medium capitalize ${STATUS_COLORS[status] ?? STATUS_COLORS.pending}`}
                       title={record?.note ?? undefined}
                     >
                       {status === 'pending' ? '?' : status.charAt(0).toUpperCase()}
                     </span>
-                  </td>
+                  </TableCell>
                 )
               })}
-            </tr>
+            </TableRow>
           ))}
-        </tbody>
-      </table>
+        </TableBody>
+      </Table>
     </div>
   )
 }

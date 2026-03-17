@@ -3,6 +3,12 @@ import { redirect, notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { AvailabilityForm } from './availability-form'
 import { respondToAvailability } from '../actions'
+import { PageHeader } from '@/components/page-header'
+import { StatusBadge } from '@/components/status-badge'
+import { Card, CardContent } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
+import { MessageSquare, AlertCircle, CheckCircle } from 'lucide-react'
 
 export default async function ParentTeamDetailPage({
   params,
@@ -74,45 +80,61 @@ export default async function ParentTeamDetailPage({
   const pendingChecks = pendingAvailability?.filter((a) => a.status === 'pending' || a.status === 'maybe') ?? []
   const action = respondToAvailability.bind(null, teamId)
 
+  const roleBadgeStyle: Record<string, string> = {
+    captain: 'bg-warning-light text-warning border-warning/20',
+    reserve: 'bg-muted text-muted-foreground border-border',
+  }
+
   return (
     <div className="max-w-3xl">
-      <div className="flex items-center gap-3">
-        <Link href="/parent/teams" className="text-sm text-gray-500 hover:text-gray-700">&larr; Teams</Link>
-        <span className="text-gray-300">/</span>
-        <h1 className="text-2xl font-bold text-gray-900">{team.name}</h1>
-      </div>
+      <PageHeader
+        title={team.name}
+        breadcrumbs={[{ label: 'Teams', href: '/parent/teams' }]}
+      />
 
-      {error && <div className="mt-4 rounded-md bg-red-50 p-3 text-sm text-red-700">{error}</div>}
-      {success && <div className="mt-4 rounded-md bg-green-50 p-3 text-sm text-green-700">{success}</div>}
+      {error && (
+        <div className="mt-4 flex items-center gap-2 rounded-lg border border-danger/20 bg-danger-light px-4 py-3 text-sm text-danger">
+          <AlertCircle className="size-4 shrink-0" />
+          {error}
+        </div>
+      )}
+      {success && (
+        <div className="mt-4 flex items-center gap-2 rounded-lg border border-success/20 bg-success-light px-4 py-3 text-sm text-success">
+          <CheckCircle className="size-4 shrink-0" />
+          {success}
+        </div>
+      )}
 
       <div className="mt-6 space-y-6">
         {/* Team info */}
-        <div className="rounded-lg border border-gray-200 bg-white p-6">
-          <dl className="grid gap-3 sm:grid-cols-2">
-            <div>
-              <dt className="text-xs font-medium text-gray-500">Season</dt>
-              <dd className="text-sm text-gray-900">{team.season ?? '-'}</dd>
+        <Card>
+          <CardContent className="pt-6">
+            <dl className="grid gap-3 sm:grid-cols-2">
+              <div>
+                <dt className="text-xs font-medium text-muted-foreground">Season</dt>
+                <dd className="text-sm text-foreground">{team.season ?? '-'}</dd>
+              </div>
+              <div>
+                <dt className="text-xs font-medium text-muted-foreground">Coach</dt>
+                <dd className="text-sm text-foreground">{coach?.name ?? '-'}</dd>
+              </div>
+            </dl>
+            <div className="mt-4">
+              <Button asChild variant="outline" size="sm">
+                <Link href={`/parent/teams/${teamId}/chat`}>
+                  <MessageSquare className="size-4" />
+                  Team Chat
+                </Link>
+              </Button>
             </div>
-            <div>
-              <dt className="text-xs font-medium text-gray-500">Coach</dt>
-              <dd className="text-sm text-gray-900">{coach?.name ?? '-'}</dd>
-            </div>
-          </dl>
-          <div className="mt-4">
-            <Link
-              href={`/parent/teams/${teamId}/chat`}
-              className="inline-block rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
-            >
-              Team Chat
-            </Link>
-          </div>
-        </div>
+          </CardContent>
+        </Card>
 
         {/* Availability response */}
         {pendingChecks.length > 0 && playersOnTeam.length > 0 && (
-          <div className="rounded-lg border border-orange-200 bg-orange-50 p-6">
-            <h2 className="text-lg font-semibold text-orange-800">Availability Check</h2>
-            <p className="mt-1 text-sm text-orange-700">Please respond for each of your players.</p>
+          <div className="rounded-lg border border-primary/20 bg-primary/5 p-6">
+            <h2 className="text-lg font-semibold text-primary">Availability Check</h2>
+            <p className="mt-1 text-sm text-primary/80">Please respond for each of your players.</p>
             <div className="mt-4">
               <AvailabilityForm
                 players={playersOnTeam}
@@ -125,52 +147,49 @@ export default async function ParentTeamDetailPage({
 
         {/* Previous responses */}
         {pendingAvailability && pendingAvailability.filter((a) => a.status !== 'pending').length > 0 && (
-          <div className="rounded-lg border border-gray-200 bg-white p-6">
-            <h2 className="text-lg font-semibold text-gray-900">Your Responses</h2>
-            <div className="mt-3 space-y-2">
-              {pendingAvailability.filter((a) => a.status !== 'pending').map((a) => {
-                const player = playersOnTeam.find((p) => p.id === a.player_id)
-                return (
-                  <div key={a.id} className="flex items-center justify-between text-sm">
-                    <span className="text-gray-900">
-                      {player?.first_name} - {new Date(a.match_date + 'T00:00:00').toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })}
-                    </span>
-                    <span className={`rounded-full px-2 py-0.5 text-xs font-medium capitalize ${
-                      a.status === 'available' ? 'bg-green-100 text-green-700' :
-                      a.status === 'unavailable' ? 'bg-red-100 text-red-700' :
-                      'bg-yellow-100 text-yellow-700'
-                    }`}>
-                      {a.status}
-                    </span>
-                  </div>
-                )
-              })}
-            </div>
-          </div>
+          <Card>
+            <CardContent className="pt-6">
+              <h2 className="text-lg font-semibold text-foreground">Your Responses</h2>
+              <div className="mt-3 space-y-2">
+                {pendingAvailability.filter((a) => a.status !== 'pending').map((a) => {
+                  const player = playersOnTeam.find((p) => p.id === a.player_id)
+                  return (
+                    <div key={a.id} className="flex items-center justify-between text-sm">
+                      <span className="text-foreground">
+                        {player?.first_name} - {new Date(a.match_date + 'T00:00:00').toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })}
+                      </span>
+                      <StatusBadge status={a.status} />
+                    </div>
+                  )
+                })}
+              </div>
+            </CardContent>
+          </Card>
         )}
 
         {/* Full team roster */}
         {allMembers && allMembers.length > 0 && (
-          <div className="rounded-lg border border-gray-200 bg-white p-6">
-            <h2 className="text-lg font-semibold text-gray-900">Team Roster</h2>
-            <div className="mt-3 space-y-2">
-              {allMembers.map((m) => {
-                const player = m.players as unknown as { first_name: string; last_name: string; ball_color: string | null }
-                return (
-                  <div key={m.id} className="flex items-center justify-between text-sm">
-                    <span className="text-gray-900">{player?.first_name} {player?.last_name}</span>
-                    <span className={`rounded-full px-2 py-0.5 text-xs font-medium capitalize ${
-                      m.role === 'captain' ? 'bg-yellow-100 text-yellow-700' :
-                      m.role === 'reserve' ? 'bg-gray-100 text-gray-600' :
-                      'bg-blue-100 text-blue-700'
-                    }`}>
-                      {m.role}
-                    </span>
-                  </div>
-                )
-              })}
-            </div>
-          </div>
+          <Card>
+            <CardContent className="pt-6">
+              <h2 className="text-lg font-semibold text-foreground">Team Roster</h2>
+              <div className="mt-3 space-y-2">
+                {allMembers.map((m) => {
+                  const player = m.players as unknown as { first_name: string; last_name: string; ball_color: string | null }
+                  return (
+                    <div key={m.id} className="flex items-center justify-between text-sm">
+                      <span className="text-foreground">{player?.first_name} {player?.last_name}</span>
+                      <Badge
+                        variant="outline"
+                        className={`capitalize ${roleBadgeStyle[m.role] ?? 'bg-info-light text-info border-info/20'}`}
+                      >
+                        {m.role}
+                      </Badge>
+                    </div>
+                  )
+                })}
+              </div>
+            </CardContent>
+          </Card>
         )}
       </div>
     </div>

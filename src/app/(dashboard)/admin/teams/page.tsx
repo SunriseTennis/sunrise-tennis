@@ -1,5 +1,18 @@
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
+import { PageHeader } from '@/components/page-header'
+import { StatusBadge } from '@/components/status-badge'
+import { EmptyState } from '@/components/empty-state'
+import { Button } from '@/components/ui/button'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
+import { Trophy, Plus } from 'lucide-react'
 
 export default async function AdminTeamsPage() {
   const supabase = await createClient()
@@ -21,62 +34,69 @@ export default async function AdminTeamsPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Teams</h1>
-          <p className="mt-1 text-sm text-gray-600">Manage competition teams, rosters, and availability.</p>
-        </div>
-        <Link
-          href="/admin/teams/new"
-          className="rounded-md bg-orange-600 px-4 py-2 text-sm font-medium text-white hover:bg-orange-700"
-        >
-          Create Team
-        </Link>
-      </div>
+      <PageHeader
+        title="Teams"
+        description="Manage competition teams, rosters, and availability."
+        action={
+          <Button asChild>
+            <Link href="/admin/teams/new">
+              <Plus className="size-4" />
+              Create Team
+            </Link>
+          </Button>
+        }
+      />
 
       {teams && teams.length > 0 ? (
-        <div className="mt-6 overflow-hidden rounded-lg border border-gray-200 bg-white">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500">Team</th>
-                <th className="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500">Season</th>
-                <th className="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500">Coach</th>
-                <th className="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500">Program</th>
-                <th className="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500">Members</th>
-                <th className="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500">Status</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-200">
+        <div className="mt-6 overflow-hidden rounded-lg border border-border bg-card shadow-card">
+          <Table>
+            <TableHeader>
+              <TableRow className="bg-muted/50 hover:bg-muted/50">
+                <TableHead>Team</TableHead>
+                <TableHead>Season</TableHead>
+                <TableHead>Coach</TableHead>
+                <TableHead>Program</TableHead>
+                <TableHead>Members</TableHead>
+                <TableHead>Status</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {teams.map((team) => {
                 const coach = team.coaches as unknown as { name: string } | null
                 const program = team.programs as unknown as { name: string } | null
                 return (
-                  <tr key={team.id} className="hover:bg-gray-50">
-                    <td className="px-4 py-3 text-sm font-medium text-gray-900">
-                      <Link href={`/admin/teams/${team.id}`} className="hover:text-orange-600">
+                  <TableRow key={team.id}>
+                    <TableCell className="font-medium">
+                      <Link href={`/admin/teams/${team.id}`} className="hover:text-primary transition-colors">
                         {team.name}
                       </Link>
-                    </td>
-                    <td className="px-4 py-3 text-sm text-gray-500">{team.season ?? '-'}</td>
-                    <td className="px-4 py-3 text-sm text-gray-500">{coach?.name ?? '-'}</td>
-                    <td className="px-4 py-3 text-sm text-gray-500">{program?.name ?? '-'}</td>
-                    <td className="px-4 py-3 text-sm text-gray-500">{countMap.get(team.id) ?? 0}</td>
-                    <td className="px-4 py-3">
-                      <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium capitalize ${
-                        team.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'
-                      }`}>
-                        {team.status}
-                      </span>
-                    </td>
-                  </tr>
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">{team.season ?? '-'}</TableCell>
+                    <TableCell className="text-muted-foreground">{coach?.name ?? '-'}</TableCell>
+                    <TableCell className="text-muted-foreground">{program?.name ?? '-'}</TableCell>
+                    <TableCell className="text-muted-foreground">{countMap.get(team.id) ?? 0}</TableCell>
+                    <TableCell>
+                      <StatusBadge status={team.status ?? 'active'} />
+                    </TableCell>
+                  </TableRow>
                 )
               })}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </div>
       ) : (
-        <p className="mt-6 text-sm text-gray-500">No teams created yet.</p>
+        <div className="mt-6">
+          <EmptyState
+            icon={Trophy}
+            title="No teams created yet"
+            description="Create a team to manage rosters and availability."
+            action={
+              <Button asChild size="sm">
+                <Link href="/admin/teams/new">Create Team</Link>
+              </Button>
+            }
+          />
+        </div>
       )}
     </div>
   )

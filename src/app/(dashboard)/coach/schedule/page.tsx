@@ -2,6 +2,19 @@ import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
 import { formatDate, formatTime } from '@/lib/utils/dates'
+import { PageHeader } from '@/components/page-header'
+import { StatusBadge } from '@/components/status-badge'
+import { EmptyState } from '@/components/empty-state'
+import { Button } from '@/components/ui/button'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
+import { Calendar } from 'lucide-react'
 
 export default async function CoachSchedulePage({
   searchParams,
@@ -24,8 +37,8 @@ export default async function CoachSchedulePage({
   if (!coachId) {
     return (
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">Schedule</h1>
-        <p className="mt-4 text-sm text-gray-600">Coach profile not linked.</p>
+        <PageHeader title="Schedule" />
+        <p className="mt-4 text-sm text-muted-foreground">Coach profile not linked.</p>
       </div>
     )
   }
@@ -51,68 +64,64 @@ export default async function CoachSchedulePage({
 
   return (
     <div>
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Schedule</h1>
-          <p className="mt-1 text-sm text-gray-600">Your assigned sessions.</p>
-        </div>
-        <Link
-          href={showPast ? '/coach/schedule' : '/coach/schedule?filter=past'}
-          className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
-        >
-          {showPast ? 'Upcoming' : 'Past sessions'}
-        </Link>
-      </div>
+      <PageHeader
+        title="Schedule"
+        description="Your assigned sessions."
+        action={
+          <Button asChild variant="outline">
+            <Link href={showPast ? '/coach/schedule' : '/coach/schedule?filter=past'}>
+              {showPast ? 'Upcoming' : 'Past sessions'}
+            </Link>
+          </Button>
+        }
+      />
 
       {sessions && sessions.length > 0 ? (
-        <div className="mt-6 overflow-hidden rounded-lg border border-gray-200 bg-white">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500">Date</th>
-                <th className="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500">Program</th>
-                <th className="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500">Time</th>
-                <th className="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500">Venue</th>
-                <th className="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500">Status</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-200">
+        <div className="mt-6 overflow-hidden rounded-lg border border-border bg-card shadow-card">
+          <Table>
+            <TableHeader>
+              <TableRow className="bg-muted/50 hover:bg-muted/50">
+                <TableHead>Date</TableHead>
+                <TableHead>Program</TableHead>
+                <TableHead>Time</TableHead>
+                <TableHead>Venue</TableHead>
+                <TableHead>Status</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {sessions.map((session) => {
                 const program = session.programs as unknown as { name: string; level: string; type: string } | null
                 const venue = session.venues as unknown as { name: string } | null
                 return (
-                  <tr key={session.id} className="hover:bg-gray-50">
-                    <td className="px-4 py-3 text-sm text-gray-900">
-                      <Link href={`/coach/schedule/${session.id}`} className="hover:text-orange-600">
+                  <TableRow key={session.id}>
+                    <TableCell>
+                      <Link href={`/coach/schedule/${session.id}`} className="font-medium hover:text-primary transition-colors">
                         {formatDate(session.date)}
                       </Link>
-                    </td>
-                    <td className="px-4 py-3 text-sm text-gray-900">{program?.name ?? session.session_type}</td>
-                    <td className="px-4 py-3 text-sm text-gray-500">
+                    </TableCell>
+                    <TableCell>{program?.name ?? session.session_type}</TableCell>
+                    <TableCell className="text-muted-foreground">
                       {session.start_time ? formatTime(session.start_time) : '-'}
                       {session.end_time ? ` - ${formatTime(session.end_time)}` : ''}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-gray-500">{venue?.name ?? '-'}</td>
-                    <td className="px-4 py-3">
-                      <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium capitalize ${
-                        session.status === 'scheduled' ? 'bg-blue-100 text-blue-700' :
-                        session.status === 'completed' ? 'bg-green-100 text-green-700' :
-                        session.status === 'cancelled' ? 'bg-red-100 text-red-700' :
-                        'bg-gray-100 text-gray-700'
-                      }`}>
-                        {session.status}
-                      </span>
-                    </td>
-                  </tr>
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">{venue?.name ?? '-'}</TableCell>
+                    <TableCell>
+                      <StatusBadge status={session.status ?? 'scheduled'} />
+                    </TableCell>
+                  </TableRow>
                 )
               })}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </div>
       ) : (
-        <p className="mt-6 text-sm text-gray-500">
-          {showPast ? 'No past sessions found.' : 'No upcoming sessions.'}
-        </p>
+        <div className="mt-6">
+          <EmptyState
+            icon={Calendar}
+            title={showPast ? 'No past sessions found' : 'No upcoming sessions'}
+            description={showPast ? 'Past sessions will appear here.' : 'Sessions assigned to you will appear here.'}
+          />
+        </div>
       )}
     </div>
   )

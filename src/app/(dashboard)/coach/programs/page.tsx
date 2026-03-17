@@ -1,6 +1,11 @@
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { formatTime } from '@/lib/utils/dates'
+import { PageHeader } from '@/components/page-header'
+import { EmptyState } from '@/components/empty-state'
+import { Badge } from '@/components/ui/badge'
+import { Card, CardContent } from '@/components/ui/card'
+import { GraduationCap } from 'lucide-react'
 
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
@@ -20,8 +25,8 @@ export default async function CoachProgramsPage() {
   if (!coachId) {
     return (
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">Programs</h1>
-        <p className="mt-4 text-sm text-gray-600">Coach profile not linked.</p>
+        <PageHeader title="Programs" />
+        <p className="mt-4 text-sm text-muted-foreground">Coach profile not linked.</p>
       </div>
     )
   }
@@ -53,8 +58,7 @@ export default async function CoachProgramsPage() {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold text-gray-900">My Programs</h1>
-      <p className="mt-1 text-sm text-gray-600">Programs you are assigned to coach.</p>
+      <PageHeader title="My Programs" description="Programs you are assigned to coach." />
 
       {assignments && assignments.length > 0 ? (
         <div className="mt-6 grid gap-4 sm:grid-cols-2">
@@ -69,35 +73,43 @@ export default async function CoachProgramsPage() {
             const enrolled = countMap.get(program.id) ?? 0
 
             return (
-              <div key={program.id} className="rounded-lg border border-gray-200 bg-white p-5">
-                <div className="flex items-center justify-between">
-                  <p className="font-medium text-gray-900">{program.name}</p>
-                  <div className="flex gap-2">
-                    <span className="rounded-full bg-orange-100 px-2 py-0.5 text-xs font-medium capitalize text-orange-700">
-                      {program.type}
-                    </span>
-                    <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium capitalize text-blue-700">
-                      {assignment.role}
-                    </span>
+              <Card key={program.id}>
+                <CardContent className="pt-5">
+                  <div className="flex items-center justify-between">
+                    <p className="font-medium text-foreground">{program.name}</p>
+                    <div className="flex gap-2">
+                      <Badge variant="secondary" className="capitalize">
+                        {program.type}
+                      </Badge>
+                      <Badge variant="outline" className="capitalize bg-info-light text-info border-info/20">
+                        {assignment.role}
+                      </Badge>
+                    </div>
                   </div>
-                </div>
-                <p className="mt-1 text-sm text-gray-500">
-                  {program.day_of_week != null && DAYS[program.day_of_week]}
-                  {program.start_time && ` · ${formatTime(program.start_time)}`}
-                  {program.end_time && ` - ${formatTime(program.end_time)}`}
-                </p>
-                <p className="mt-1 text-sm text-gray-500 capitalize">
-                  Level: {program.level}
-                </p>
-                <p className="mt-1 text-sm text-gray-500">
-                  Enrolled: {enrolled}{program.max_capacity ? ` / ${program.max_capacity}` : ''}
-                </p>
-              </div>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    {program.day_of_week != null && DAYS[program.day_of_week]}
+                    {program.start_time && ` · ${formatTime(program.start_time)}`}
+                    {program.end_time && ` - ${formatTime(program.end_time)}`}
+                  </p>
+                  <p className="mt-1 text-sm capitalize text-muted-foreground">
+                    Level: {program.level}
+                  </p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Enrolled: {enrolled}{program.max_capacity ? ` / ${program.max_capacity}` : ''}
+                  </p>
+                </CardContent>
+              </Card>
             )
           })}
         </div>
       ) : (
-        <p className="mt-6 text-sm text-gray-500">You are not assigned to any programs yet.</p>
+        <div className="mt-6">
+          <EmptyState
+            icon={GraduationCap}
+            title="No programs assigned"
+            description="You are not assigned to any programs yet."
+          />
+        </div>
       )}
     </div>
   )

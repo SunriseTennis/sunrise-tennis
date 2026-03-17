@@ -2,6 +2,18 @@ import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { formatCurrency } from '@/lib/utils/currency'
 import { formatDate } from '@/lib/utils/dates'
+import { PageHeader } from '@/components/page-header'
+import { StatusBadge } from '@/components/status-badge'
+import { EmptyState } from '@/components/empty-state'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
+import { CreditCard } from 'lucide-react'
 
 export default async function ParentPaymentsPage() {
   const supabase = await createClient()
@@ -20,8 +32,8 @@ export default async function ParentPaymentsPage() {
   if (!familyId) {
     return (
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">Payments</h1>
-        <p className="mt-4 text-sm text-gray-600">
+        <PageHeader title="Payments" />
+        <p className="mt-4 text-sm text-muted-foreground">
           No family account linked. This is how parents see their payment history.
         </p>
       </div>
@@ -52,116 +64,110 @@ export default async function ParentPaymentsPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Payments &amp; Invoices</h1>
-          <p className="mt-1 text-sm text-gray-600">Your payment history and outstanding invoices.</p>
-        </div>
-        <div className={`rounded-lg border px-4 py-3 text-center ${
-          balanceCents < 0 ? 'border-red-200 bg-red-50' :
-          balanceCents > 0 ? 'border-green-200 bg-green-50' :
-          'border-gray-200 bg-white'
-        }`}>
-          <p className="text-xs font-medium text-gray-500">Account Balance</p>
-          <p className={`text-2xl font-bold ${
-            balanceCents < 0 ? 'text-red-600' :
-            balanceCents > 0 ? 'text-green-600' :
-            'text-gray-900'
+      <PageHeader
+        title="Payments & Invoices"
+        description="Your payment history and outstanding invoices."
+        action={
+          <div className={`rounded-lg border px-4 py-3 text-center ${
+            balanceCents < 0 ? 'border-danger/20 bg-danger-light' :
+            balanceCents > 0 ? 'border-success/20 bg-success-light' :
+            'border-border bg-card'
           }`}>
-            {formatCurrency(balanceCents)}
-          </p>
-        </div>
-      </div>
+            <p className="text-xs font-medium text-muted-foreground">Account Balance</p>
+            <p className={`text-2xl font-bold tabular-nums ${
+              balanceCents < 0 ? 'text-danger' :
+              balanceCents > 0 ? 'text-success' :
+              'text-foreground'
+            }`}>
+              {formatCurrency(balanceCents)}
+            </p>
+          </div>
+        }
+      />
 
       {/* Outstanding Invoices */}
       {invoices && invoices.filter(i => i.status !== 'paid' && i.status !== 'void').length > 0 && (
         <div className="mt-8">
-          <h2 className="text-lg font-semibold text-gray-900">Outstanding Invoices</h2>
-          <div className="mt-3 overflow-hidden rounded-lg border border-gray-200 bg-white">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500">Invoice</th>
-                  <th className="px-4 py-3 text-right text-xs font-medium uppercase text-gray-500">Amount</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500">Due Date</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500">Status</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-200">
+          <h2 className="text-lg font-semibold text-foreground">Outstanding Invoices</h2>
+          <div className="mt-3 overflow-hidden rounded-lg border border-border bg-card shadow-card">
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-muted/50 hover:bg-muted/50">
+                  <TableHead>Invoice</TableHead>
+                  <TableHead className="text-right">Amount</TableHead>
+                  <TableHead>Due Date</TableHead>
+                  <TableHead>Status</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
                 {invoices
                   .filter(i => i.status !== 'paid' && i.status !== 'void')
                   .map((invoice) => (
-                    <tr key={invoice.id}>
-                      <td className="px-4 py-3 text-sm font-medium text-gray-900">{invoice.display_id}</td>
-                      <td className="px-4 py-3 text-right text-sm font-medium text-gray-900">
+                    <TableRow key={invoice.id}>
+                      <TableCell className="font-medium">{invoice.display_id}</TableCell>
+                      <TableCell className="text-right font-medium tabular-nums">
                         {formatCurrency(invoice.amount_cents)}
-                      </td>
-                      <td className="px-4 py-3 text-sm text-gray-500">
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">
                         {invoice.due_date ? formatDate(invoice.due_date) : '-'}
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium capitalize ${
-                          invoice.status === 'overdue' ? 'bg-red-100 text-red-700' :
-                          invoice.status === 'sent' ? 'bg-blue-100 text-blue-700' :
-                          'bg-gray-100 text-gray-700'
-                        }`}>
-                          {invoice.status}
-                        </span>
-                      </td>
-                    </tr>
+                      </TableCell>
+                      <TableCell>
+                        <StatusBadge status={invoice.status} />
+                      </TableCell>
+                    </TableRow>
                   ))}
-              </tbody>
-            </table>
+              </TableBody>
+            </Table>
           </div>
         </div>
       )}
 
       {/* Payment History */}
       <div className="mt-8">
-        <h2 className="text-lg font-semibold text-gray-900">Payment History</h2>
+        <h2 className="text-lg font-semibold text-foreground">Payment History</h2>
         {payments && payments.length > 0 ? (
-          <div className="mt-3 overflow-hidden rounded-lg border border-gray-200 bg-white">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500">Date</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500">Description</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500">Method</th>
-                  <th className="px-4 py-3 text-right text-xs font-medium uppercase text-gray-500">Amount</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500">Status</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-200">
+          <div className="mt-3 overflow-hidden rounded-lg border border-border bg-card shadow-card">
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-muted/50 hover:bg-muted/50">
+                  <TableHead>Date</TableHead>
+                  <TableHead>Description</TableHead>
+                  <TableHead>Method</TableHead>
+                  <TableHead className="text-right">Amount</TableHead>
+                  <TableHead>Status</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
                 {payments.map((payment) => (
-                  <tr key={payment.id}>
-                    <td className="px-4 py-3 text-sm text-gray-900">
+                  <TableRow key={payment.id}>
+                    <TableCell>
                       {payment.created_at ? formatDate(payment.created_at) : '-'}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-gray-500">
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
                       {payment.description || payment.category || '-'}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-gray-500 capitalize">
+                    </TableCell>
+                    <TableCell className="capitalize text-muted-foreground">
                       {payment.payment_method.replace('_', ' ')}
-                    </td>
-                    <td className="px-4 py-3 text-right text-sm font-medium text-green-600">
+                    </TableCell>
+                    <TableCell className="text-right font-medium tabular-nums text-success">
                       {formatCurrency(payment.amount_cents)}
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium capitalize ${
-                        payment.status === 'received' ? 'bg-green-100 text-green-700' :
-                        payment.status === 'pending' ? 'bg-yellow-100 text-yellow-700' :
-                        'bg-gray-100 text-gray-700'
-                      }`}>
-                        {payment.status}
-                      </span>
-                    </td>
-                  </tr>
+                    </TableCell>
+                    <TableCell>
+                      <StatusBadge status={payment.status} />
+                    </TableCell>
+                  </TableRow>
                 ))}
-              </tbody>
-            </table>
+              </TableBody>
+            </Table>
           </div>
         ) : (
-          <p className="mt-3 text-sm text-gray-500">No payments recorded yet.</p>
+          <div className="mt-3">
+            <EmptyState
+              icon={CreditCard}
+              title="No payments recorded yet"
+              description="Your payment history will appear here."
+            />
+          </div>
         )}
       </div>
     </div>

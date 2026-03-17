@@ -1,6 +1,19 @@
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
 import { formatCurrency } from '@/lib/utils/currency'
+import { PageHeader } from '@/components/page-header'
+import { StatusBadge } from '@/components/status-badge'
+import { EmptyState } from '@/components/empty-state'
+import { Button } from '@/components/ui/button'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
+import { Users, Plus } from 'lucide-react'
 
 export default async function FamiliesPage() {
   const supabase = await createClient()
@@ -12,73 +25,76 @@ export default async function FamiliesPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-900">Families</h1>
-        <Link
-          href="/admin/families/new"
-          className="rounded-md bg-orange-500 px-4 py-2 text-sm font-medium text-white hover:bg-orange-600"
-        >
-          + Add family
-        </Link>
-      </div>
+      <PageHeader
+        title="Families"
+        action={
+          <Button asChild>
+            <Link href="/admin/families/new">
+              <Plus className="size-4" />
+              Add family
+            </Link>
+          </Button>
+        }
+      />
 
-      <div className="mt-6 overflow-hidden rounded-lg border border-gray-200 bg-white">
-        <table className="min-w-full divide-y divide-gray-200">
-          <thead className="bg-gray-50">
-            <tr>
-              <th className="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500">ID</th>
-              <th className="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500">Family Name</th>
-              <th className="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500">Primary Contact</th>
-              <th className="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500">Status</th>
-              <th className="px-4 py-3 text-right text-xs font-medium uppercase text-gray-500">Balance</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-200">
-            {families && families.length > 0 ? (
-              families.map((f) => {
+      {families && families.length > 0 ? (
+        <div className="mt-6 overflow-hidden rounded-lg border border-border bg-card shadow-card">
+          <Table>
+            <TableHeader>
+              <TableRow className="bg-muted/50 hover:bg-muted/50">
+                <TableHead>ID</TableHead>
+                <TableHead>Family Name</TableHead>
+                <TableHead>Primary Contact</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead className="text-right">Balance</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {families.map((f) => {
                 const contact = f.primary_contact as { name?: string; phone?: string; email?: string } | null
                 const balanceRow = f.family_balance as unknown as { balance_cents: number } | null
                 const balance = balanceRow?.balance_cents ?? 0
                 return (
-                  <tr key={f.id} className="hover:bg-gray-50">
-                    <td className="px-4 py-3 text-sm font-medium text-gray-900">
-                      <Link href={`/admin/families/${f.id}`} className="hover:text-orange-600">
+                  <TableRow key={f.id}>
+                    <TableCell className="font-medium">
+                      <Link href={`/admin/families/${f.id}`} className="hover:text-primary transition-colors">
                         {f.display_id}
                       </Link>
-                    </td>
-                    <td className="px-4 py-3 text-sm text-gray-900">
-                      <Link href={`/admin/families/${f.id}`} className="hover:text-orange-600">
+                    </TableCell>
+                    <TableCell>
+                      <Link href={`/admin/families/${f.id}`} className="font-medium hover:text-primary transition-colors">
                         {f.family_name}
                       </Link>
-                    </td>
-                    <td className="px-4 py-3 text-sm text-gray-600">
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
                       {contact?.name}{contact?.phone ? ` - ${contact.phone}` : ''}
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium capitalize ${
-                        f.status === 'active' ? 'bg-green-100 text-green-700' :
-                        f.status === 'lead' ? 'bg-blue-100 text-blue-700' :
-                        'bg-gray-100 text-gray-700'
-                      }`}>
-                        {f.status}
-                      </span>
-                    </td>
-                    <td className={`px-4 py-3 text-right text-sm font-medium ${balance < 0 ? 'text-red-600' : 'text-gray-900'}`}>
+                    </TableCell>
+                    <TableCell>
+                      <StatusBadge status={f.status ?? 'active'} />
+                    </TableCell>
+                    <TableCell className={`text-right font-medium tabular-nums ${balance < 0 ? 'text-danger' : 'text-foreground'}`}>
                       {balance !== 0 ? formatCurrency(balance) : '-'}
-                    </td>
-                  </tr>
+                    </TableCell>
+                  </TableRow>
                 )
-              })
-            ) : (
-              <tr>
-                <td colSpan={5} className="px-4 py-8 text-center text-sm text-gray-500">
-                  No families yet. <Link href="/admin/families/new" className="text-orange-600 hover:text-orange-500">Add one</Link>
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+              })}
+            </TableBody>
+          </Table>
+        </div>
+      ) : (
+        <div className="mt-6">
+          <EmptyState
+            icon={Users}
+            title="No families yet"
+            description="Add your first family to get started."
+            action={
+              <Button asChild size="sm">
+                <Link href="/admin/families/new">Add family</Link>
+              </Button>
+            }
+          />
+        </div>
+      )}
     </div>
   )
 }

@@ -3,6 +3,10 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
 import { formatCurrency } from '@/lib/utils/currency'
 import { formatTime } from '@/lib/utils/dates'
+import { PageHeader } from '@/components/page-header'
+import { EmptyState } from '@/components/empty-state'
+import { Badge } from '@/components/ui/badge'
+import { GraduationCap } from 'lucide-react'
 
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
@@ -56,30 +60,30 @@ export default async function ParentProgramsPage() {
     return (
       <Link
         href={`/parent/programs/${program.id}`}
-        className="block rounded-lg border border-gray-200 bg-white p-5 hover:border-orange-300 hover:bg-orange-50"
+        className="block rounded-lg border border-border bg-card p-5 shadow-card transition-colors hover:border-primary/30 hover:bg-primary/5"
       >
         <div className="flex items-start justify-between">
           <div>
-            <p className="font-medium text-gray-900">{program.name}</p>
-            <p className="mt-1 text-sm text-gray-500">
+            <p className="font-medium text-foreground">{program.name}</p>
+            <p className="mt-1 text-sm text-muted-foreground">
               {program.day_of_week != null && DAYS[program.day_of_week]}
               {program.start_time && ` · ${formatTime(program.start_time)}`}
               {program.end_time && ` - ${formatTime(program.end_time)}`}
             </p>
           </div>
           <div className="flex flex-col items-end gap-1">
-            <span className="rounded-full bg-orange-100 px-2 py-0.5 text-xs font-medium capitalize text-orange-700">
+            <Badge variant="secondary" className="capitalize">
               {program.type}
-            </span>
-            <span className="text-xs capitalize text-gray-400">{program.level}</span>
+            </Badge>
+            <span className="text-xs capitalize text-muted-foreground/60">{program.level}</span>
           </div>
         </div>
 
         {program.description && (
-          <p className="mt-2 text-sm text-gray-600 line-clamp-2">{program.description}</p>
+          <p className="mt-2 text-sm text-muted-foreground line-clamp-2">{program.description}</p>
         )}
 
-        <div className="mt-3 flex items-center justify-between text-xs text-gray-500">
+        <div className="mt-3 flex items-center justify-between text-xs text-muted-foreground">
           <div className="flex gap-3">
             {program.per_session_cents && (
               <span>{formatCurrency(program.per_session_cents)}/session</span>
@@ -90,14 +94,14 @@ export default async function ParentProgramsPage() {
           </div>
           <div className="flex items-center gap-2">
             {spotsLeft !== null && (
-              <span className={spotsLeft <= 2 ? 'text-red-500 font-medium' : ''}>
+              <span className={spotsLeft <= 2 ? 'text-danger font-medium' : ''}>
                 {spotsLeft > 0 ? `${spotsLeft} spots left` : 'Full'}
               </span>
             )}
             {familyEnrolled.length > 0 && (
-              <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">
+              <Badge variant="outline" className="bg-success-light text-success border-success/20">
                 Enrolled
-              </span>
+              </Badge>
             )}
           </div>
         </div>
@@ -107,13 +111,12 @@ export default async function ParentProgramsPage() {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold text-gray-900">Available Programs</h1>
-      <p className="mt-1 text-sm text-gray-600">Browse and enrol in programs for your players.</p>
+      <PageHeader title="Available Programs" description="Browse and enrol in programs for your players." />
 
       {recommended.length > 0 && (
         <div className="mt-6">
-          <h2 className="text-lg font-semibold text-gray-900">Recommended for Your Players</h2>
-          <p className="mt-1 text-sm text-gray-500">Matching your players&apos; current ball level.</p>
+          <h2 className="text-lg font-semibold text-foreground">Recommended for Your Players</h2>
+          <p className="mt-1 text-sm text-muted-foreground">Matching your players&apos; current ball level.</p>
           <div className="mt-3 grid gap-3 sm:grid-cols-2">
             {recommended.map((program) => (
               <ProgramCard key={program.id} program={program} />
@@ -124,7 +127,7 @@ export default async function ParentProgramsPage() {
 
       {others.length > 0 && (
         <div className="mt-8">
-          <h2 className="text-lg font-semibold text-gray-900">All Programs</h2>
+          <h2 className="text-lg font-semibold text-foreground">All Programs</h2>
           <div className="mt-3 grid gap-3 sm:grid-cols-2">
             {others.map((program) => (
               <ProgramCard key={program.id} program={program} />
@@ -134,7 +137,13 @@ export default async function ParentProgramsPage() {
       )}
 
       {(!programs || programs.length === 0) && (
-        <p className="mt-6 text-sm text-gray-500">No programs are currently available.</p>
+        <div className="mt-6">
+          <EmptyState
+            icon={GraduationCap}
+            title="No programs available"
+            description="Check back soon for new programs."
+          />
+        </div>
       )}
     </div>
   )

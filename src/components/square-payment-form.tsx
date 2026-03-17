@@ -2,6 +2,9 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { processSquarePayment } from '@/lib/square/payment'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent } from '@/components/ui/card'
+import { AlertCircle } from 'lucide-react'
 
 declare global {
   interface Window {
@@ -107,8 +110,8 @@ export function SquarePaymentForm({
 
   if (!appId) {
     return (
-      <div className="rounded-lg border border-yellow-200 bg-yellow-50 p-4">
-        <p className="text-sm text-yellow-800">
+      <div className="rounded-lg border border-warning/20 bg-warning-light p-4">
+        <p className="text-sm text-warning">
           Card payments are not configured yet. Please pay via bank transfer or cash.
         </p>
       </div>
@@ -116,38 +119,43 @@ export function SquarePaymentForm({
   }
 
   return (
-    <div className="rounded-lg border border-gray-200 bg-white p-6">
-      <h3 className="text-lg font-semibold text-gray-900">Pay by Card</h3>
-      <p className="mt-1 text-sm text-gray-600">
-        Amount: <strong>${amountDollars}</strong>
-      </p>
+    <Card>
+      <CardContent className="pt-6">
+        <h3 className="text-lg font-semibold text-foreground">Pay by Card</h3>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Amount: <strong className="text-foreground">${amountDollars}</strong>
+        </p>
 
-      {error && (
-        <div className="mt-3 rounded-md bg-red-50 p-3 text-sm text-red-700">{error}</div>
-      )}
+        {error && (
+          <div className="mt-3 flex items-center gap-2 rounded-lg border border-danger/20 bg-danger-light px-4 py-3 text-sm text-danger">
+            <AlertCircle className="size-4 shrink-0" />
+            {error}
+          </div>
+        )}
 
-      <div className="mt-4">
-        <div id="square-card-container" className="min-h-[50px]">
-          {loading && <p className="text-sm text-gray-400">Loading payment form...</p>}
+        <div className="mt-4">
+          <div id="square-card-container" className="min-h-[50px]">
+            {loading && <p className="text-sm text-muted-foreground/60">Loading payment form...</p>}
+          </div>
         </div>
-      </div>
 
-      {/* Hidden form that submits to the server action */}
-      <form ref={formRef} action={processSquarePayment} className="hidden">
-        <input type="hidden" name="source_id" ref={sourceIdRef} />
-        <input type="hidden" name="family_id" value={familyId} />
-        <input type="hidden" name="amount_dollars" value={amountDollars} />
-        {description && <input type="hidden" name="description" value={description} />}
-        {invoiceId && <input type="hidden" name="invoice_id" value={invoiceId} />}
-      </form>
+        {/* Hidden form that submits to the server action */}
+        <form ref={formRef} action={processSquarePayment} className="hidden">
+          <input type="hidden" name="source_id" ref={sourceIdRef} />
+          <input type="hidden" name="family_id" value={familyId} />
+          <input type="hidden" name="amount_dollars" value={amountDollars} />
+          {description && <input type="hidden" name="description" value={description} />}
+          {invoiceId && <input type="hidden" name="invoice_id" value={invoiceId} />}
+        </form>
 
-      <button
-        onClick={handleSubmit}
-        disabled={loading || processing}
-        className="mt-4 w-full rounded-md bg-orange-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-orange-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
-      >
-        {processing ? 'Processing...' : `Pay $${amountDollars}`}
-      </button>
-    </div>
+        <Button
+          onClick={handleSubmit}
+          disabled={loading || processing}
+          className="mt-4 w-full"
+        >
+          {processing ? 'Processing...' : `Pay $${amountDollars}`}
+        </Button>
+      </CardContent>
+    </Card>
   )
 }

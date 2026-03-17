@@ -7,6 +7,9 @@ import { FamilyEditForm } from './family-edit-form'
 import { AddPlayerForm } from './add-player-form'
 import { InviteParentForm } from './invite-parent-form'
 import { Suspense } from 'react'
+import { PageHeader } from '@/components/page-header'
+import { StatusBadge } from '@/components/status-badge'
+import { Card, CardContent } from '@/components/ui/card'
 
 export default async function FamilyDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -24,99 +27,90 @@ export default async function FamilyDetailPage({ params }: { params: Promise<{ i
 
   return (
     <div className="max-w-3xl">
-      <div className="flex items-center gap-3">
-        <Link href="/admin/families" className="text-sm text-gray-500 hover:text-gray-700">&larr; Families</Link>
-        <span className="text-gray-300">/</span>
-        <h1 className="text-2xl font-bold text-gray-900">{family.display_id} - {family.family_name}</h1>
-        <span className={`rounded-full px-2 py-0.5 text-xs font-medium capitalize ${
-          family.status === 'active' ? 'bg-green-100 text-green-700' :
-          family.status === 'lead' ? 'bg-blue-100 text-blue-700' :
-          'bg-gray-100 text-gray-700'
-        }`}>
-          {family.status}
-        </span>
-      </div>
+      <PageHeader
+        title={`${family.display_id} - ${family.family_name}`}
+        breadcrumbs={[{ label: 'Families', href: '/admin/families' }]}
+        action={<StatusBadge status={family.status ?? 'active'} />}
+      />
 
       {balance && (
-        <p className={`mt-2 text-sm font-medium ${balance.balance_cents < 0 ? 'text-red-600' : balance.balance_cents > 0 ? 'text-green-600' : 'text-gray-500'}`}>
+        <p className={`mt-2 text-sm font-medium ${balance.balance_cents < 0 ? 'text-danger' : balance.balance_cents > 0 ? 'text-success' : 'text-muted-foreground'}`}>
           Balance: {formatCurrency(balance.balance_cents)}
         </p>
       )}
 
       <div className="mt-6 space-y-8">
         {/* Family info card */}
-        <div className="rounded-lg border border-gray-200 bg-white p-6">
-          <h2 className="text-lg font-semibold text-gray-900">Contact Information</h2>
-          <dl className="mt-4 grid gap-3 sm:grid-cols-2">
-            <div>
-              <dt className="text-xs font-medium text-gray-500">Primary Contact</dt>
-              <dd className="text-sm text-gray-900">{contact?.name ?? '-'}</dd>
-            </div>
-            <div>
-              <dt className="text-xs font-medium text-gray-500">Phone</dt>
-              <dd className="text-sm text-gray-900">{contact?.phone ?? '-'}</dd>
-            </div>
-            <div>
-              <dt className="text-xs font-medium text-gray-500">Email</dt>
-              <dd className="text-sm text-gray-900">{contact?.email ?? '-'}</dd>
-            </div>
-            <div>
-              <dt className="text-xs font-medium text-gray-500">Address</dt>
-              <dd className="text-sm text-gray-900">{family.address ?? '-'}</dd>
-            </div>
-            {family.referred_by && (
+        <Card>
+          <CardContent className="pt-6">
+            <h2 className="text-lg font-semibold text-foreground">Contact Information</h2>
+            <dl className="mt-4 grid gap-3 sm:grid-cols-2">
               <div>
-                <dt className="text-xs font-medium text-gray-500">Referred By</dt>
-                <dd className="text-sm text-gray-900">{family.referred_by}</dd>
+                <dt className="text-xs font-medium text-muted-foreground">Primary Contact</dt>
+                <dd className="text-sm text-foreground">{contact?.name ?? '-'}</dd>
               </div>
-            )}
-            <div>
-              <dt className="text-xs font-medium text-gray-500">Created</dt>
-              <dd className="text-sm text-gray-900">{family.created_at ? formatDate(family.created_at) : '-'}</dd>
-            </div>
-          </dl>
-        </div>
+              <div>
+                <dt className="text-xs font-medium text-muted-foreground">Phone</dt>
+                <dd className="text-sm text-foreground">{contact?.phone ?? '-'}</dd>
+              </div>
+              <div>
+                <dt className="text-xs font-medium text-muted-foreground">Email</dt>
+                <dd className="text-sm text-foreground">{contact?.email ?? '-'}</dd>
+              </div>
+              <div>
+                <dt className="text-xs font-medium text-muted-foreground">Address</dt>
+                <dd className="text-sm text-foreground">{family.address ?? '-'}</dd>
+              </div>
+              {family.referred_by && (
+                <div>
+                  <dt className="text-xs font-medium text-muted-foreground">Referred By</dt>
+                  <dd className="text-sm text-foreground">{family.referred_by}</dd>
+                </div>
+              )}
+              <div>
+                <dt className="text-xs font-medium text-muted-foreground">Created</dt>
+                <dd className="text-sm text-foreground">{family.created_at ? formatDate(family.created_at) : '-'}</dd>
+              </div>
+            </dl>
+          </CardContent>
+        </Card>
 
         {/* Players */}
-        <div className="rounded-lg border border-gray-200 bg-white p-6">
-          <div className="flex items-center justify-between">
-            <h2 className="text-lg font-semibold text-gray-900">Players</h2>
-          </div>
+        <Card>
+          <CardContent className="pt-6">
+            <h2 className="text-lg font-semibold text-foreground">Players</h2>
 
-          {players && players.length > 0 ? (
-            <div className="mt-4 space-y-3">
-              {players.map((p) => (
-                <Link
-                  key={p.id}
-                  href={`/admin/families/${id}/players/${p.id}`}
-                  className="block rounded-lg border border-gray-200 p-4 hover:border-orange-300 hover:bg-orange-50"
-                >
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="font-medium text-gray-900">{p.first_name} {p.last_name}</p>
-                      <p className="mt-0.5 text-sm text-gray-500">
-                        {p.ball_color && <span className="capitalize">{p.ball_color} ball</span>}
-                        {p.ball_color && p.dob && ' - '}
-                        {p.dob && <span>DOB: {formatDate(p.dob)}</span>}
-                      </p>
+            {players && players.length > 0 ? (
+              <div className="mt-4 space-y-3">
+                {players.map((p) => (
+                  <Link
+                    key={p.id}
+                    href={`/admin/families/${id}/players/${p.id}`}
+                    className="block rounded-lg border border-border p-4 transition-colors hover:border-primary/30 hover:bg-primary/5"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="font-medium text-foreground">{p.first_name} {p.last_name}</p>
+                        <p className="mt-0.5 text-sm text-muted-foreground">
+                          {p.ball_color && <span className="capitalize">{p.ball_color} ball</span>}
+                          {p.ball_color && p.dob && ' - '}
+                          {p.dob && <span>DOB: {formatDate(p.dob)}</span>}
+                        </p>
+                      </div>
+                      <StatusBadge status={p.status ?? 'active'} />
                     </div>
-                    <span className={`rounded-full px-2 py-0.5 text-xs font-medium capitalize ${
-                      p.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'
-                    }`}>
-                      {p.status}
-                    </span>
-                  </div>
-                </Link>
-              ))}
-            </div>
-          ) : (
-            <p className="mt-4 text-sm text-gray-500">No players added yet.</p>
-          )}
+                  </Link>
+                ))}
+              </div>
+            ) : (
+              <p className="mt-4 text-sm text-muted-foreground">No players added yet.</p>
+            )}
 
-          <div className="mt-4 border-t border-gray-200 pt-4">
-            <AddPlayerForm familyId={id} />
-          </div>
-        </div>
+            <div className="mt-4 border-t border-border pt-4">
+              <AddPlayerForm familyId={id} />
+            </div>
+          </CardContent>
+        </Card>
 
         {/* Invite parent */}
         <Suspense>

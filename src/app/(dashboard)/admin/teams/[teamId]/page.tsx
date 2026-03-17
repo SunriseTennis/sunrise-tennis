@@ -5,6 +5,22 @@ import { formatDate } from '@/lib/utils/dates'
 import { AddMemberForm } from './add-member-form'
 import { AvailabilityGrid } from './availability-grid'
 import { sendAvailabilityCheck, removeTeamMember } from '../actions'
+import { PageHeader } from '@/components/page-header'
+import { StatusBadge } from '@/components/status-badge'
+import { Card, CardContent } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Badge } from '@/components/ui/badge'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
+import { MessageSquare, Send, AlertCircle, CheckCircle } from 'lucide-react'
 
 export default async function AdminTeamDetailPage({
   params,
@@ -63,133 +79,140 @@ export default async function AdminTeamDetailPage({
   const removeAction = removeTeamMember.bind(null, teamId)
   const availabilityAction = sendAvailabilityCheck.bind(null, teamId)
 
+  const roleBadgeStyle: Record<string, string> = {
+    captain: 'bg-warning-light text-warning border-warning/20',
+    reserve: 'bg-muted text-muted-foreground border-border',
+  }
+
   return (
     <div>
-      <div className="flex items-center gap-3">
-        <Link href="/admin/teams" className="text-sm text-gray-500 hover:text-gray-700">&larr; Teams</Link>
-        <span className="text-gray-300">/</span>
-        <h1 className="text-2xl font-bold text-gray-900">{team.name}</h1>
-        <span className={`rounded-full px-2 py-0.5 text-xs font-medium capitalize ${
-          team.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'
-        }`}>
-          {team.status}
-        </span>
-      </div>
+      <PageHeader
+        title={team.name}
+        breadcrumbs={[{ label: 'Teams', href: '/admin/teams' }]}
+        action={<StatusBadge status={team.status ?? 'active'} />}
+      />
 
-      {error && <div className="mt-4 rounded-md bg-red-50 p-3 text-sm text-red-700">{error}</div>}
-      {success && <div className="mt-4 rounded-md bg-green-50 p-3 text-sm text-green-700">{success}</div>}
+      {error && (
+        <div className="mt-4 flex items-center gap-2 rounded-lg border border-danger/20 bg-danger-light px-4 py-3 text-sm text-danger">
+          <AlertCircle className="size-4 shrink-0" />
+          {error}
+        </div>
+      )}
+      {success && (
+        <div className="mt-4 flex items-center gap-2 rounded-lg border border-success/20 bg-success-light px-4 py-3 text-sm text-success">
+          <CheckCircle className="size-4 shrink-0" />
+          {success}
+        </div>
+      )}
 
       <div className="mt-6 grid gap-6 lg:grid-cols-3">
         {/* Team Info */}
-        <div className="rounded-lg border border-gray-200 bg-white p-6 lg:col-span-1">
-          <h2 className="text-lg font-semibold text-gray-900">Details</h2>
-          <dl className="mt-4 space-y-3">
-            <div>
-              <dt className="text-xs font-medium text-gray-500">Season</dt>
-              <dd className="text-sm text-gray-900">{team.season ?? '-'}</dd>
+        <Card className="lg:col-span-1">
+          <CardContent className="pt-6">
+            <h2 className="text-lg font-semibold text-foreground">Details</h2>
+            <dl className="mt-4 space-y-3">
+              <div>
+                <dt className="text-xs font-medium text-muted-foreground">Season</dt>
+                <dd className="text-sm text-foreground">{team.season ?? '-'}</dd>
+              </div>
+              <div>
+                <dt className="text-xs font-medium text-muted-foreground">Coach</dt>
+                <dd className="text-sm text-foreground">{coach?.name ?? '-'}</dd>
+              </div>
+              <div>
+                <dt className="text-xs font-medium text-muted-foreground">Program</dt>
+                <dd className="text-sm text-foreground">{program?.name ?? '-'}</dd>
+              </div>
+              <div>
+                <dt className="text-xs font-medium text-muted-foreground">Members</dt>
+                <dd className="text-sm text-foreground">{members?.length ?? 0}</dd>
+              </div>
+            </dl>
+            <div className="mt-4">
+              <Button asChild variant="outline" size="sm">
+                <Link href={`/admin/teams/${teamId}/chat`}>
+                  <MessageSquare className="size-4" />
+                  Team Chat
+                </Link>
+              </Button>
             </div>
-            <div>
-              <dt className="text-xs font-medium text-gray-500">Coach</dt>
-              <dd className="text-sm text-gray-900">{coach?.name ?? '-'}</dd>
-            </div>
-            <div>
-              <dt className="text-xs font-medium text-gray-500">Program</dt>
-              <dd className="text-sm text-gray-900">{program?.name ?? '-'}</dd>
-            </div>
-            <div>
-              <dt className="text-xs font-medium text-gray-500">Members</dt>
-              <dd className="text-sm text-gray-900">{members?.length ?? 0}</dd>
-            </div>
-          </dl>
-          <div className="mt-4">
-            <Link
-              href={`/admin/teams/${teamId}/chat`}
-              className="inline-block rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
-            >
-              Team Chat
-            </Link>
-          </div>
-        </div>
+          </CardContent>
+        </Card>
 
         {/* Members */}
-        <div className="rounded-lg border border-gray-200 bg-white p-6 lg:col-span-2">
-          <h2 className="text-lg font-semibold text-gray-900">Roster</h2>
+        <Card className="lg:col-span-2">
+          <CardContent className="pt-6">
+            <h2 className="text-lg font-semibold text-foreground">Roster</h2>
 
-          {members && members.length > 0 ? (
-            <div className="mt-4 overflow-hidden rounded-lg border border-gray-200">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">Player</th>
-                    <th className="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">Level</th>
-                    <th className="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">Role</th>
-                    <th className="px-4 py-2 text-right text-xs font-medium uppercase text-gray-500">Action</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-200">
-                  {members.map((m) => {
-                    const player = m.players as unknown as { first_name: string; last_name: string; ball_color: string | null }
-                    return (
-                      <tr key={m.id}>
-                        <td className="px-4 py-2 text-sm text-gray-900">
-                          {player?.first_name} {player?.last_name}
-                        </td>
-                        <td className="px-4 py-2 text-sm capitalize text-gray-500">{player?.ball_color ?? '-'}</td>
-                        <td className="px-4 py-2">
-                          <span className={`rounded-full px-2 py-0.5 text-xs font-medium capitalize ${
-                            m.role === 'captain' ? 'bg-yellow-100 text-yellow-700' :
-                            m.role === 'reserve' ? 'bg-gray-100 text-gray-600' :
-                            'bg-blue-100 text-blue-700'
-                          }`}>
-                            {m.role}
-                          </span>
-                        </td>
-                        <td className="px-4 py-2 text-right">
-                          <form action={removeAction}>
-                            <input type="hidden" name="member_id" value={m.id} />
-                            <button type="submit" className="text-xs text-red-500 hover:text-red-700">Remove</button>
-                          </form>
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
+            {members && members.length > 0 ? (
+              <div className="mt-4 overflow-hidden rounded-lg border border-border">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="bg-muted/50 hover:bg-muted/50">
+                      <TableHead>Player</TableHead>
+                      <TableHead>Level</TableHead>
+                      <TableHead>Role</TableHead>
+                      <TableHead className="text-right">Action</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {members.map((m) => {
+                      const player = m.players as unknown as { first_name: string; last_name: string; ball_color: string | null }
+                      return (
+                        <TableRow key={m.id}>
+                          <TableCell>{player?.first_name} {player?.last_name}</TableCell>
+                          <TableCell className="capitalize text-muted-foreground">{player?.ball_color ?? '-'}</TableCell>
+                          <TableCell>
+                            <Badge
+                              variant="outline"
+                              className={`capitalize ${roleBadgeStyle[m.role] ?? 'bg-info-light text-info border-info/20'}`}
+                            >
+                              {m.role}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <form action={removeAction}>
+                              <input type="hidden" name="member_id" value={m.id} />
+                              <button type="submit" className="text-xs font-medium text-danger hover:text-danger/80 transition-colors">Remove</button>
+                            </form>
+                          </TableCell>
+                        </TableRow>
+                      )
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+            ) : (
+              <p className="mt-4 text-sm text-muted-foreground">No members yet.</p>
+            )}
+
+            <div className="mt-4">
+              <AddMemberForm teamId={teamId} players={eligiblePlayers} />
             </div>
-          ) : (
-            <p className="mt-4 text-sm text-gray-500">No members yet.</p>
-          )}
-
-          <div className="mt-4">
-            <AddMemberForm teamId={teamId} players={eligiblePlayers} />
-          </div>
-        </div>
+          </CardContent>
+        </Card>
       </div>
 
       {/* Availability Section */}
       <div className="mt-8">
-        <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-gray-900">Availability</h2>
-        </div>
+        <h2 className="text-lg font-semibold text-foreground">Availability</h2>
 
         {/* Send availability check form */}
         <form action={availabilityAction} className="mt-4 flex items-end gap-3">
           <div>
-            <label htmlFor="match_date" className="block text-xs font-medium text-gray-700">Match Date</label>
-            <input
+            <Label htmlFor="match_date">Match Date</Label>
+            <Input
               id="match_date"
               name="match_date"
               type="date"
               required
-              className="mt-1 rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500"
+              className="mt-1"
             />
           </div>
-          <button
-            type="submit"
-            className="rounded-md bg-orange-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-orange-700"
-          >
+          <Button type="submit">
+            <Send className="size-4" />
             Send Availability Check
-          </button>
+          </Button>
         </form>
 
         {/* Availability grid */}

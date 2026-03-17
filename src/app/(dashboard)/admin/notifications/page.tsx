@@ -1,5 +1,18 @@
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
+import { PageHeader } from '@/components/page-header'
+import { EmptyState } from '@/components/empty-state'
+import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
+import { Bell, Send, CheckCircle } from 'lucide-react'
 
 export default async function AdminNotificationsPage({
   searchParams,
@@ -17,51 +30,54 @@ export default async function AdminNotificationsPage({
 
   return (
     <div>
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Notifications</h1>
-          <p className="mt-1 text-sm text-gray-600">Send and view push notifications.</p>
-        </div>
-        <Link
-          href="/admin/notifications/compose"
-          className="rounded-md bg-orange-600 px-4 py-2 text-sm font-medium text-white hover:bg-orange-700"
-        >
-          Compose
-        </Link>
-      </div>
+      <PageHeader
+        title="Notifications"
+        description="Send and view push notifications."
+        action={
+          <Button asChild>
+            <Link href="/admin/notifications/compose">
+              <Send className="size-4" />
+              Compose
+            </Link>
+          </Button>
+        }
+      />
 
       {success && (
-        <div className="mt-4 rounded-md bg-green-50 p-3 text-sm text-green-700">{success}</div>
+        <div className="mt-4 flex items-center gap-2 rounded-lg border border-success/20 bg-success-light px-4 py-3 text-sm text-success">
+          <CheckCircle className="size-4 shrink-0" />
+          {success}
+        </div>
       )}
 
       {notifications && notifications.length > 0 ? (
-        <div className="mt-6 overflow-hidden rounded-lg border border-gray-200 bg-white">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500">Title</th>
-                <th className="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500">Type</th>
-                <th className="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500">Target</th>
-                <th className="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500">Sent</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-200">
+        <div className="mt-6 overflow-hidden rounded-lg border border-border bg-card shadow-card">
+          <Table>
+            <TableHeader>
+              <TableRow className="bg-muted/50 hover:bg-muted/50">
+                <TableHead>Title</TableHead>
+                <TableHead>Type</TableHead>
+                <TableHead>Target</TableHead>
+                <TableHead>Sent</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {notifications.map((n) => (
-                <tr key={n.id} className="hover:bg-gray-50">
-                  <td className="px-4 py-3 text-sm text-gray-900">
-                    <div>{n.title}</div>
-                    {n.body && <div className="mt-0.5 text-xs text-gray-500 line-clamp-1">{n.body}</div>}
-                  </td>
-                  <td className="px-4 py-3">
-                    <span className="inline-flex rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700">
+                <TableRow key={n.id}>
+                  <TableCell>
+                    <div className="font-medium">{n.title}</div>
+                    {n.body && <div className="mt-0.5 text-xs text-muted-foreground line-clamp-1">{n.body}</div>}
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant="secondary">
                       {n.type.replace(/_/g, ' ')}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-sm capitalize text-gray-500">
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="capitalize text-muted-foreground">
                     {n.target_type}
                     {n.target_level && ` (${n.target_level})`}
-                  </td>
-                  <td className="px-4 py-3 text-sm text-gray-500">
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">
                     {n.sent_at
                       ? new Date(n.sent_at).toLocaleDateString('en-AU', {
                           day: 'numeric',
@@ -70,14 +86,25 @@ export default async function AdminNotificationsPage({
                           minute: '2-digit',
                         })
                       : '-'}
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               ))}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </div>
       ) : (
-        <p className="mt-6 text-sm text-gray-500">No notifications sent yet.</p>
+        <div className="mt-6">
+          <EmptyState
+            icon={Bell}
+            title="No notifications sent yet"
+            description="Compose your first notification to reach families."
+            action={
+              <Button asChild size="sm">
+                <Link href="/admin/notifications/compose">Compose</Link>
+              </Button>
+            }
+          />
+        </div>
       )}
     </div>
   )

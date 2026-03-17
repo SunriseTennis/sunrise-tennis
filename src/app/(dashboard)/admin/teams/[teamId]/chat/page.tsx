@@ -1,8 +1,8 @@
-import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { ChatThread } from './chat-thread'
 import { sendTeamMessage } from '../../actions'
+import { PageHeader } from '@/components/page-header'
 
 export default async function AdminTeamChatPage({
   params,
@@ -42,13 +42,13 @@ export default async function AdminTeamChatPage({
 
   return (
     <div className="max-w-3xl">
-      <div className="flex items-center gap-3">
-        <Link href={`/admin/teams/${teamId}`} className="text-sm text-gray-500 hover:text-gray-700">
-          &larr; {team.name}
-        </Link>
-        <span className="text-gray-300">/</span>
-        <h1 className="text-2xl font-bold text-gray-900">Team Chat</h1>
-      </div>
+      <PageHeader
+        title="Team Chat"
+        breadcrumbs={[
+          { label: 'Teams', href: '/admin/teams' },
+          { label: team.name, href: `/admin/teams/${teamId}` },
+        ]}
+      />
 
       <div className="mt-6">
         <ChatThread

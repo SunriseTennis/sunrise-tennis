@@ -1,6 +1,10 @@
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
+import { PageHeader } from '@/components/page-header'
+import { EmptyState } from '@/components/empty-state'
+import { Badge } from '@/components/ui/badge'
+import { Trophy } from 'lucide-react'
 
 export default async function ParentTeamsPage() {
   const supabase = await createClient()
@@ -64,8 +68,7 @@ export default async function ParentTeamsPage() {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold text-gray-900">Teams</h1>
-      <p className="mt-1 text-sm text-gray-600">Your children&apos;s competition teams.</p>
+      <PageHeader title="Teams" description="Your children's competition teams." />
 
       {teams.length > 0 ? (
         <div className="mt-6 space-y-4">
@@ -73,27 +76,33 @@ export default async function ParentTeamsPage() {
             <Link
               key={team.id}
               href={`/parent/teams/${team.id}`}
-              className="block rounded-lg border border-gray-200 bg-white p-5 transition-colors hover:border-orange-300"
+              className="block rounded-lg border border-border bg-card p-5 shadow-card transition-colors hover:border-primary/30"
             >
               <div className="flex items-center justify-between">
                 <div>
-                  <h2 className="text-lg font-semibold text-gray-900">{team.name}</h2>
-                  <div className="mt-1 flex items-center gap-3 text-sm text-gray-500">
+                  <h2 className="text-lg font-semibold text-foreground">{team.name}</h2>
+                  <div className="mt-1 flex items-center gap-3 text-sm text-muted-foreground">
                     {team.season && <span>{team.season}</span>}
                     {team.coach && <span>Coach: {team.coach}</span>}
                   </div>
                 </div>
                 {pending > 0 && (
-                  <span className="rounded-full bg-red-100 px-3 py-1 text-xs font-medium text-red-700">
+                  <Badge variant="outline" className="bg-danger-light text-danger border-danger/20">
                     {pending} pending
-                  </span>
+                  </Badge>
                 )}
               </div>
             </Link>
           ))}
         </div>
       ) : (
-        <p className="mt-6 text-sm text-gray-500">Your children are not on any teams yet.</p>
+        <div className="mt-6">
+          <EmptyState
+            icon={Trophy}
+            title="No teams yet"
+            description="Your children are not on any teams yet."
+          />
+        </div>
       )}
     </div>
   )

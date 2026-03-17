@@ -1,34 +1,34 @@
 'use client'
 
 import { cancelSession } from '../../actions'
+import { Button } from '@/components/ui/button'
+import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
 
 export function CancelSessionForm({ sessionId }: { sessionId: string }) {
   const cancelWithId = cancelSession.bind(null, sessionId)
 
   return (
-    <details className="rounded-lg border border-red-200 bg-white">
-      <summary className="cursor-pointer px-6 py-4 text-sm font-medium text-red-600">
+    <details className="rounded-xl border border-danger/30 bg-card">
+      <summary className="cursor-pointer px-6 py-4 text-sm font-medium text-danger">
         Cancel this session
       </summary>
       <form action={cancelWithId} className="space-y-4 px-6 pb-6">
         <div>
-          <label htmlFor="reason" className="block text-sm font-medium text-gray-700">
+          <Label htmlFor="reason">
             Cancellation reason
-          </label>
-          <textarea
+          </Label>
+          <Textarea
             id="reason"
             name="reason"
             rows={2}
             placeholder="e.g. Rain, coach unavailable..."
-            className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500"
+            className="mt-1"
           />
         </div>
-        <button
-          type="submit"
-          className="rounded-md bg-red-500 px-4 py-2 text-sm font-medium text-white hover:bg-red-600"
-        >
+        <Button type="submit" variant="destructive">
           Confirm cancellation
-        </button>
+        </Button>
       </form>
     </details>
   )
