@@ -1,6 +1,19 @@
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
 import { formatCurrency } from '@/lib/utils/currency'
+import { PageHeader } from '@/components/page-header'
+import { StatCard } from '@/components/stat-card'
+import { EmptyState } from '@/components/empty-state'
+import { Button } from '@/components/ui/button'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
+import { Users, UserCheck, GraduationCap, DollarSign, Plus } from 'lucide-react'
 
 export default async function AdminDashboard() {
   const supabase = await createClient()
@@ -25,80 +38,67 @@ export default async function AdminDashboard() {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold text-gray-900">Overview</h1>
-      <p className="mt-1 text-sm text-gray-600">Business snapshot at a glance.</p>
+      <PageHeader title="Overview" description="Business snapshot at a glance." />
 
-      <div className="mt-6 grid gap-4 sm:grid-cols-4">
-        <StatCard label="Families" value={String(familyCount ?? 0)} href="/admin/families" />
-        <StatCard label="Players" value={String(playerCount ?? 0)} />
-        <StatCard label="Programs" value={String(programCount ?? 0)} href="/admin/programs" />
+      <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <StatCard label="Families" value={String(familyCount ?? 0)} href="/admin/families" icon={Users} />
+        <StatCard label="Players" value={String(playerCount ?? 0)} icon={UserCheck} />
+        <StatCard label="Programs" value={String(programCount ?? 0)} href="/admin/programs" icon={GraduationCap} />
         <StatCard
           label="Outstanding"
           value={totalOutstanding !== 0 ? formatCurrency(totalOutstanding) : '$0.00'}
-          negative={totalOutstanding < 0}
+          variant={totalOutstanding < 0 ? 'danger' : 'default'}
+          icon={DollarSign}
         />
       </div>
 
       {balances && balances.length > 0 && (
         <div className="mt-8">
-          <h2 className="text-lg font-semibold text-gray-900">Account Balances</h2>
-          <div className="mt-3 overflow-hidden rounded-lg border border-gray-200 bg-white">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500">Family</th>
-                  <th className="px-4 py-3 text-right text-xs font-medium uppercase text-gray-500">Balance</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-200">
+          <h2 className="text-lg font-semibold text-foreground">Account Balances</h2>
+          <div className="mt-3 overflow-hidden rounded-lg border border-border bg-card shadow-card">
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-muted/50 hover:bg-muted/50">
+                  <TableHead>Family</TableHead>
+                  <TableHead className="text-right">Balance</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
                 {balances.map((b) => {
                   const family = b.families as unknown as { display_id: string; family_name: string } | null
                   return (
-                    <tr key={b.family_id}>
-                      <td className="px-4 py-3 text-sm text-gray-900">
-                        <Link href={`/admin/families/${b.family_id}`} className="hover:text-orange-600">
+                    <TableRow key={b.family_id}>
+                      <TableCell>
+                        <Link href={`/admin/families/${b.family_id}`} className="font-medium hover:text-primary transition-colors">
                           {family?.display_id} ({family?.family_name})
                         </Link>
-                      </td>
-                      <td className={`px-4 py-3 text-right text-sm font-medium ${b.balance_cents < 0 ? 'text-red-600' : 'text-green-600'}`}>
+                      </TableCell>
+                      <TableCell className={`text-right font-medium tabular-nums ${b.balance_cents < 0 ? 'text-danger' : 'text-success'}`}>
                         {formatCurrency(b.balance_cents)}
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   )
                 })}
-              </tbody>
-            </table>
+              </TableBody>
+            </Table>
           </div>
         </div>
       )}
 
       <div className="mt-8 grid gap-4 sm:grid-cols-2">
-        <Link
-          href="/admin/families/new"
-          className="flex items-center justify-center rounded-lg border-2 border-dashed border-gray-300 p-6 text-sm font-medium text-gray-600 hover:border-orange-400 hover:text-orange-600"
-        >
-          + Add new family
-        </Link>
-        <Link
-          href="/admin/programs/new"
-          className="flex items-center justify-center rounded-lg border-2 border-dashed border-gray-300 p-6 text-sm font-medium text-gray-600 hover:border-orange-400 hover:text-orange-600"
-        >
-          + Add new program
-        </Link>
+        <Button asChild variant="outline" className="h-auto justify-center border-2 border-dashed p-6">
+          <Link href="/admin/families/new" className="flex items-center gap-2">
+            <Plus className="size-4" />
+            Add new family
+          </Link>
+        </Button>
+        <Button asChild variant="outline" className="h-auto justify-center border-2 border-dashed p-6">
+          <Link href="/admin/programs/new" className="flex items-center gap-2">
+            <Plus className="size-4" />
+            Add new program
+          </Link>
+        </Button>
       </div>
     </div>
   )
-}
-
-function StatCard({ label, value, href, negative }: { label: string; value: string; href?: string; negative?: boolean }) {
-  const content = (
-    <div className="rounded-lg border border-gray-200 bg-white p-5">
-      <p className="text-sm font-medium text-gray-500">{label}</p>
-      <p className={`mt-1 text-3xl font-bold ${negative ? 'text-red-600' : 'text-gray-900'}`}>{value}</p>
-    </div>
-  )
-  if (href) {
-    return <Link href={href} className="block rounded-lg hover:ring-2 hover:ring-orange-200">{content}</Link>
-  }
-  return content
 }

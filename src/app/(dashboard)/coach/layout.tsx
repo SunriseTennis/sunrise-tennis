@@ -1,25 +1,20 @@
-import Link from 'next/link'
+import { NavTabs } from '@/components/nav-tabs'
+import {
+  LayoutDashboard,
+  Calendar,
+  GraduationCap,
+} from 'lucide-react'
 
 const navItems = [
-  { href: '/coach', label: 'Overview' },
-  { href: '/coach/schedule', label: 'Schedule' },
-  { href: '/coach/programs', label: 'Programs' },
+  { href: '/coach', label: 'Overview', icon: LayoutDashboard },
+  { href: '/coach/schedule', label: 'Schedule', icon: Calendar },
+  { href: '/coach/programs', label: 'Programs', icon: GraduationCap },
 ]
 
 export default function CoachLayout({ children }: { children: React.ReactNode }) {
   return (
     <div>
-      <nav className="mb-6 flex gap-1 border-b border-gray-200">
-        {navItems.map((item) => (
-          <Link
-            key={item.href}
-            href={item.href}
-            className="border-b-2 border-transparent px-4 py-2 text-sm font-medium text-gray-600 hover:border-orange-300 hover:text-gray-900"
-          >
-            {item.label}
-          </Link>
-        ))}
-      </nav>
+      <NavTabs items={navItems} />
       {children}
     </div>
   )

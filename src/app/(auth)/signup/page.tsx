@@ -3,7 +3,13 @@
 import { Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
+import { Sun } from 'lucide-react'
 import { signup } from '../actions'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
+import { Alert, AlertDescription } from '@/components/ui/alert'
 
 function SignupForm() {
   const searchParams = useSearchParams()
@@ -13,70 +19,61 @@ function SignupForm() {
   return (
     <>
       {error && (
-        <div className="mb-4 rounded-md bg-red-50 p-3 text-sm text-red-700">
-          {error}
-        </div>
+        <Alert variant="destructive" className="mb-4">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
       )}
 
       {invite && (
-        <div className="mb-4 rounded-md bg-orange-50 p-3 text-sm text-orange-700">
-          You&apos;ve been invited to join Sunrise Tennis. Create your account below.
-        </div>
+        <Alert className="mb-4 border-primary/20 bg-primary/5 text-primary">
+          <AlertDescription>
+            You&apos;ve been invited to join Sunrise Tennis. Create your account below.
+          </AlertDescription>
+        </Alert>
       )}
 
       <form action={signup} className="space-y-4">
         {invite && <input type="hidden" name="invite_token" value={invite} />}
 
-        <div>
-          <label htmlFor="full_name" className="block text-sm font-medium text-gray-700">
-            Full name
-          </label>
-          <input
+        <div className="space-y-2">
+          <Label htmlFor="full_name">Full name</Label>
+          <Input
             id="full_name"
             name="full_name"
             type="text"
             required
             autoComplete="name"
-            className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500"
           />
         </div>
 
-        <div>
-          <label htmlFor="email" className="block text-sm font-medium text-gray-700">
-            Email
-          </label>
-          <input
+        <div className="space-y-2">
+          <Label htmlFor="email">Email</Label>
+          <Input
             id="email"
             name="email"
             type="email"
             required
             autoComplete="email"
-            className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500"
+            placeholder="you@example.com"
           />
         </div>
 
-        <div>
-          <label htmlFor="password" className="block text-sm font-medium text-gray-700">
-            Password
-          </label>
-          <input
+        <div className="space-y-2">
+          <Label htmlFor="password">Password</Label>
+          <Input
             id="password"
             name="password"
             type="password"
             required
             minLength={8}
             autoComplete="new-password"
-            className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500"
             placeholder="Minimum 8 characters"
           />
         </div>
 
-        <button
-          type="submit"
-          className="w-full rounded-md bg-orange-500 px-4 py-2 text-sm font-medium text-white hover:bg-orange-600 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-2"
-        >
+        <Button type="submit" className="w-full">
           Create account
-        </button>
+        </Button>
       </form>
     </>
   )
@@ -84,24 +81,28 @@ function SignupForm() {
 
 export default function SignupPage() {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gray-50 px-4">
-      <div className="w-full max-w-sm">
-        <div className="mb-8 text-center">
-          <h1 className="text-2xl font-bold text-gray-900">Sunrise Tennis</h1>
-          <p className="mt-2 text-sm text-gray-600">Create your account</p>
-        </div>
+    <div className="gradient-sunrise flex min-h-screen items-center justify-center px-4">
+      <Card className="w-full max-w-sm border-0 shadow-elevated">
+        <CardHeader className="text-center">
+          <div className="mx-auto flex size-12 items-center justify-center rounded-full bg-primary/10">
+            <Sun className="size-6 text-primary" />
+          </div>
+          <CardTitle className="mt-2 text-2xl">Sunrise Tennis</CardTitle>
+          <CardDescription>Create your account</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Suspense>
+            <SignupForm />
+          </Suspense>
 
-        <Suspense>
-          <SignupForm />
-        </Suspense>
-
-        <p className="mt-6 text-center text-sm text-gray-500">
-          Already have an account?{' '}
-          <Link href="/login" className="text-orange-600 hover:text-orange-500">
-            Sign in
-          </Link>
-        </p>
-      </div>
+          <p className="mt-6 text-center text-sm text-muted-foreground">
+            Already have an account?{' '}
+            <Link href="/login" className="text-primary hover:text-primary/80 font-medium transition-colors">
+              Sign in
+            </Link>
+          </p>
+        </CardContent>
+      </Card>
     </div>
   )
 }

@@ -3,13 +3,26 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
 import { formatCurrency } from '@/lib/utils/currency'
 import { formatDate, formatTime } from '@/lib/utils/dates'
+import { PageHeader } from '@/components/page-header'
+import { StatusBadge } from '@/components/status-badge'
+import { BallLevelBadge } from '@/components/ball-level-badge'
+import { EmptyState } from '@/components/empty-state'
+import { Card, CardContent } from '@/components/ui/card'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
+import { Users, Calendar, GraduationCap } from 'lucide-react'
 
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
 export default async function ParentDashboard() {
   const supabase = await createClient()
 
-  // Get current user and their family_id
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
@@ -24,15 +37,18 @@ export default async function ParentDashboard() {
   if (!familyId) {
     return (
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">Parent Dashboard</h1>
-        <p className="mt-4 text-sm text-gray-600">
-          No family account linked. This is how parents see their dashboard once invited.
-        </p>
+        <PageHeader title="Parent Dashboard" />
+        <div className="mt-6">
+          <EmptyState
+            icon={Users}
+            title="No family account linked"
+            description="This is how parents see their dashboard once invited."
+          />
+        </div>
       </div>
     )
   }
 
-  // Fetch all family data in parallel
   const [
     { data: family },
     { data: players },
@@ -52,7 +68,6 @@ export default async function ParentDashboard() {
   const contact = family?.primary_contact as { name?: string; phone?: string; email?: string } | null
   const balanceCents = balance?.balance_cents ?? 0
 
-  // Get upcoming sessions for enrolled programs
   const programIds = enrollments?.map(e => {
     const prog = e.programs as unknown as { id: string } | null
     return prog?.id
@@ -74,31 +89,29 @@ export default async function ParentDashboard() {
   return (
     <div>
       <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">
-            Welcome, {contact?.name?.split(' ')[0] ?? 'Parent'}
-          </h1>
-          <p className="mt-1 text-sm text-gray-600">{family?.family_name} family account</p>
-        </div>
-        <div className={`rounded-lg border px-4 py-3 text-center ${
-          balanceCents < 0 ? 'border-red-200 bg-red-50' :
-          balanceCents > 0 ? 'border-green-200 bg-green-50' :
-          'border-gray-200 bg-white'
+        <PageHeader
+          title={`Welcome, ${contact?.name?.split(' ')[0] ?? 'Parent'}`}
+          description={`${family?.family_name} family account`}
+        />
+        <Card className={`border px-4 py-3 text-center ${
+          balanceCents < 0 ? 'border-danger/20 bg-danger-light' :
+          balanceCents > 0 ? 'border-success/20 bg-success-light' :
+          ''
         }`}>
-          <p className="text-xs font-medium text-gray-500">Account Balance</p>
-          <p className={`text-2xl font-bold ${
-            balanceCents < 0 ? 'text-red-600' :
-            balanceCents > 0 ? 'text-green-600' :
-            'text-gray-900'
+          <p className="text-xs font-medium text-muted-foreground">Account Balance</p>
+          <p className={`text-2xl font-bold tabular-nums ${
+            balanceCents < 0 ? 'text-danger' :
+            balanceCents > 0 ? 'text-success' :
+            'text-foreground'
           }`}>
             {formatCurrency(balanceCents)}
           </p>
-        </div>
+        </Card>
       </div>
 
       {/* Players */}
       <div className="mt-8">
-        <h2 className="text-lg font-semibold text-gray-900">Your Players</h2>
+        <h2 className="text-lg font-semibold text-foreground">Your Players</h2>
 
         {players && players.length > 0 ? (
           <div className="mt-3 grid gap-3 sm:grid-cols-2">
@@ -106,85 +119,90 @@ export default async function ParentDashboard() {
               <Link
                 key={player.id}
                 href={`/parent/players/${player.id}`}
-                className="block rounded-lg border border-gray-200 bg-white p-4 hover:border-orange-300 hover:bg-orange-50"
+                className="block rounded-lg border border-border bg-card p-4 shadow-card transition-all hover:border-primary/30 hover:shadow-elevated"
               >
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="font-medium text-gray-900">
+                    <p className="font-semibold text-foreground">
                       {player.first_name} {player.last_name}
                     </p>
-                    <p className="mt-0.5 text-sm text-gray-500">
-                      {player.ball_color && <span className="capitalize">{player.ball_color} ball</span>}
-                      {player.ball_color && player.level && ' · '}
-                      {player.level && <span className="capitalize">{player.level}</span>}
-                    </p>
+                    <div className="mt-1.5 flex items-center gap-2">
+                      {player.ball_color && <BallLevelBadge ballColor={player.ball_color} />}
+                      {player.level && (
+                        <span className="text-xs text-muted-foreground capitalize">{player.level}</span>
+                      )}
+                    </div>
                     {player.current_focus && (player.current_focus as string[]).length > 0 && (
-                      <p className="mt-1 text-xs text-gray-400">
+                      <p className="mt-1.5 text-xs text-muted-foreground">
                         Focus: {(player.current_focus as string[]).join(', ')}
                       </p>
                     )}
                   </div>
-                  <span className={`rounded-full px-2 py-0.5 text-xs font-medium capitalize ${
-                    player.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'
-                  }`}>
-                    {player.status}
-                  </span>
+                  <StatusBadge status={player.status} />
                 </div>
               </Link>
             ))}
           </div>
         ) : (
-          <p className="mt-3 text-sm text-gray-500">No players linked to your account yet.</p>
+          <div className="mt-3">
+            <EmptyState
+              icon={Users}
+              title="No players yet"
+              description="No players linked to your account yet."
+            />
+          </div>
         )}
       </div>
 
       {/* Upcoming Sessions */}
       <div className="mt-8">
-        <h2 className="text-lg font-semibold text-gray-900">Upcoming Sessions</h2>
+        <h2 className="text-lg font-semibold text-foreground">Upcoming Sessions</h2>
 
         {upcomingSessions && upcomingSessions.length > 0 ? (
-          <div className="mt-3 overflow-hidden rounded-lg border border-gray-200 bg-white">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500">Date</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500">Program</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500">Time</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500">Level</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-200">
+          <div className="mt-3 overflow-hidden rounded-lg border border-border bg-card shadow-card">
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-muted/50 hover:bg-muted/50">
+                  <TableHead>Date</TableHead>
+                  <TableHead>Program</TableHead>
+                  <TableHead>Time</TableHead>
+                  <TableHead>Level</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
                 {upcomingSessions.map((session) => {
                   const program = session.programs as unknown as { name: string; level: string; type: string } | null
                   return (
-                    <tr key={session.id}>
-                      <td className="px-4 py-3 text-sm text-gray-900">{formatDate(session.date)}</td>
-                      <td className="px-4 py-3 text-sm text-gray-900">{program?.name ?? '-'}</td>
-                      <td className="px-4 py-3 text-sm text-gray-500">
+                    <TableRow key={session.id}>
+                      <TableCell className="font-medium">{formatDate(session.date)}</TableCell>
+                      <TableCell>{program?.name ?? '-'}</TableCell>
+                      <TableCell className="text-muted-foreground">
                         {session.start_time ? formatTime(session.start_time) : '-'}
                         {session.end_time ? ` - ${formatTime(session.end_time)}` : ''}
-                      </td>
-                      <td className="px-4 py-3">
-                        {program?.level && (
-                          <span className="rounded-full bg-orange-100 px-2 py-0.5 text-xs font-medium capitalize text-orange-700">
-                            {program.level}
-                          </span>
-                        )}
-                      </td>
-                    </tr>
+                      </TableCell>
+                      <TableCell>
+                        {program?.level && <BallLevelBadge ballColor={program.level} />}
+                      </TableCell>
+                    </TableRow>
                   )
                 })}
-              </tbody>
-            </table>
+              </TableBody>
+            </Table>
           </div>
         ) : (
-          <p className="mt-3 text-sm text-gray-500">No upcoming sessions scheduled.</p>
+          <div className="mt-3">
+            <EmptyState
+              icon={Calendar}
+              title="No upcoming sessions"
+              description="No sessions scheduled yet."
+            />
+          </div>
         )}
       </div>
 
       {/* Enrolled Programs */}
       <div className="mt-8">
-        <h2 className="text-lg font-semibold text-gray-900">Enrolled Programs</h2>
+        <h2 className="text-lg font-semibold text-foreground">Enrolled Programs</h2>
 
         {enrollments && enrollments.length > 0 ? (
           <div className="mt-3 grid gap-3 sm:grid-cols-2">
@@ -196,27 +214,33 @@ export default async function ParentDashboard() {
               const player = enrollment.players as unknown as { id: string; first_name: string } | null
               if (!program) return null
               return (
-                <div key={enrollment.id} className="rounded-lg border border-gray-200 bg-white p-4">
-                  <div className="flex items-center justify-between">
-                    <p className="font-medium text-gray-900">{program.name}</p>
-                    <span className="rounded-full bg-orange-100 px-2 py-0.5 text-xs font-medium capitalize text-orange-700">
-                      {program.type}
-                    </span>
-                  </div>
-                  <p className="mt-1 text-sm text-gray-500">
-                    {program.day_of_week != null && DAYS[program.day_of_week]}
-                    {program.start_time && ` · ${formatTime(program.start_time)}`}
-                    {program.end_time && ` - ${formatTime(program.end_time)}`}
-                  </p>
-                  {player && (
-                    <p className="mt-1 text-xs text-gray-400">Player: {player.first_name}</p>
-                  )}
-                </div>
+                <Card key={enrollment.id}>
+                  <CardContent className="p-4">
+                    <div className="flex items-center justify-between">
+                      <p className="font-semibold text-foreground">{program.name}</p>
+                      <StatusBadge status={program.type} />
+                    </div>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      {program.day_of_week != null && DAYS[program.day_of_week]}
+                      {program.start_time && ` · ${formatTime(program.start_time)}`}
+                      {program.end_time && ` - ${formatTime(program.end_time)}`}
+                    </p>
+                    {player && (
+                      <p className="mt-1 text-xs text-muted-foreground">Player: {player.first_name}</p>
+                    )}
+                  </CardContent>
+                </Card>
               )
             })}
           </div>
         ) : (
-          <p className="mt-3 text-sm text-gray-500">No program enrolments yet.</p>
+          <div className="mt-3">
+            <EmptyState
+              icon={GraduationCap}
+              title="No enrolments"
+              description="No program enrolments yet."
+            />
+          </div>
         )}
       </div>
     </div>

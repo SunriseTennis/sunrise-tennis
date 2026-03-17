@@ -1,29 +1,28 @@
-import Link from 'next/link'
+import { NavTabs } from '@/components/nav-tabs'
+import {
+  LayoutDashboard,
+  Users,
+  GraduationCap,
+  Calendar,
+  CreditCard,
+  Bell,
+  Trophy,
+} from 'lucide-react'
 
 const navItems = [
-  { href: '/admin', label: 'Overview' },
-  { href: '/admin/families', label: 'Families' },
-  { href: '/admin/programs', label: 'Programs' },
-  { href: '/admin/sessions', label: 'Sessions' },
-  { href: '/admin/payments', label: 'Payments' },
-  { href: '/admin/notifications', label: 'Notifications' },
-  { href: '/admin/teams', label: 'Teams' },
+  { href: '/admin', label: 'Overview', icon: LayoutDashboard },
+  { href: '/admin/families', label: 'Families', icon: Users },
+  { href: '/admin/programs', label: 'Programs', icon: GraduationCap },
+  { href: '/admin/sessions', label: 'Sessions', icon: Calendar },
+  { href: '/admin/payments', label: 'Payments', icon: CreditCard },
+  { href: '/admin/notifications', label: 'Notifications', icon: Bell },
+  { href: '/admin/teams', label: 'Teams', icon: Trophy },
 ]
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   return (
     <div>
-      <nav className="mb-6 flex gap-1 border-b border-gray-200">
-        {navItems.map((item) => (
-          <Link
-            key={item.href}
-            href={item.href}
-            className="border-b-2 border-transparent px-4 py-2 text-sm font-medium text-gray-600 hover:border-orange-300 hover:text-gray-900"
-          >
-            {item.label}
-          </Link>
-        ))}
-      </nav>
+      <NavTabs items={navItems} />
       {children}
     </div>
   )

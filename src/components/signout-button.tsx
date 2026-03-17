@@ -1,16 +1,16 @@
 'use client'
 
 import { signout } from '@/app/(auth)/actions'
+import { Button } from '@/components/ui/button'
+import { LogOut } from 'lucide-react'
 
 export function SignoutButton() {
   return (
     <form action={signout}>
-      <button
-        type="submit"
-        className="rounded-md px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100 hover:text-gray-900"
-      >
-        Sign out
-      </button>
+      <Button type="submit" variant="ghost" size="sm" className="gap-1.5 text-muted-foreground">
+        <LogOut className="size-4" />
+        <span className="hidden sm:inline">Sign out</span>
+      </Button>
     </form>
   )
 }

@@ -2,6 +2,20 @@ import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
 import { formatDate, formatTime } from '@/lib/utils/dates'
+import { PageHeader } from '@/components/page-header'
+import { StatusBadge } from '@/components/status-badge'
+import { EmptyState } from '@/components/empty-state'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent } from '@/components/ui/card'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
+import { Calendar, Clock, MapPin, AlertCircle } from 'lucide-react'
 
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
@@ -11,7 +25,6 @@ export default async function CoachDashboard() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
-  // Get coach_id directly from coaches table (works for admin+coach users)
   const { data: coach } = await supabase
     .from('coaches')
     .select('id')
@@ -23,17 +36,20 @@ export default async function CoachDashboard() {
   if (!coachId) {
     return (
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">Coach Dashboard</h1>
-        <p className="mt-4 text-sm text-gray-600">
-          Your account hasn&apos;t been linked to a coach profile yet. Please contact an admin.
-        </p>
+        <PageHeader title="Coach Dashboard" />
+        <div className="mt-6">
+          <EmptyState
+            icon={AlertCircle}
+            title="No coach profile linked"
+            description="Your account hasn't been linked to a coach profile yet. Please contact an admin."
+          />
+        </div>
       </div>
     )
   }
 
   const today = new Date().toISOString().split('T')[0]
 
-  // Fetch today's sessions and upcoming sessions
   const [{ data: todaySessions }, { data: upcomingSessions }, { data: coachProfile }] = await Promise.all([
     supabase
       .from('sessions')
@@ -59,16 +75,14 @@ export default async function CoachDashboard() {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold text-gray-900">
-        Welcome, {coachProfile?.name ?? 'Coach'}
-      </h1>
-      <p className="mt-1 text-sm text-gray-600">
-        {DAYS[new Date().getDay()]}, {formatDate(new Date())}
-      </p>
+      <PageHeader
+        title={`Welcome, ${coachProfile?.name ?? 'Coach'}`}
+        description={`${DAYS[new Date().getDay()]}, ${formatDate(new Date())}`}
+      />
 
       {/* Today's Sessions */}
       <div className="mt-8">
-        <h2 className="text-lg font-semibold text-gray-900">Today&apos;s Sessions</h2>
+        <h2 className="text-lg font-semibold text-foreground">Today&apos;s Sessions</h2>
 
         {todaySessions && todaySessions.length > 0 ? (
           <div className="mt-3 grid gap-3">
@@ -79,83 +93,95 @@ export default async function CoachDashboard() {
                 <Link
                   key={session.id}
                   href={`/coach/schedule/${session.id}`}
-                  className="block rounded-lg border border-gray-200 bg-white p-4 hover:border-orange-300 hover:bg-orange-50"
+                  className="block"
                 >
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="font-medium text-gray-900">{program?.name ?? session.session_type}</p>
-                      <p className="mt-0.5 text-sm text-gray-500">
-                        {session.start_time ? formatTime(session.start_time) : ''}
-                        {session.end_time ? ` - ${formatTime(session.end_time)}` : ''}
-                        {venue ? ` · ${venue.name}` : ''}
-                      </p>
-                    </div>
-                    <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium capitalize ${
-                      session.status === 'scheduled' ? 'bg-blue-100 text-blue-700' :
-                      session.status === 'completed' ? 'bg-green-100 text-green-700' :
-                      session.status === 'cancelled' ? 'bg-red-100 text-red-700' :
-                      'bg-gray-100 text-gray-700'
-                    }`}>
-                      {session.status}
-                    </span>
-                  </div>
+                  <Card className="transition-all hover:border-primary/30 hover:shadow-elevated">
+                    <CardContent className="flex items-center justify-between p-4">
+                      <div>
+                        <p className="font-semibold text-foreground">{program?.name ?? session.session_type}</p>
+                        <div className="mt-1 flex items-center gap-3 text-sm text-muted-foreground">
+                          <span className="flex items-center gap-1">
+                            <Clock className="size-3.5" />
+                            {session.start_time ? formatTime(session.start_time) : ''}
+                            {session.end_time ? ` - ${formatTime(session.end_time)}` : ''}
+                          </span>
+                          {venue && (
+                            <span className="flex items-center gap-1">
+                              <MapPin className="size-3.5" />
+                              {venue.name}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <StatusBadge status={session.status} />
+                    </CardContent>
+                  </Card>
                 </Link>
               )
             })}
           </div>
         ) : (
-          <p className="mt-3 text-sm text-gray-500">No sessions scheduled for today.</p>
+          <div className="mt-3">
+            <EmptyState
+              icon={Calendar}
+              title="No sessions today"
+              description="No sessions scheduled for today."
+            />
+          </div>
         )}
       </div>
 
       {/* Upcoming Sessions */}
       <div className="mt-8">
         <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-gray-900">Upcoming Sessions</h2>
-          <Link
-            href="/coach/schedule"
-            className="text-sm font-medium text-orange-600 hover:text-orange-700"
-          >
-            View all
-          </Link>
+          <h2 className="text-lg font-semibold text-foreground">Upcoming Sessions</h2>
+          <Button asChild variant="link" size="sm">
+            <Link href="/coach/schedule">View all</Link>
+          </Button>
         </div>
 
         {upcomingSessions && upcomingSessions.length > 0 ? (
-          <div className="mt-3 overflow-hidden rounded-lg border border-gray-200 bg-white">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500">Date</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500">Program</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500">Time</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500">Venue</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-200">
+          <div className="mt-3 overflow-hidden rounded-lg border border-border bg-card shadow-card">
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-muted/50 hover:bg-muted/50">
+                  <TableHead>Date</TableHead>
+                  <TableHead>Program</TableHead>
+                  <TableHead>Time</TableHead>
+                  <TableHead>Venue</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
                 {upcomingSessions.map((session) => {
                   const program = session.programs as unknown as { name: string; level: string; type: string } | null
                   const venue = session.venues as unknown as { name: string } | null
                   return (
-                    <tr key={session.id} className="hover:bg-gray-50">
-                      <td className="px-4 py-3 text-sm text-gray-900">
-                        <Link href={`/coach/schedule/${session.id}`} className="hover:text-orange-600">
+                    <TableRow key={session.id}>
+                      <TableCell>
+                        <Link href={`/coach/schedule/${session.id}`} className="font-medium hover:text-primary transition-colors">
                           {formatDate(session.date)}
                         </Link>
-                      </td>
-                      <td className="px-4 py-3 text-sm text-gray-900">{program?.name ?? session.session_type}</td>
-                      <td className="px-4 py-3 text-sm text-gray-500">
+                      </TableCell>
+                      <TableCell>{program?.name ?? session.session_type}</TableCell>
+                      <TableCell className="text-muted-foreground">
                         {session.start_time ? formatTime(session.start_time) : '-'}
                         {session.end_time ? ` - ${formatTime(session.end_time)}` : ''}
-                      </td>
-                      <td className="px-4 py-3 text-sm text-gray-500">{venue?.name ?? '-'}</td>
-                    </tr>
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">{venue?.name ?? '-'}</TableCell>
+                    </TableRow>
                   )
                 })}
-              </tbody>
-            </table>
+              </TableBody>
+            </Table>
           </div>
         ) : (
-          <p className="mt-3 text-sm text-gray-500">No upcoming sessions.</p>
+          <div className="mt-3">
+            <EmptyState
+              icon={Calendar}
+              title="No upcoming sessions"
+              description="No sessions scheduled."
+            />
+          </div>
         )}
       </div>
     </div>

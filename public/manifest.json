@@ -4,8 +4,8 @@
   "description": "Sunrise Tennis - coaching, bookings, and team management",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#ffffff",
-  "theme_color": "#f97316",
+  "background_color": "#FFFBF7",
+  "theme_color": "#2B5EA7",
   "orientation": "portrait-primary",
   "icons": [
     {
