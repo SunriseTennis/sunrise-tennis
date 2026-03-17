@@ -1,3 +1,5 @@
+'use client'
+
 import { NavTabs } from '@/components/nav-tabs'
 import {
   LayoutDashboard,
