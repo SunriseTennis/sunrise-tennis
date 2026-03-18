@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { SignoutButton } from '@/components/signout-button'
@@ -13,8 +13,13 @@ export function DashboardHeader() {
   const [isAdmin, setIsAdmin] = useState(false)
   const [homeHref, setHomeHref] = useState('/dashboard')
   const [singleRole, setSingleRole] = useState<string | null>(null)
+  const loaded = useRef(false)
 
   useEffect(() => {
+    // Only load once — this component persists across navigations in the layout
+    if (loaded.current) return
+    loaded.current = true
+
     const supabase = createClient()
 
     async function loadUser() {

@@ -23,12 +23,24 @@ export async function updateSession(request: NextRequest) {
     }
   )
 
-  // getUser() is required here to refresh the session token.
-  // This is the ONLY place in the app that should call getUser().
-  // All other code uses getSessionUser() which reads from the cookie (no network call).
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  // Performance optimisation: only call getUser() (network) when the JWT
+  // is within 5 minutes of expiry. Otherwise read from the session cookie
+  // (local, 0ms). Middleware still refreshes the token when needed.
+  const { data: { session } } = await supabase.auth.getSession()
+
+  let user = session?.user ?? null
+
+  if (session) {
+    const expiresAt = session.expires_at ?? 0
+    const fiveMinutes = 5 * 60
+    const needsRefresh = expiresAt - Math.floor(Date.now() / 1000) < fiveMinutes
+
+    if (needsRefresh) {
+      // Session close to expiry — verify and refresh via network call
+      const { data: { user: freshUser } } = await supabase.auth.getUser()
+      user = freshUser
+    }
+  }
 
   const { pathname } = request.nextUrl
 
