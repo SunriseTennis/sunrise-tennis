@@ -44,7 +44,7 @@ export default async function ParentDashboard() {
     supabase.from('family_balance').select('balance_cents').eq('family_id', familyId).single(),
     supabase
       .from('program_roster')
-      .select('id, status, players!inner(id, first_name, gender), programs:program_id(id, name, type, level, day_of_week, start_time, end_time, status)')
+      .select('id, status, players!inner(id, first_name), programs:program_id(id, name, type, level, day_of_week, start_time, end_time, status)')
       .eq('status', 'enrolled')
       .in('player_id', (await supabase.from('players').select('id').eq('family_id', familyId)).data?.map(p => p.id) ?? []),
   ])
@@ -148,11 +148,12 @@ export default async function ParentDashboard() {
                   id: string; name: string; type: string; level: string;
                   day_of_week: number | null; start_time: string | null; end_time: string | null; status: string
                 } | null
-                const player = enrollment.players as unknown as { id: string; first_name: string; gender: string | null } | null
+                const enrolledPlayer = enrollment.players as unknown as { id: string; first_name: string } | null
+                const fullPlayer = players?.find(p => p.id === enrolledPlayer?.id)
                 return {
                   id: enrollment.id,
-                  playerName: player?.first_name ?? '',
-                  playerGender: player?.gender ?? null,
+                  playerName: enrolledPlayer?.first_name ?? '',
+                  playerGender: fullPlayer?.gender ?? null,
                   programId: program?.id ?? '',
                   programName: program?.name ?? '',
                   programType: program?.type ?? '',

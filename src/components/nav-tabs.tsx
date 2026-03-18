@@ -31,7 +31,7 @@ export function NavTabs({ items }: NavTabsProps) {
             className={cn(
               'flex items-center gap-2 whitespace-nowrap rounded-lg px-4 py-2 text-sm font-medium transition-all',
               isActive
-                ? 'bg-[#B07E9B] text-white shadow-sm'
+                ? 'bg-primary text-white shadow-sm'
                 : 'text-slate-blue hover:bg-[#B07E9B]/15 hover:text-foreground'
             )}
           >
