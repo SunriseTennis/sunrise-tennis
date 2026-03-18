@@ -5,12 +5,22 @@ import { WeeklyCalendar, type CalendarEvent } from '@/components/weekly-calendar
 import { Users, Layers } from 'lucide-react'
 
 // Brand palette colors for players (from the sunrise gradient)
+// Used by both player cards and calendar — keep in sync
 const PLAYER_PALETTE = [
   'bg-[#2B5EA7] border-[#1F4E97] text-white',       // blue
   'bg-[#E87450] border-[#D06440] text-white',        // coral/orange
   'bg-[#F5B041] border-[#E5A031] text-deep-navy',    // gold
   'bg-[#6480A4] border-[#547094] text-white',         // slate blue
   'bg-[#8B78B0] border-[#7B68A0] text-white',         // purple
+]
+
+// Gradient versions for player cards (richer look at larger size)
+export const PLAYER_CARD_STYLES = [
+  'bg-gradient-to-br from-[#2B5EA7] to-[#4A7EC7] border-[#1F4E97] text-white',
+  'bg-gradient-to-br from-[#E87450] to-[#F08A6A] border-[#D06440] text-white',
+  'bg-gradient-to-br from-[#F5B041] to-[#F7C56A] border-[#E5A031] text-deep-navy',
+  'bg-gradient-to-br from-[#6480A4] to-[#7A96BA] border-[#547094] text-white',
+  'bg-gradient-to-br from-[#8B78B0] to-[#A08EC0] border-[#7B68A0] text-white',
 ]
 
 // Program type colors
@@ -25,7 +35,6 @@ const TYPE_COLORS: Record<string, string> = {
 
 const DAY_PREFIXES = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
 
-/** Strip day prefix from program name (e.g. "Mon Red Ball" → "Red Ball") and append type */
 function formatCalendarTitle(name: string, type: string): string {
   const lower = name.toLowerCase()
   for (const prefix of DAY_PREFIXES) {
@@ -52,13 +61,18 @@ type Enrollment = {
 
 type ColorMode = 'player' | 'type'
 
-export function EnrolledCalendar({ enrollments }: { enrollments: Enrollment[] }) {
+export function EnrolledCalendar({
+  enrollments,
+  playerOrder,
+}: {
+  enrollments: Enrollment[]
+  playerOrder: string[]
+}) {
   const [colorMode, setColorMode] = useState<ColorMode>('player')
 
-  // Build player → color index map (stable ordering)
-  const uniquePlayers = [...new Set(enrollments.map(e => e.playerName).filter(Boolean))]
+  // Use the canonical player order (from sorted players array) for consistent colors
   const playerColorMap = new Map<string, string>()
-  uniquePlayers.forEach((name, i) => {
+  playerOrder.forEach((name, i) => {
     playerColorMap.set(name, PLAYER_PALETTE[i % PLAYER_PALETTE.length])
   })
 

@@ -5,7 +5,7 @@ import { formatCurrency } from '@/lib/utils/currency'
 import { StatusBadge } from '@/components/status-badge'
 import { EmptyState } from '@/components/empty-state'
 import { Users, GraduationCap, ChevronRight } from 'lucide-react'
-import { EnrolledCalendar } from './enrolled-calendar'
+import { EnrolledCalendar, PLAYER_CARD_STYLES } from './enrolled-calendar'
 
 export default async function ParentDashboard() {
   const supabase = await createClient()
@@ -91,15 +91,7 @@ export default async function ParentDashboard() {
         {players && players.length > 0 ? (
           <div className="mt-3 grid gap-3 sm:grid-cols-2">
             {players.map((player, i) => {
-              // Player colors from brand gradient (blue, coral, gold, slate, purple)
-              const PLAYER_STYLES = [
-                'bg-gradient-to-br from-[#2B5EA7] to-[#4A7EC7] border-[#1F4E97] text-white',
-                'bg-gradient-to-br from-[#E87450] to-[#F08A6A] border-[#D06440] text-white',
-                'bg-gradient-to-br from-[#F5B041] to-[#F7C56A] border-[#E5A031] text-deep-navy',
-                'bg-gradient-to-br from-[#6480A4] to-[#7A96BA] border-[#547094] text-white',
-                'bg-gradient-to-br from-[#8B78B0] to-[#A08EC0] border-[#7B68A0] text-white',
-              ]
-              const style = PLAYER_STYLES[i % PLAYER_STYLES.length]
+              const style = PLAYER_CARD_STYLES[i % PLAYER_CARD_STYLES.length]
 
               return (
                 <Link
@@ -145,6 +137,7 @@ export default async function ParentDashboard() {
         {enrollments && enrollments.length > 0 ? (
           <div className="mt-3">
             <EnrolledCalendar
+              playerOrder={players?.map(p => p.first_name) ?? []}
               enrollments={enrollments.map((enrollment) => {
                 const program = enrollment.programs as unknown as {
                   id: string; name: string; type: string; level: string;
