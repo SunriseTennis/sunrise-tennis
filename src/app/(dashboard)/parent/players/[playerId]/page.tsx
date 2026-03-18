@@ -220,8 +220,8 @@ export default async function ParentPlayerDetailPage({ params }: { params: Promi
       {/* ── Profile Details ── */}
       <section className="animate-fade-up" style={{ animationDelay: '120ms' }}>
         <div className="overflow-hidden rounded-xl border border-border bg-card shadow-card">
-          <div className="flex items-center justify-between border-b border-border bg-muted/30 px-5 py-3">
-            <h2 className="text-sm font-semibold text-foreground">Player Details</h2>
+          <div className="flex items-center justify-between border-b border-[#2B5EA7]/20 bg-gradient-to-r from-[#2B5EA7]/15 to-[#6480A4]/10 px-5 py-3">
+            <h2 className="text-sm font-semibold text-[#2B5EA7]">Player Details</h2>
             <ParentPlayerEditForm player={{
               id: player.id,
               first_name: player.first_name,

@@ -90,10 +90,10 @@ export default async function ParentDashboard() {
             {players.map((player, i) => {
               // Gender-based card styling
               const genderStyle = player.gender === 'female'
-                ? 'bg-[#B07E9B]/15 border-[#B07E9B]/25 hover:border-[#B07E9B]/50'
+                ? 'bg-[#B07E9B]/25 border-[#B07E9B]/40 hover:border-[#B07E9B]/60'
                 : player.gender === 'non_binary'
-                ? 'bg-[#8B78B0]/15 border-[#8B78B0]/25 hover:border-[#8B78B0]/50'
-                : 'bg-[#2B5EA7]/12 border-[#2B5EA7]/20 hover:border-[#2B5EA7]/40' // male or unset defaults to blue
+                ? 'bg-[#8B78B0]/25 border-[#8B78B0]/40 hover:border-[#8B78B0]/60'
+                : 'bg-[#2B5EA7]/20 border-[#2B5EA7]/35 hover:border-[#2B5EA7]/55' // male or unset defaults to blue
               const accentBar = player.gender === 'female'
                 ? 'bg-gradient-to-b from-[#B07E9B] to-[#E87450]'
                 : player.gender === 'non_binary'

@@ -239,7 +239,7 @@ export function WeeklyCalendar({
                               {formatTimeShort(event.startTime)} - {formatTimeShort(event.endTime)}
                             </p>
                           )}
-                          {height >= 48 && event.subtitle && (
+                          {event.subtitle && (
                             <p className="truncate text-[10px] font-semibold text-foreground/70 leading-tight">
                               {event.subtitle}
                             </p>
