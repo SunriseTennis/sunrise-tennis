@@ -14,19 +14,16 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { Users, Calendar, GraduationCap, ChevronRight, TrendingUp } from 'lucide-react'
+import { Users, Calendar, GraduationCap, ChevronRight } from 'lucide-react'
 import { EnrolledCalendar } from './enrolled-calendar'
 
-const BALL_COLORS: Record<string, { bg: string; border: string; ring: string; text: string; avatar: string }> = {
-  blue:   { bg: 'bg-ball-blue/8',   border: 'border-ball-blue/20',   ring: 'ring-ball-blue/30',   text: 'text-ball-blue',   avatar: 'bg-ball-blue' },
-  red:    { bg: 'bg-ball-red/8',    border: 'border-ball-red/20',    ring: 'ring-ball-red/30',    text: 'text-ball-red',    avatar: 'bg-ball-red' },
-  orange: { bg: 'bg-ball-orange/8', border: 'border-ball-orange/20', ring: 'ring-ball-orange/30', text: 'text-ball-orange', avatar: 'bg-ball-orange' },
-  green:  { bg: 'bg-ball-green/8',  border: 'border-ball-green/20',  ring: 'ring-ball-green/30',  text: 'text-ball-green',  avatar: 'bg-ball-green' },
-  yellow: { bg: 'bg-ball-yellow/8', border: 'border-ball-yellow/20', ring: 'ring-ball-yellow/30', text: 'text-ball-yellow', avatar: 'bg-ball-yellow' },
-}
-
-const BALL_INITIALS: Record<string, string> = {
-  blue: 'B', red: 'R', orange: 'O', green: 'G', yellow: 'Y',
+function formatLevel(ballColor: string | null, level: string | null): string {
+  if (!ballColor && !level) return '-'
+  const bc = ballColor?.toLowerCase()
+  if (bc && ['red', 'orange', 'green', 'yellow', 'blue'].includes(bc)) {
+    return `${bc.charAt(0).toUpperCase() + bc.slice(1)} Ball`
+  }
+  return level ?? '-'
 }
 
 export default async function ParentDashboard() {
@@ -132,22 +129,22 @@ export default async function ParentDashboard() {
         {players && players.length > 0 ? (
           <div className="mt-3 grid gap-3 sm:grid-cols-2">
             {players.map((player, i) => {
-              const colors = BALL_COLORS[player.ball_color?.toLowerCase() ?? ''] ?? BALL_COLORS.blue
               const initial = player.first_name?.[0]?.toUpperCase() ?? '?'
+              const levelText = formatLevel(player.ball_color, player.level)
 
               return (
                 <Link
                   key={player.id}
                   href={`/parent/players/${player.id}`}
-                  className={`group relative block overflow-hidden rounded-xl border ${colors.border} ${colors.bg} p-4 shadow-card transition-all hover:shadow-elevated hover:scale-[1.01]`}
+                  className="group relative block overflow-hidden rounded-xl border border-border bg-card p-4 shadow-card transition-all hover:shadow-elevated hover:scale-[1.01] hover:border-primary/30"
                   style={{ animationDelay: `${(i + 1) * 80}ms` }}
                 >
-                  {/* Color accent bar */}
-                  <div className={`absolute left-0 top-0 h-full w-1 ${colors.avatar}`} />
+                  {/* Primary accent bar */}
+                  <div className="absolute left-0 top-0 h-full w-1 bg-gradient-to-b from-primary to-secondary" />
 
                   <div className="flex items-center gap-3 pl-2">
                     {/* Avatar */}
-                    <div className={`flex size-10 shrink-0 items-center justify-center rounded-full ${colors.avatar} text-white font-bold text-sm shadow-sm`}>
+                    <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-primary to-primary/70 text-white font-bold text-sm shadow-sm">
                       {initial}
                     </div>
                     <div className="min-w-0 flex-1">
@@ -157,15 +154,7 @@ export default async function ParentDashboard() {
                         </p>
                         <StatusBadge status={player.status} />
                       </div>
-                      <div className="mt-1 flex items-center gap-2">
-                        {player.ball_color && <BallLevelBadge ballColor={player.ball_color} />}
-                      </div>
-                      {player.current_focus && (player.current_focus as string[]).length > 0 && (
-                        <div className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground">
-                          <TrendingUp className="size-3 shrink-0" />
-                          <span className="truncate">{(player.current_focus as string[]).join(', ')}</span>
-                        </div>
-                      )}
+                      <p className="mt-0.5 text-xs text-muted-foreground">{levelText}</p>
                     </div>
                     <ChevronRight className="size-4 shrink-0 text-muted-foreground/50 transition-transform group-hover:translate-x-0.5" />
                   </div>
@@ -185,8 +174,48 @@ export default async function ParentDashboard() {
         )}
       </section>
 
-      {/* ── Upcoming Sessions ── */}
+      {/* ── Weekly Schedule (before Upcoming Sessions) ── */}
       <section className="animate-fade-up" style={{ animationDelay: '160ms' }}>
+        <h2 className="text-lg font-semibold text-foreground">Weekly Schedule</h2>
+        <p className="mt-1 text-sm text-muted-foreground">Your enrolled sessions at a glance.</p>
+
+        {enrollments && enrollments.length > 0 ? (
+          <div className="mt-3">
+            <EnrolledCalendar
+              enrollments={enrollments.map((enrollment) => {
+                const program = enrollment.programs as unknown as {
+                  id: string; name: string; type: string; level: string;
+                  day_of_week: number | null; start_time: string | null; end_time: string | null; status: string
+                } | null
+                const player = enrollment.players as unknown as { id: string; first_name: string } | null
+                return {
+                  id: enrollment.id,
+                  playerName: player?.first_name ?? '',
+                  programId: program?.id ?? '',
+                  programName: program?.name ?? '',
+                  programType: program?.type ?? '',
+                  programLevel: program?.level ?? null,
+                  dayOfWeek: program?.day_of_week ?? null,
+                  startTime: program?.start_time ?? null,
+                  endTime: program?.end_time ?? null,
+                }
+              })}
+            />
+          </div>
+        ) : (
+          <div className="mt-3">
+            <EmptyState
+              icon={GraduationCap}
+              title="No enrolments"
+              description="No program enrolments yet."
+              compact
+            />
+          </div>
+        )}
+      </section>
+
+      {/* ── Upcoming Sessions ── */}
+      <section className="animate-fade-up" style={{ animationDelay: '240ms' }}>
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold text-foreground">Upcoming Sessions</h2>
           {upcomingSessions && upcomingSessions.length > 0 && (
@@ -231,46 +260,6 @@ export default async function ParentDashboard() {
               icon={Calendar}
               title="No upcoming sessions"
               description="No sessions scheduled yet."
-              compact
-            />
-          </div>
-        )}
-      </section>
-
-      {/* ── Weekly Schedule ── */}
-      <section className="animate-fade-up" style={{ animationDelay: '240ms' }}>
-        <h2 className="text-lg font-semibold text-foreground">Weekly Schedule</h2>
-        <p className="mt-1 text-sm text-muted-foreground">Your enrolled sessions at a glance.</p>
-
-        {enrollments && enrollments.length > 0 ? (
-          <div className="mt-3">
-            <EnrolledCalendar
-              enrollments={enrollments.map((enrollment) => {
-                const program = enrollment.programs as unknown as {
-                  id: string; name: string; type: string; level: string;
-                  day_of_week: number | null; start_time: string | null; end_time: string | null; status: string
-                } | null
-                const player = enrollment.players as unknown as { id: string; first_name: string } | null
-                return {
-                  id: enrollment.id,
-                  playerName: player?.first_name ?? '',
-                  programId: program?.id ?? '',
-                  programName: program?.name ?? '',
-                  programType: program?.type ?? '',
-                  programLevel: program?.level ?? null,
-                  dayOfWeek: program?.day_of_week ?? null,
-                  startTime: program?.start_time ?? null,
-                  endTime: program?.end_time ?? null,
-                }
-              })}
-            />
-          </div>
-        ) : (
-          <div className="mt-3">
-            <EmptyState
-              icon={GraduationCap}
-              title="No enrolments"
-              description="No program enrolments yet."
               compact
             />
           </div>

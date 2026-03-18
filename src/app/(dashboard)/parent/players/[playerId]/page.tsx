@@ -1,19 +1,56 @@
 import { redirect, notFound } from 'next/navigation'
+import Link from 'next/link'
 import { createClient, getSessionUser } from '@/lib/supabase/server'
 import { formatDate, formatTime } from '@/lib/utils/dates'
-import { PageHeader } from '@/components/page-header'
 import { StatusBadge } from '@/components/status-badge'
-import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { EmptyState } from '@/components/empty-state'
+import {
+  ChevronLeft,
+  Pencil,
+  Video,
+  BookOpen,
+  ImageIcon,
+  Heart,
+  Calendar,
+  ChevronRight,
+  GraduationCap,
+} from 'lucide-react'
 import { ParentPlayerEditForm } from './player-edit-form'
 
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+
+const LEVEL_ACCENTS: Record<string, { bar: string }> = {
+  red:    { bar: 'bg-ball-red' },
+  orange: { bar: 'bg-ball-orange' },
+  green:  { bar: 'bg-ball-green' },
+  yellow: { bar: 'bg-ball-yellow' },
+  blue:   { bar: 'bg-ball-blue' },
+}
+
+function formatLevel(ballColor: string | null, level: string | null): string {
+  if (!ballColor && !level) return '-'
+  const bc = ballColor?.toLowerCase()
+  if (bc && ['red', 'orange', 'green', 'yellow', 'blue'].includes(bc)) {
+    return `${bc.charAt(0).toUpperCase() + bc.slice(1)} Ball`
+  }
+  return level ?? '-'
+}
+
+function calculateAge(dob: string | null): number | null {
+  if (!dob) return null
+  const birth = new Date(dob)
+  const now = new Date()
+  let age = now.getFullYear() - birth.getFullYear()
+  const m = now.getMonth() - birth.getMonth()
+  if (m < 0 || (m === 0 && now.getDate() < birth.getDate())) age--
+  return age
+}
 
 export default async function ParentPlayerDetailPage({ params }: { params: Promise<{ playerId: string }> }) {
   const { playerId } = await params
   const supabase = await createClient()
 
-  // Verify parent owns this player via family_id
   const user = await getSessionUser()
   if (!user) redirect('/login')
 
@@ -27,7 +64,6 @@ export default async function ParentPlayerDetailPage({ params }: { params: Promi
   const familyId = userRole?.family_id
   if (!familyId) redirect('/parent')
 
-  // Fetch player (scoped to this family)
   const { data: player } = await supabase
     .from('players')
     .select('*')
@@ -37,7 +73,6 @@ export default async function ParentPlayerDetailPage({ params }: { params: Promi
 
   if (!player) notFound()
 
-  // Fetch enrolled programs and recent lesson notes in parallel
   const [{ data: enrollments }, { data: lessonNotes }] = await Promise.all([
     supabase
       .from('program_roster')
@@ -49,177 +84,257 @@ export default async function ParentPlayerDetailPage({ params }: { params: Promi
       .select('id, focus, notes, progress, next_plan, drills_used, video_url, created_at, sessions:session_id(date, programs:program_id(name))')
       .eq('player_id', playerId)
       .order('created_at', { ascending: false })
-      .limit(10),
+      .limit(5),
   ])
 
-  const currentFocus = player.current_focus as string[] | null
+  const age = calculateAge(player.dob)
+  const levelText = formatLevel(player.ball_color, player.level)
+  const initial = player.first_name?.[0]?.toUpperCase() ?? '?'
 
   return (
-    <div className="max-w-3xl">
-      <PageHeader
-        title={`${player.first_name} ${player.last_name}`}
-        breadcrumbs={[{ label: 'Overview', href: '/parent' }]}
-        action={<StatusBadge status={player.status ?? 'active'} />}
-      />
+    <div className="max-w-3xl space-y-5">
+      {/* ── Hero Header ── */}
+      <div className="animate-fade-up relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#2B5EA7] via-[#6480A4] to-[#E87450] p-5 text-white shadow-elevated">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.15),transparent_60%)]" />
 
-      <div className="mt-6 space-y-8">
-        {/* Edit Player Details */}
-        <ParentPlayerEditForm player={{
-          id: player.id,
-          first_name: player.first_name,
-          last_name: player.last_name,
-          dob: player.dob,
-          medical_notes: player.medical_notes,
-          media_consent: player.media_consent,
-        }} />
+        {/* Back button */}
+        <Link
+          href="/parent"
+          className="relative mb-3 inline-flex items-center gap-1 rounded-full bg-white/15 px-2.5 py-1 text-xs font-medium text-white/90 backdrop-blur-sm transition-colors hover:bg-white/25"
+        >
+          <ChevronLeft className="size-3" />
+          Overview
+        </Link>
 
-        {/* Player Profile */}
-        <Card>
-          <CardContent className="pt-6">
-            <h2 className="text-lg font-semibold text-foreground">Player Profile</h2>
-            <dl className="mt-4 grid gap-3 sm:grid-cols-2">
-              <div>
-                <dt className="text-xs font-medium text-muted-foreground">Ball Colour</dt>
-                <dd className="text-sm capitalize text-foreground">{player.ball_color ?? '-'}</dd>
+        <div className="relative flex items-center gap-4">
+          {/* Avatar */}
+          <div className="flex size-14 shrink-0 items-center justify-center rounded-full bg-white/20 text-xl font-bold text-white shadow-sm backdrop-blur-sm">
+            {initial}
+          </div>
+          <div className="min-w-0 flex-1">
+            <h1 className="text-xl font-bold truncate">{player.first_name} {player.last_name}</h1>
+            <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-white/80">
+              <span>{levelText}</span>
+              {age !== null && (
+                <>
+                  <span className="text-white/40">·</span>
+                  <span>{age} years old</span>
+                </>
+              )}
+            </div>
+          </div>
+          <StatusBadge status={player.status ?? 'active'} className="bg-white/15 border-white/20 text-white" />
+        </div>
+      </div>
+
+      {/* ── Quick Actions ── */}
+      <section className="animate-fade-up" style={{ animationDelay: '80ms' }}>
+        <div className="grid grid-cols-3 gap-2">
+          <Link
+            href="#lesson-notes"
+            className="flex flex-col items-center gap-1.5 rounded-xl border border-border bg-card p-3 shadow-card transition-all hover:shadow-elevated hover:scale-[1.02]"
+          >
+            <div className="flex size-9 items-center justify-center rounded-lg bg-primary/10">
+              <BookOpen className="size-4.5 text-primary" />
+            </div>
+            <span className="text-[11px] font-medium text-muted-foreground">Lesson Notes</span>
+          </Link>
+          <Link
+            href="#lesson-notes"
+            className="flex flex-col items-center gap-1.5 rounded-xl border border-border bg-card p-3 shadow-card transition-all hover:shadow-elevated hover:scale-[1.02]"
+          >
+            <div className="flex size-9 items-center justify-center rounded-lg bg-secondary/10">
+              <Video className="size-4.5 text-secondary" />
+            </div>
+            <span className="text-[11px] font-medium text-muted-foreground">Video Analysis</span>
+          </Link>
+          <Link
+            href="#lesson-notes"
+            className="flex flex-col items-center gap-1.5 rounded-xl border border-border bg-card p-3 shadow-card transition-all hover:shadow-elevated hover:scale-[1.02]"
+          >
+            <div className="flex size-9 items-center justify-center rounded-lg bg-accent/10">
+              <ImageIcon className="size-4.5 text-accent-foreground" />
+            </div>
+            <span className="text-[11px] font-medium text-muted-foreground">Gallery</span>
+          </Link>
+        </div>
+      </section>
+
+      {/* ── Profile Details ── */}
+      <section className="animate-fade-up" style={{ animationDelay: '120ms' }}>
+        <div className="overflow-hidden rounded-xl border border-border bg-card shadow-card">
+          <div className="flex items-center justify-between border-b border-border bg-muted/30 px-5 py-3">
+            <h2 className="text-sm font-semibold text-foreground">Player Details</h2>
+            <ParentPlayerEditForm player={{
+              id: player.id,
+              first_name: player.first_name,
+              last_name: player.last_name,
+              dob: player.dob,
+              medical_notes: player.medical_notes,
+              media_consent: player.media_consent,
+            }} />
+          </div>
+          <div className="divide-y divide-border">
+            <div className="flex items-center justify-between px-5 py-3">
+              <span className="text-xs font-medium text-muted-foreground">Level</span>
+              <span className="text-sm font-medium text-foreground">{levelText}</span>
+            </div>
+            {player.dob && (
+              <div className="flex items-center justify-between px-5 py-3">
+                <span className="text-xs font-medium text-muted-foreground">Date of Birth</span>
+                <span className="text-sm text-foreground">{formatDate(player.dob)}</span>
               </div>
-              <div>
-                <dt className="text-xs font-medium text-muted-foreground">Level</dt>
-                <dd className="text-sm capitalize text-foreground">{player.level ?? '-'}</dd>
+            )}
+            <div className="flex items-center justify-between px-5 py-3">
+              <span className="text-xs font-medium text-muted-foreground">Media Consent</span>
+              <span className="text-sm text-foreground">{player.media_consent ? 'Allowed' : 'Not allowed'}</span>
+            </div>
+            {/* Medical info */}
+            <div className="px-5 py-3">
+              <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                <Heart className="size-3" />
+                Medical Notes
               </div>
-              {player.dob && (
-                <div>
-                  <dt className="text-xs font-medium text-muted-foreground">Date of Birth</dt>
-                  <dd className="text-sm text-foreground">{formatDate(player.dob)}</dd>
-                </div>
-              )}
-              {currentFocus && currentFocus.length > 0 && (
-                <div className="sm:col-span-2">
-                  <dt className="text-xs font-medium text-muted-foreground">Current Focus Areas</dt>
-                  <dd className="mt-1 flex flex-wrap gap-1">
-                    {currentFocus.map((focus) => (
-                      <Badge key={focus} variant="secondary" className="capitalize">
-                        {focus}
-                      </Badge>
-                    ))}
-                  </dd>
-                </div>
-              )}
-              {player.short_term_goal && (
-                <div className="sm:col-span-2">
-                  <dt className="text-xs font-medium text-muted-foreground">Short-Term Goal</dt>
-                  <dd className="text-sm text-foreground">{player.short_term_goal}</dd>
-                </div>
-              )}
-              {player.long_term_goal && (
-                <div className="sm:col-span-2">
-                  <dt className="text-xs font-medium text-muted-foreground">Long-Term Goal</dt>
-                  <dd className="text-sm text-foreground">{player.long_term_goal}</dd>
-                </div>
-              )}
-            </dl>
-          </CardContent>
-        </Card>
+              <p className="mt-1 text-sm text-foreground">
+                {player.medical_notes || 'None recorded'}
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
 
-        {/* Enrolled Programs */}
-        <Card>
-          <CardContent className="pt-6">
-            <h2 className="text-lg font-semibold text-foreground">Enrolled Programs</h2>
+      {/* ── Enrolled Programs ── */}
+      <section className="animate-fade-up" style={{ animationDelay: '160ms' }}>
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-foreground">Enrolled Programs</h2>
+          {enrollments && enrollments.length > 0 && (
+            <span className="text-xs text-muted-foreground">{enrollments.length} program{enrollments.length !== 1 ? 's' : ''}</span>
+          )}
+        </div>
 
-            {enrollments && enrollments.length > 0 ? (
-              <div className="mt-4 space-y-3">
-                {enrollments.map((enrollment) => {
-                  const program = enrollment.programs as unknown as {
-                    id: string; name: string; type: string; level: string;
-                    day_of_week: number | null; start_time: string | null; end_time: string | null
-                  } | null
-                  if (!program) return null
-                  return (
-                    <div key={enrollment.id} className="rounded-lg border border-border p-4">
-                      <div className="flex items-center justify-between">
-                        <p className="font-medium text-foreground">{program.name}</p>
-                        <Badge variant="secondary" className="capitalize">
-                          {program.type}
-                        </Badge>
-                      </div>
-                      <p className="mt-1 text-sm text-muted-foreground">
+        {enrollments && enrollments.length > 0 ? (
+          <div className="mt-2.5 space-y-2.5">
+            {enrollments.map((enrollment) => {
+              const program = enrollment.programs as unknown as {
+                id: string; name: string; type: string; level: string;
+                day_of_week: number | null; start_time: string | null; end_time: string | null
+              } | null
+              if (!program) return null
+              const accent = LEVEL_ACCENTS[program.level ?? ''] ?? { bar: 'bg-primary' }
+              return (
+                <Link
+                  key={enrollment.id}
+                  href={`/parent/programs/${program.id}`}
+                  className="group relative block overflow-hidden rounded-xl border border-border bg-card p-4 shadow-card transition-all hover:shadow-elevated hover:scale-[1.01]"
+                >
+                  <div className={`absolute left-0 top-0 h-full w-1 ${accent.bar}`} />
+                  <div className="flex items-center justify-between pl-2">
+                    <div>
+                      <p className="font-medium text-foreground">{program.name}</p>
+                      <p className="mt-0.5 text-xs text-muted-foreground">
                         {program.day_of_week != null && DAYS[program.day_of_week]}
                         {program.start_time && ` · ${formatTime(program.start_time)}`}
-                        {program.end_time && ` - ${formatTime(program.end_time)}`}
+                        {program.end_time && ` – ${formatTime(program.end_time)}`}
                       </p>
-                      {program.level && (
-                        <p className="mt-1 text-xs capitalize text-muted-foreground/60">{program.level} level</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Badge variant="secondary" className="capitalize text-xs">{program.type}</Badge>
+                      <ChevronRight className="size-4 text-muted-foreground/40 transition-transform group-hover:translate-x-0.5" />
+                    </div>
+                  </div>
+                </Link>
+              )
+            })}
+          </div>
+        ) : (
+          <div className="mt-2.5">
+            <EmptyState
+              icon={GraduationCap}
+              title="Not enrolled in any programs"
+              description="Browse programs to enrol."
+              compact
+              action={
+                <Link href="/parent/programs" className="text-xs font-medium text-primary hover:text-primary/80">
+                  View programs
+                </Link>
+              }
+            />
+          </div>
+        )}
+      </section>
+
+      {/* ── Lesson Notes ── */}
+      <section id="lesson-notes" className="animate-fade-up" style={{ animationDelay: '200ms' }}>
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-foreground">Recent Lesson Notes</h2>
+        </div>
+
+        {lessonNotes && lessonNotes.length > 0 ? (
+          <div className="mt-2.5 space-y-2.5">
+            {lessonNotes.map((note) => {
+              const session = note.sessions as unknown as { date: string; programs: { name: string } | null } | null
+              const drills = note.drills_used as string[] | null
+              return (
+                <div key={note.id} className="relative overflow-hidden rounded-xl border border-border bg-card p-4 shadow-card">
+                  <div className="absolute left-0 top-0 h-full w-1 bg-primary/40" />
+                  <div className="pl-2">
+                    <div className="flex items-center gap-2 text-sm">
+                      <Calendar className="size-3.5 text-muted-foreground" />
+                      <span className="font-medium text-foreground">
+                        {session?.date ? formatDate(session.date) : 'Unknown date'}
+                      </span>
+                      {session?.programs?.name && (
+                        <span className="text-xs text-muted-foreground">· {session.programs.name}</span>
                       )}
                     </div>
-                  )
-                })}
-              </div>
-            ) : (
-              <p className="mt-4 text-sm text-muted-foreground">Not enrolled in any programs.</p>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Lesson Notes */}
-        <Card>
-          <CardContent className="pt-6">
-            <h2 className="text-lg font-semibold text-foreground">Recent Lesson Notes</h2>
-
-            {lessonNotes && lessonNotes.length > 0 ? (
-              <div className="mt-4 space-y-4">
-                {lessonNotes.map((note) => {
-                  const session = note.sessions as unknown as { date: string; programs: { name: string } | null } | null
-                  const drills = note.drills_used as string[] | null
-                  return (
-                    <div key={note.id} className="border-l-2 border-primary/40 pl-4">
-                      <div className="flex items-center gap-2">
-                        <p className="text-sm font-medium text-foreground">
-                          {session?.date ? formatDate(session.date) : 'Unknown date'}
-                        </p>
-                        {session?.programs?.name && (
-                          <span className="text-xs text-muted-foreground/60">· {session.programs.name}</span>
-                        )}
-                      </div>
-                      {note.focus && (
-                        <p className="mt-1 text-sm text-foreground">
-                          <span className="font-medium">Focus:</span> {note.focus}
-                        </p>
-                      )}
-                      {note.notes && (
-                        <p className="mt-1 text-sm text-muted-foreground">{note.notes}</p>
-                      )}
-                      {note.progress && (
-                        <p className="mt-1 text-sm text-muted-foreground">
-                          <span className="font-medium text-foreground">Progress:</span> {note.progress}
-                        </p>
-                      )}
-                      {note.next_plan && (
-                        <p className="mt-1 text-sm text-muted-foreground">
-                          <span className="font-medium text-foreground">Next plan:</span> {note.next_plan}
-                        </p>
-                      )}
-                      {drills && drills.length > 0 && (
-                        <p className="mt-1 text-xs text-muted-foreground/60">Drills: {drills.join(', ')}</p>
-                      )}
-                      {note.video_url && (
-                        <a
-                          href={note.video_url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="mt-1 inline-block text-xs text-primary hover:text-primary/80 transition-colors"
-                        >
-                          Watch video &rarr;
-                        </a>
-                      )}
-                    </div>
-                  )
-                })}
-              </div>
-            ) : (
-              <p className="mt-4 text-sm text-muted-foreground">No lesson notes yet.</p>
-            )}
-          </CardContent>
-        </Card>
-      </div>
+                    {note.focus && (
+                      <p className="mt-2 text-sm text-foreground">
+                        <span className="font-medium">Focus:</span> {note.focus}
+                      </p>
+                    )}
+                    {note.notes && (
+                      <p className="mt-1 text-sm text-muted-foreground">{note.notes}</p>
+                    )}
+                    {note.progress && (
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        <span className="font-medium text-foreground">Progress:</span> {note.progress}
+                      </p>
+                    )}
+                    {note.next_plan && (
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        <span className="font-medium text-foreground">Next plan:</span> {note.next_plan}
+                      </p>
+                    )}
+                    {drills && drills.length > 0 && (
+                      <p className="mt-1 text-xs text-muted-foreground/60">Drills: {drills.join(', ')}</p>
+                    )}
+                    {note.video_url && (
+                      <a
+                        href={note.video_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-primary hover:text-primary/80 transition-colors"
+                      >
+                        <Video className="size-3" />
+                        Watch video
+                      </a>
+                    )}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        ) : (
+          <div className="mt-2.5">
+            <EmptyState
+              icon={BookOpen}
+              title="No lesson notes yet"
+              description="Notes from your coach will appear here after sessions."
+              compact
+            />
+          </div>
+        )}
+      </section>
     </div>
   )
 }
