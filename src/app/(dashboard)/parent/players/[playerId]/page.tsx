@@ -33,12 +33,12 @@ function stripDayPrefix(name: string, type: string): string {
   return name
 }
 
-const LEVEL_ACCENTS: Record<string, { bar: string }> = {
-  red:    { bar: 'bg-ball-red' },
-  orange: { bar: 'bg-ball-orange' },
-  green:  { bar: 'bg-ball-green' },
-  yellow: { bar: 'bg-ball-yellow' },
-  blue:   { bar: 'bg-ball-blue' },
+const LEVEL_ACCENTS: Record<string, { bg: string; border: string; text: string }> = {
+  red:    { bg: 'bg-ball-red', border: 'border-ball-red/80', text: 'text-white' },
+  orange: { bg: 'bg-ball-orange', border: 'border-ball-orange/80', text: 'text-white' },
+  green:  { bg: 'bg-ball-green', border: 'border-ball-green/80', text: 'text-white' },
+  yellow: { bg: 'bg-ball-yellow', border: 'border-ball-yellow/80', text: 'text-deep-navy' },
+  blue:   { bg: 'bg-ball-blue', border: 'border-ball-blue/80', text: 'text-white' },
 }
 
 function formatLevel(ballColor: string | null, level: string | null): string {
@@ -240,7 +240,7 @@ export default async function ParentPlayerDetailPage({ params }: { params: Promi
             {player.gender && (
               <div className="flex items-center justify-between px-5 py-3">
                 <span className="text-xs font-medium text-muted-foreground">Gender</span>
-                <span className="text-sm text-foreground capitalize">{player.gender === 'non_binary' ? 'Non-Binary' : player.gender}</span>
+                <span className="text-sm text-foreground">{player.gender === 'non_binary' ? 'Non-Binary' : player.gender.charAt(0).toUpperCase() + player.gender.slice(1)}</span>
               </div>
             )}
             {player.dob && (
@@ -269,7 +269,10 @@ export default async function ParentPlayerDetailPage({ params }: { params: Promi
 
       {/* ── Enrolled Programs ── */}
       <section className="animate-fade-up" style={{ animationDelay: '160ms' }}>
-        <h2 className="text-sm font-semibold text-foreground">Enrolled Programs</h2>
+        <h2 className="text-sm font-semibold text-foreground flex items-center gap-2">
+          <span className="inline-block h-4 w-1 rounded-full bg-gradient-to-b from-primary to-[#6480A4]" />
+          Enrolled Programs
+        </h2>
 
         {enrollments && enrollments.length > 0 ? (
           <div className="mt-2.5 space-y-2.5">
@@ -279,26 +282,25 @@ export default async function ParentPlayerDetailPage({ params }: { params: Promi
                 day_of_week: number | null; start_time: string | null; end_time: string | null
               } | null
               if (!program) return null
-              const accent = LEVEL_ACCENTS[program.level ?? ''] ?? { bar: 'bg-primary' }
+              const accent = LEVEL_ACCENTS[program.level ?? ''] ?? { bg: 'bg-primary', border: 'border-primary/80', text: 'text-white' }
               return (
                 <Link
                   key={enrollment.id}
                   href={`/parent/programs/${program.id}`}
-                  className="group relative block overflow-hidden rounded-xl border border-border bg-card p-4 shadow-card transition-all hover:shadow-elevated hover:scale-[1.01]"
+                  className={`group relative block overflow-hidden rounded-xl border p-4 shadow-card transition-all hover:shadow-elevated hover:scale-[1.01] hover:brightness-110 ${accent.bg} ${accent.border} ${accent.text}`}
                 >
-                  <div className={`absolute left-0 top-0 h-full w-1 ${accent.bar}`} />
-                  <div className="flex items-center justify-between pl-2">
+                  <div className="flex items-center justify-between">
                     <div>
-                      <p className="font-medium text-foreground">{stripDayPrefix(program.name, program.type)}</p>
-                      <p className="mt-0.5 text-xs text-muted-foreground">
+                      <p className="font-medium">{stripDayPrefix(program.name, program.type)}</p>
+                      <p className="mt-0.5 text-xs opacity-80">
                         {program.day_of_week != null && DAYS[program.day_of_week]}
                         {program.start_time && ` · ${formatTime(program.start_time)}`}
                         {program.end_time && ` – ${formatTime(program.end_time)}`}
                       </p>
                     </div>
                     <div className="flex items-center gap-2">
-                      <Badge className="capitalize text-xs bg-primary text-white border-primary">{program.type}</Badge>
-                      <ChevronRight className="size-4 text-muted-foreground/40 transition-transform group-hover:translate-x-0.5" />
+                      <Badge className="capitalize text-xs bg-white/20 border-white/30 text-current">{program.type}</Badge>
+                      <ChevronRight className="size-4 opacity-50 transition-transform group-hover:translate-x-0.5" />
                     </div>
                   </div>
                 </Link>
@@ -325,7 +327,10 @@ export default async function ParentPlayerDetailPage({ params }: { params: Promi
       {/* ── Lesson Notes ── */}
       <section id="lesson-notes" className="animate-fade-up" style={{ animationDelay: '200ms' }}>
         <div className="flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-foreground">Recent Lesson Notes</h2>
+          <h2 className="text-sm font-semibold text-foreground flex items-center gap-2">
+            <span className="inline-block h-4 w-1 rounded-full bg-gradient-to-b from-[#E87450] to-[#F5B041]" />
+            Recent Lesson Notes
+          </h2>
         </div>
 
         {lessonNotes && lessonNotes.length > 0 ? (

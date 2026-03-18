@@ -154,7 +154,8 @@ export function WeeklyCalendar({
               return (
                 <div key={day} className={cn(
                   'border-l border-border px-1 py-2 text-center',
-                  today && 'bg-primary/5'
+                  today && 'bg-primary/5',
+                  !today && i >= 5 && 'bg-warm-sand/15'
                 )}>
                   <span className={cn(
                     'text-[10px] font-medium uppercase tracking-wide',
@@ -194,7 +195,8 @@ export function WeeklyCalendar({
                   key={day}
                   className={cn(
                     'relative border-l border-border',
-                    today && 'bg-primary/[0.02]'
+                    today && 'bg-primary/[0.02]',
+                    !today && colIdx >= 5 && 'bg-warm-sand/10'
                   )}
                   style={{ height: visibleHours.length * hourHeight }}
                 >
@@ -227,20 +229,20 @@ export function WeeklyCalendar({
                           }}
                           className={cn(
                             'absolute left-0.5 right-0.5 overflow-hidden rounded-md border px-1.5 py-0.5 text-left transition-opacity hover:opacity-80',
-                            event.color ?? 'bg-primary/15 border-primary/30'
+                            event.color ?? 'bg-primary border-primary/80 text-white'
                           )}
                           style={{ top, height }}
                         >
-                          <p className="truncate text-[11px] font-medium text-foreground leading-tight">
+                          <p className="truncate text-[11px] font-medium leading-tight">
                             {event.title}
                           </p>
                           {height >= 36 && (
-                            <p className="truncate text-[10px] text-muted-foreground leading-tight">
+                            <p className="truncate text-[10px] opacity-75 leading-tight">
                               {formatTimeShort(event.startTime)} - {formatTimeShort(event.endTime)}
                             </p>
                           )}
                           {event.subtitle && (
-                            <p className="truncate text-[10px] font-semibold text-foreground/70 leading-tight">
+                            <p className="truncate text-[10px] font-semibold opacity-85 leading-tight">
                               {event.subtitle}
                             </p>
                           )}

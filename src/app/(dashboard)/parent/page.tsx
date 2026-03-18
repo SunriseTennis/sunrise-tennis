@@ -83,42 +83,38 @@ export default async function ParentDashboard() {
 
       {/* ── Players ── */}
       <section className="animate-fade-up" style={{ animationDelay: '80ms' }}>
-        <h2 className="text-lg font-semibold text-foreground">Your Players</h2>
+        <h2 className="text-lg font-semibold text-foreground flex items-center gap-2">
+          <span className="inline-block h-5 w-1 rounded-full bg-gradient-to-b from-primary to-[#6480A4]" />
+          Your Players
+        </h2>
 
         {players && players.length > 0 ? (
           <div className="mt-3 grid gap-3 sm:grid-cols-2">
             {players.map((player, i) => {
-              // Gender-based card styling
+              // Gender-based card styling — full saturation
               const genderStyle = player.gender === 'female'
-                ? 'bg-[#B07E9B]/25 border-[#B07E9B]/40 hover:border-[#B07E9B]/60'
+                ? 'bg-gradient-to-br from-[#B07E9B] to-[#C48EAB] border-[#9A6E8B]'
                 : player.gender === 'non_binary'
-                ? 'bg-[#8B78B0]/25 border-[#8B78B0]/40 hover:border-[#8B78B0]/60'
-                : 'bg-[#2B5EA7]/20 border-[#2B5EA7]/35 hover:border-[#2B5EA7]/55' // male or unset defaults to blue
-              const accentBar = player.gender === 'female'
-                ? 'bg-gradient-to-b from-[#B07E9B] to-[#E87450]'
-                : player.gender === 'non_binary'
-                ? 'bg-gradient-to-b from-[#8B78B0] to-[#B07E9B]'
-                : 'bg-gradient-to-b from-primary to-[#6480A4]'
+                ? 'bg-gradient-to-br from-[#8B78B0] to-[#9B88C0] border-[#7B68A0]'
+                : 'bg-gradient-to-br from-[#2B5EA7] to-[#4A7EC7] border-[#1F4E97]'
 
               return (
                 <Link
                   key={player.id}
                   href={`/parent/players/${player.id}`}
-                  className={`group relative block overflow-hidden rounded-xl p-4 shadow-card transition-all hover:shadow-elevated hover:scale-[1.01] ${genderStyle}`}
+                  className={`group relative block overflow-hidden rounded-xl p-4 shadow-card transition-all hover:shadow-elevated hover:scale-[1.01] hover:brightness-110 ${genderStyle}`}
                   style={{ animationDelay: `${(i + 1) * 80}ms` }}
                 >
-                  <div className={`absolute left-0 top-0 h-full w-1 ${accentBar}`} />
-
-                  <div className="flex items-center gap-3 pl-2">
+                  <div className="flex items-center gap-3">
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center justify-between">
-                        <p className="font-semibold text-foreground truncate">
+                        <p className="font-semibold text-white truncate">
                           {player.first_name} {player.last_name}
                         </p>
-                        <StatusBadge status={player.status} />
+                        <StatusBadge status={player.status} className="bg-white/20 border-white/30 text-white" />
                       </div>
                     </div>
-                    <ChevronRight className="size-4 shrink-0 text-muted-foreground/50 transition-transform group-hover:translate-x-0.5" />
+                    <ChevronRight className="size-4 shrink-0 text-white/60 transition-transform group-hover:translate-x-0.5" />
                   </div>
                 </Link>
               )
@@ -138,7 +134,10 @@ export default async function ParentDashboard() {
 
       {/* ── Weekly Schedule (before Upcoming Sessions) ── */}
       <section className="animate-fade-up" style={{ animationDelay: '160ms' }}>
-        <h2 className="text-lg font-semibold text-foreground">Weekly Schedule</h2>
+        <h2 className="text-lg font-semibold text-foreground flex items-center gap-2">
+          <span className="inline-block h-5 w-1 rounded-full bg-gradient-to-b from-[#E87450] to-[#F5B041]" />
+          Weekly Schedule
+        </h2>
 
         {enrollments && enrollments.length > 0 ? (
           <div className="mt-3">

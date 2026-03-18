@@ -72,7 +72,7 @@ export function DashboardHeader() {
           <SignoutButton />
         </div>
       </div>
-      <div className="gradient-stripe h-1" />
+      <div className="gradient-stripe h-[3px]" />
     </header>
   )
 }

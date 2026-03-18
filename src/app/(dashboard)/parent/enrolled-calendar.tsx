@@ -3,9 +3,9 @@
 import { WeeklyCalendar, type CalendarEvent } from '@/components/weekly-calendar'
 
 const GENDER_COLORS: Record<string, string> = {
-  female: 'bg-[#B07E9B]/35 border-[#B07E9B]/50',
-  non_binary: 'bg-[#8B78B0]/35 border-[#8B78B0]/50',
-  male: 'bg-[#2B5EA7]/30 border-[#2B5EA7]/45',
+  female: 'bg-[#B07E9B] border-[#9A6E8B] text-white',
+  non_binary: 'bg-[#8B78B0] border-[#7B68A0] text-white',
+  male: 'bg-[#2B5EA7] border-[#1F4E97] text-white',
 }
 
 const DAY_PREFIXES = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
