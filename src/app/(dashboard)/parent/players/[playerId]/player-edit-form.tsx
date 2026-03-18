@@ -41,7 +41,7 @@ export function ParentPlayerEditForm({
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setOpen(false)} />
 
       {/* Modal */}
-      <div className="relative w-full max-w-lg rounded-t-2xl sm:rounded-2xl border border-border bg-card p-6 shadow-elevated animate-slide-up">
+      <div className="relative w-full max-w-lg max-h-[85vh] overflow-y-auto rounded-t-2xl sm:rounded-2xl border border-border bg-card p-6 shadow-elevated animate-slide-up">
         <div className="flex items-center justify-between mb-5">
           <h2 className="text-lg font-semibold text-foreground">Edit Player Details</h2>
           <button

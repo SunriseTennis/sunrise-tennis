@@ -11,11 +11,11 @@
 :root {
   --radius: 0.5rem;
 
-  /* shadcn semantic slots (HSL) — mapped in @theme below */
-  --background: oklch(0.99 0.005 70);
+  /* shadcn semantic slots — mapped in @theme below */
+  --background: oklch(0.985 0.012 78);
   --foreground: oklch(0.20 0.03 250);
 
-  --card: oklch(0.97 0.01 70);
+  --card: oklch(0.97 0.025 78);
   --card-foreground: oklch(0.20 0.03 250);
 
   --popover: oklch(1.00 0 0);
@@ -27,7 +27,7 @@
   --secondary: oklch(0.63 0.13 30);
   --secondary-foreground: oklch(1.00 0 0);
 
-  --muted: oklch(0.95 0.005 70);
+  --muted: oklch(0.94 0.02 78);
   --muted-foreground: oklch(0.55 0.02 250);
 
   --accent: oklch(0.68 0.14 75);
@@ -36,8 +36,8 @@
   --destructive: oklch(0.50 0.16 25);
   --destructive-foreground: oklch(1.00 0 0);
 
-  --border: oklch(0.86 0.02 70);
-  --input: oklch(0.86 0.02 70);
+  --border: oklch(0.86 0.025 78);
+  --input: oklch(0.86 0.025 78);
   --ring: oklch(0.45 0.10 250);
 
   --chart-1: oklch(0.45 0.10 250);

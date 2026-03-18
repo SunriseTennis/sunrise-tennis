@@ -42,14 +42,14 @@ export function DashboardHeader() {
   }, [])
 
   return (
-    <header className="sticky top-0 z-40 border-b border-border bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/80">
+    <header className="sticky top-0 z-40 border-b border-border/50 bg-gradient-to-r from-[#FFF6ED] via-[#FFEAD8]/60 to-[#FFF6ED] backdrop-blur supports-[backdrop-filter]:bg-[#FFF6ED]/90">
       <div className="mx-auto flex h-14 max-w-7xl items-center justify-between px-4">
         <div className="flex items-center gap-4">
           <Link
             href={homeHref}
-            className="flex items-center gap-2 text-lg font-bold text-foreground transition-colors hover:text-primary"
+            className="flex items-center gap-2 text-lg font-bold text-deep-navy transition-colors hover:text-primary"
           >
-            <Sun className="size-5 text-primary" />
+            <Sun className="size-5 text-secondary" />
             <span>Sunrise Tennis</span>
           </Link>
           {isAdmin && <RoleSwitcher />}

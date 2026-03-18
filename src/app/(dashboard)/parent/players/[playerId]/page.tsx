@@ -91,6 +91,16 @@ export default async function ParentPlayerDetailPage({ params }: { params: Promi
   const levelText = formatLevel(player.ball_color, player.level)
   const initial = player.first_name?.[0]?.toUpperCase() ?? '?'
 
+  // Extract latest content for preview cards
+  const latestNote = lessonNotes?.[0] ?? null
+  const latestNoteDate = latestNote
+    ? formatDate((latestNote.sessions as unknown as { date: string } | null)?.date ?? '')
+    : null
+  const latestVideoNote = lessonNotes?.find(n => n.video_url) ?? null
+  const latestVideoDate = latestVideoNote
+    ? formatDate((latestVideoNote.sessions as unknown as { date: string } | null)?.date ?? '')
+    : null
+
   return (
     <div className="max-w-3xl space-y-5">
       {/* ── Hero Header ── */}
@@ -127,35 +137,64 @@ export default async function ParentPlayerDetailPage({ params }: { params: Promi
         </div>
       </div>
 
-      {/* ── Quick Actions ── */}
+      {/* ── Content Previews ── */}
       <section className="animate-fade-up" style={{ animationDelay: '80ms' }}>
-        <div className="grid grid-cols-3 gap-2">
+        <div className="grid grid-cols-3 gap-2.5">
+          {/* Lesson Notes Preview */}
           <Link
             href="#lesson-notes"
-            className="flex flex-col items-center gap-1.5 rounded-xl border border-border bg-card p-3 shadow-card transition-all hover:shadow-elevated hover:scale-[1.02]"
+            className="group overflow-hidden rounded-xl border border-border bg-card shadow-card transition-all hover:shadow-elevated hover:scale-[1.02]"
           >
-            <div className="flex size-9 items-center justify-center rounded-lg bg-primary/10">
-              <BookOpen className="size-4.5 text-primary" />
+            <div className="flex aspect-[4/3] items-center justify-center bg-primary/5 p-2.5">
+              {latestNote?.focus || latestNote?.notes ? (
+                <p className="line-clamp-3 text-[11px] leading-relaxed text-foreground/80">{latestNote.focus || latestNote.notes}</p>
+              ) : (
+                <BookOpen className="size-8 text-primary/25" />
+              )}
             </div>
-            <span className="text-[11px] font-medium text-muted-foreground">Lesson Notes</span>
+            <div className="px-2.5 py-2">
+              <p className="text-[11px] font-semibold text-foreground">Lesson Notes</p>
+              <p className="text-[10px] text-muted-foreground">
+                {latestNoteDate ? `Updated ${latestNoteDate}` : 'No notes yet'}
+              </p>
+            </div>
           </Link>
+
+          {/* Video Analysis Preview */}
           <Link
             href="#lesson-notes"
-            className="flex flex-col items-center gap-1.5 rounded-xl border border-border bg-card p-3 shadow-card transition-all hover:shadow-elevated hover:scale-[1.02]"
+            className="group overflow-hidden rounded-xl border border-border bg-card shadow-card transition-all hover:shadow-elevated hover:scale-[1.02]"
           >
-            <div className="flex size-9 items-center justify-center rounded-lg bg-secondary/10">
-              <Video className="size-4.5 text-secondary" />
+            <div className="relative flex aspect-[4/3] items-center justify-center bg-secondary/5">
+              <Video className="size-8 text-secondary/25" />
+              {latestVideoNote && (
+                <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-secondary/10 to-transparent">
+                  <div className="flex size-8 items-center justify-center rounded-full bg-white/80 shadow-sm">
+                    <Video className="size-4 text-secondary" />
+                  </div>
+                </div>
+              )}
             </div>
-            <span className="text-[11px] font-medium text-muted-foreground">Video Analysis</span>
+            <div className="px-2.5 py-2">
+              <p className="text-[11px] font-semibold text-foreground">Video Analysis</p>
+              <p className="text-[10px] text-muted-foreground">
+                {latestVideoDate ? `Updated ${latestVideoDate}` : 'No videos yet'}
+              </p>
+            </div>
           </Link>
+
+          {/* Gallery Preview */}
           <Link
             href="#lesson-notes"
-            className="flex flex-col items-center gap-1.5 rounded-xl border border-border bg-card p-3 shadow-card transition-all hover:shadow-elevated hover:scale-[1.02]"
+            className="group overflow-hidden rounded-xl border border-border bg-card shadow-card transition-all hover:shadow-elevated hover:scale-[1.02]"
           >
-            <div className="flex size-9 items-center justify-center rounded-lg bg-accent/10">
-              <ImageIcon className="size-4.5 text-accent-foreground" />
+            <div className="flex aspect-[4/3] items-center justify-center bg-accent/5">
+              <ImageIcon className="size-8 text-accent/25" />
             </div>
-            <span className="text-[11px] font-medium text-muted-foreground">Gallery</span>
+            <div className="px-2.5 py-2">
+              <p className="text-[11px] font-semibold text-foreground">Gallery</p>
+              <p className="text-[10px] text-muted-foreground">No photos yet</p>
+            </div>
           </Link>
         </div>
       </section>
@@ -205,12 +244,7 @@ export default async function ParentPlayerDetailPage({ params }: { params: Promi
 
       {/* ── Enrolled Programs ── */}
       <section className="animate-fade-up" style={{ animationDelay: '160ms' }}>
-        <div className="flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-foreground">Enrolled Programs</h2>
-          {enrollments && enrollments.length > 0 && (
-            <span className="text-xs text-muted-foreground">{enrollments.length} program{enrollments.length !== 1 ? 's' : ''}</span>
-          )}
-        </div>
+        <h2 className="text-sm font-semibold text-foreground">Enrolled Programs</h2>
 
         {enrollments && enrollments.length > 0 ? (
           <div className="mt-2.5 space-y-2.5">
@@ -238,7 +272,7 @@ export default async function ParentPlayerDetailPage({ params }: { params: Promi
                       </p>
                     </div>
                     <div className="flex items-center gap-2">
-                      <Badge variant="secondary" className="capitalize text-xs">{program.type}</Badge>
+                      <Badge variant="outline" className="capitalize text-xs bg-primary/8 text-primary border-primary/20">{program.type}</Badge>
                       <ChevronRight className="size-4 text-muted-foreground/40 transition-transform group-hover:translate-x-0.5" />
                     </div>
                   </div>

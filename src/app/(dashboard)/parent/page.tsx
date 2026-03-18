@@ -17,15 +17,6 @@ import {
 import { Users, Calendar, GraduationCap, ChevronRight } from 'lucide-react'
 import { EnrolledCalendar } from './enrolled-calendar'
 
-function formatLevel(ballColor: string | null, level: string | null): string {
-  if (!ballColor && !level) return '-'
-  const bc = ballColor?.toLowerCase()
-  if (bc && ['red', 'orange', 'green', 'yellow', 'blue'].includes(bc)) {
-    return `${bc.charAt(0).toUpperCase() + bc.slice(1)} Ball`
-  }
-  return level ?? '-'
-}
-
 export default async function ParentDashboard() {
   const supabase = await createClient()
 
@@ -99,7 +90,6 @@ export default async function ParentDashboard() {
           <div>
             <p className="text-sm font-medium text-white/80">Welcome back</p>
             <h1 className="text-2xl font-bold">{firstName}</h1>
-            <p className="mt-0.5 text-sm text-white/70">{family?.family_name} family</p>
           </div>
           <div className="text-right">
             <p className="text-xs font-medium text-white/70">Balance</p>
@@ -121,18 +111,11 @@ export default async function ParentDashboard() {
 
       {/* ── Players ── */}
       <section className="animate-fade-up" style={{ animationDelay: '80ms' }}>
-        <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-foreground">Your Players</h2>
-          <span className="text-xs text-muted-foreground">{players?.length ?? 0} player{(players?.length ?? 0) !== 1 ? 's' : ''}</span>
-        </div>
+        <h2 className="text-lg font-semibold text-foreground">Your Players</h2>
 
         {players && players.length > 0 ? (
           <div className="mt-3 grid gap-3 sm:grid-cols-2">
-            {players.map((player, i) => {
-              const initial = player.first_name?.[0]?.toUpperCase() ?? '?'
-              const levelText = formatLevel(player.ball_color, player.level)
-
-              return (
+            {players.map((player, i) => (
                 <Link
                   key={player.id}
                   href={`/parent/players/${player.id}`}
@@ -143,10 +126,6 @@ export default async function ParentDashboard() {
                   <div className="absolute left-0 top-0 h-full w-1 bg-gradient-to-b from-primary to-secondary" />
 
                   <div className="flex items-center gap-3 pl-2">
-                    {/* Avatar */}
-                    <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-primary to-primary/70 text-white font-bold text-sm shadow-sm">
-                      {initial}
-                    </div>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center justify-between">
                         <p className="font-semibold text-foreground truncate">
@@ -154,13 +133,11 @@ export default async function ParentDashboard() {
                         </p>
                         <StatusBadge status={player.status} />
                       </div>
-                      <p className="mt-0.5 text-xs text-muted-foreground">{levelText}</p>
                     </div>
                     <ChevronRight className="size-4 shrink-0 text-muted-foreground/50 transition-transform group-hover:translate-x-0.5" />
                   </div>
                 </Link>
-              )
-            })}
+            ))}
           </div>
         ) : (
           <div className="mt-3">

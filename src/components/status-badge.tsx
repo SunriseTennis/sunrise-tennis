@@ -2,7 +2,7 @@ import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils/cn'
 
 const statusStyles: Record<string, string> = {
-  active: 'bg-success-light text-success border-success/20',
+  active: 'bg-primary/10 text-primary border-primary/20',
   enrolled: 'bg-success-light text-success border-success/20',
   received: 'bg-success-light text-success border-success/20',
   confirmed: 'bg-success-light text-success border-success/20',

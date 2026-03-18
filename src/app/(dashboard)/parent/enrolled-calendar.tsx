@@ -10,6 +10,21 @@ const LEVEL_COLORS: Record<string, string> = {
   competitive: 'bg-primary/15 border-primary/30',
 }
 
+const DAY_PREFIXES = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
+
+/** Strip day prefix from program name (e.g. "Mon Red Ball" → "Red Ball") and append type */
+function formatCalendarTitle(name: string, type: string): string {
+  const lower = name.toLowerCase()
+  for (const prefix of DAY_PREFIXES) {
+    if (lower.startsWith(prefix + ' ')) {
+      const stripped = name.slice(prefix.length + 1)
+      const suffix = type === 'group' ? ' Group' : type === 'squad' ? ' Squad' : ''
+      return stripped + suffix
+    }
+  }
+  return name
+}
+
 type Enrollment = {
   id: string
   playerName: string
@@ -27,7 +42,7 @@ export function EnrolledCalendar({ enrollments }: { enrollments: Enrollment[] })
     .filter(e => e.dayOfWeek != null && e.startTime && e.endTime)
     .map(e => ({
       id: e.id,
-      title: e.programName,
+      title: formatCalendarTitle(e.programName, e.programType),
       subtitle: e.playerName,
       dayOfWeek: e.dayOfWeek!,
       startTime: e.startTime!,
