@@ -1,11 +1,26 @@
 'use client'
 
+import { useState } from 'react'
 import { WeeklyCalendar, type CalendarEvent } from '@/components/weekly-calendar'
+import { Users, Layers } from 'lucide-react'
 
-const GENDER_COLORS: Record<string, string> = {
-  female: 'bg-[#B07E9B] border-[#9A6E8B] text-white',
-  non_binary: 'bg-[#8B78B0] border-[#7B68A0] text-white',
-  male: 'bg-[#2B5EA7] border-[#1F4E97] text-white',
+// Brand palette colors for players (from the sunrise gradient)
+const PLAYER_PALETTE = [
+  'bg-[#2B5EA7] border-[#1F4E97] text-white',       // blue
+  'bg-[#E87450] border-[#D06440] text-white',        // coral/orange
+  'bg-[#F5B041] border-[#E5A031] text-deep-navy',    // gold
+  'bg-[#6480A4] border-[#547094] text-white',         // slate blue
+  'bg-[#8B78B0] border-[#7B68A0] text-white',         // purple
+]
+
+// Program type colors
+const TYPE_COLORS: Record<string, string> = {
+  group: 'bg-[#2B5EA7] border-[#1F4E97] text-white',
+  squad: 'bg-[#6480A4] border-[#547094] text-white',
+  private: 'bg-[#E87450] border-[#D06440] text-white',
+  match: 'bg-[#F5B041] border-[#E5A031] text-deep-navy',
+  school: 'bg-[#8B78B0] border-[#7B68A0] text-white',
+  competition: 'bg-[#F7CD5D] border-[#E7BD4D] text-deep-navy',
 }
 
 const DAY_PREFIXES = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
@@ -26,7 +41,6 @@ function formatCalendarTitle(name: string, type: string): string {
 type Enrollment = {
   id: string
   playerName: string
-  playerGender: string | null
   programId: string
   programName: string
   programType: string
@@ -36,7 +50,18 @@ type Enrollment = {
   endTime: string | null
 }
 
+type ColorMode = 'player' | 'type'
+
 export function EnrolledCalendar({ enrollments }: { enrollments: Enrollment[] }) {
+  const [colorMode, setColorMode] = useState<ColorMode>('player')
+
+  // Build player → color index map (stable ordering)
+  const uniquePlayers = [...new Set(enrollments.map(e => e.playerName).filter(Boolean))]
+  const playerColorMap = new Map<string, string>()
+  uniquePlayers.forEach((name, i) => {
+    playerColorMap.set(name, PLAYER_PALETTE[i % PLAYER_PALETTE.length])
+  })
+
   // Group enrollments by program to merge player names into one event
   const grouped = new Map<string, Enrollment[]>()
   for (const e of enrollments.filter(e => e.dayOfWeek != null && e.startTime && e.endTime)) {
@@ -48,16 +73,22 @@ export function EnrolledCalendar({ enrollments }: { enrollments: Enrollment[] })
 
   const events: CalendarEvent[] = Array.from(grouped.values()).map(group => {
     const first = group[0]
-    const playerNames = group.map(e => e.playerName).filter(Boolean).join(', ')
+    const playerNames = group.map(e => e.playerName).filter(Boolean)
+    const color = colorMode === 'player'
+      ? (playerColorMap.get(playerNames[0] ?? '') ?? PLAYER_PALETTE[0])
+      : (TYPE_COLORS[first.programType] ?? TYPE_COLORS.group)
+
     return {
       id: first.id,
       title: formatCalendarTitle(first.programName, first.programType),
-      subtitle: playerNames,
+      subtitle: playerNames.join(', '),
       dayOfWeek: first.dayOfWeek!,
       startTime: first.startTime!,
       endTime: first.endTime!,
-      color: GENDER_COLORS[first.playerGender ?? ''] ?? GENDER_COLORS.male,
+      color,
       href: `/parent/programs/${first.programId}`,
+      programType: first.programType,
+      playerNames,
     }
   })
 
@@ -69,5 +100,35 @@ export function EnrolledCalendar({ enrollments }: { enrollments: Enrollment[] })
     )
   }
 
-  return <WeeklyCalendar events={events} />
+  return (
+    <div className="space-y-2">
+      {/* Color mode toggle */}
+      <div className="flex items-center justify-end gap-1">
+        <button
+          onClick={() => setColorMode('player')}
+          className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-all ${
+            colorMode === 'player'
+              ? 'bg-[#2B5EA7] text-white shadow-sm'
+              : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
+          }`}
+        >
+          <Users className="size-3" />
+          By player
+        </button>
+        <button
+          onClick={() => setColorMode('type')}
+          className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-all ${
+            colorMode === 'type'
+              ? 'bg-[#2B5EA7] text-white shadow-sm'
+              : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
+          }`}
+        >
+          <Layers className="size-3" />
+          By type
+        </button>
+      </div>
+
+      <WeeklyCalendar events={events} />
+    </div>
+  )
 }

@@ -1,14 +1,15 @@
 'use client'
 
 import { useState, useMemo } from 'react'
-import { ChevronLeft, ChevronRight } from 'lucide-react'
+import Link from 'next/link'
+import { ChevronLeft, ChevronRight, X, ExternalLink, Clock, Users, Tag } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
 
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
-const DAY_MAP: Record<number, number> = { 1: 0, 2: 1, 3: 2, 4: 3, 5: 4, 6: 5, 0: 6 } // DB day_of_week (0=Sun) -> column index (Mon-first)
+const DAY_MAP: Record<number, number> = { 1: 0, 2: 1, 3: 2, 4: 3, 5: 4, 6: 5, 0: 6 }
 
-const HOUR_START = 7 // 7am
-const HOUR_END = 20 // 8pm
+const HOUR_START = 7
+const HOUR_END = 20
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
@@ -16,11 +17,13 @@ export interface CalendarEvent {
   id: string
   title: string
   subtitle?: string
-  dayOfWeek: number // 0=Sunday, 1=Monday, etc (DB format)
-  startTime: string // HH:MM or HH:MM:SS
-  endTime: string // HH:MM or HH:MM:SS
-  color?: string // tailwind bg class e.g. 'bg-ball-red/20'
+  dayOfWeek: number
+  startTime: string
+  endTime: string
+  color?: string
   href?: string
+  programType?: string
+  playerNames?: string[]
 }
 
 function parseTime(time: string): number {
@@ -44,10 +47,9 @@ function formatTimeShort(time: string): string {
   return m > 0 ? `${h12}:${String(m).padStart(2, '0')}${ampm}` : `${h12}${ampm}`
 }
 
-/** Get Monday of the week containing the given date */
 function getMonday(date: Date): Date {
   const d = new Date(date)
-  const day = d.getDay() // 0=Sun
+  const day = d.getDay()
   const diff = day === 0 ? -6 : 1 - day
   d.setDate(d.getDate() + diff)
   d.setHours(0, 0, 0, 0)
@@ -87,7 +89,8 @@ export function WeeklyCalendar({
   onEventClick?: (event: CalendarEvent) => void
 }) {
   const [weekOffset, setWeekOffset] = useState(0)
-  const hourHeight = 60 // px per hour
+  const [expandedEvent, setExpandedEvent] = useState<CalendarEvent | null>(null)
+  const hourHeight = 60
 
   const monday = useMemo(() => {
     const m = getMonday(new Date())
@@ -98,7 +101,6 @@ export function WeeklyCalendar({
     DAYS.map((_, i) => addDays(monday, i)),
   [monday])
 
-  // Find actual time range used by events to avoid empty space
   const { minHour, maxHour } = useMemo(() => {
     if (events.length === 0) return { minHour: HOUR_START, maxHour: HOUR_END }
     let min = HOUR_END
@@ -114,8 +116,15 @@ export function WeeklyCalendar({
 
   const visibleHours = Array.from({ length: maxHour - minHour }, (_, i) => minHour + i)
 
+  function handleEventClick(event: CalendarEvent) {
+    setExpandedEvent(event)
+    onEventClick?.(event)
+  }
+
+  const expandedDay = expandedEvent ? DAYS[DAY_MAP[expandedEvent.dayOfWeek]] : null
+
   return (
-    <div className="overflow-hidden rounded-xl border border-border bg-card shadow-card">
+    <div className="relative overflow-hidden rounded-xl border border-border bg-card shadow-card">
       {/* Week navigation header */}
       <div className="flex items-center justify-between border-b border-border bg-gradient-to-r from-dawn-cream to-peach-mist/40 px-4 py-2.5">
         <button
@@ -217,18 +226,15 @@ export function WeeklyCalendar({
                       const endHour = parseTime(event.endTime)
                       const top = (startHour - minHour) * hourHeight
                       const height = Math.max((endHour - startHour) * hourHeight, 24)
+                      const isExpanded = expandedEvent?.id === event.id
 
                       return (
                         <button
                           key={event.id}
-                          onClick={() => {
-                            if (event.href) {
-                              window.location.href = event.href
-                            }
-                            onEventClick?.(event)
-                          }}
+                          onClick={() => handleEventClick(event)}
                           className={cn(
-                            'absolute left-0.5 right-0.5 overflow-hidden rounded-md border px-1.5 py-0.5 text-left transition-opacity hover:opacity-80',
+                            'absolute left-0.5 right-0.5 overflow-hidden rounded-md border px-1.5 py-0.5 text-left transition-all',
+                            isExpanded ? 'ring-2 ring-white ring-offset-2 ring-offset-background brightness-110 z-10' : 'hover:brightness-110',
                             event.color ?? 'bg-primary border-primary/80 text-white'
                           )}
                           style={{ top, height }}
@@ -255,6 +261,50 @@ export function WeeklyCalendar({
           </div>
         </div>
       </div>
+
+      {/* ── Expanded event detail panel ── */}
+      {expandedEvent && (
+        <div className="animate-fade-up border-t border-border bg-white p-4">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0 flex-1">
+              <h3 className="font-semibold text-foreground">{expandedEvent.title}</h3>
+              <div className="mt-2 space-y-1.5">
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Clock className="size-3.5 shrink-0" />
+                  <span>{expandedDay} · {formatTimeShort(expandedEvent.startTime)} – {formatTimeShort(expandedEvent.endTime)}</span>
+                </div>
+                {expandedEvent.playerNames && expandedEvent.playerNames.length > 0 && (
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <Users className="size-3.5 shrink-0" />
+                    <span>{expandedEvent.playerNames.join(', ')}</span>
+                  </div>
+                )}
+                {expandedEvent.programType && (
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <Tag className="size-3.5 shrink-0" />
+                    <span className="capitalize">{expandedEvent.programType}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+            <button
+              onClick={() => setExpandedEvent(null)}
+              className="flex size-7 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            >
+              <X className="size-4" />
+            </button>
+          </div>
+          {expandedEvent.href && (
+            <Link
+              href={expandedEvent.href}
+              className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-[#2B5EA7] px-4 py-2 text-sm font-medium text-white shadow-sm transition-all hover:brightness-110"
+            >
+              View program
+              <ExternalLink className="size-3.5" />
+            </Link>
+          )}
+        </div>
+      )}
     </div>
   )
 }

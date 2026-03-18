@@ -19,7 +19,7 @@ export function NavTabs({ items }: NavTabsProps) {
   const pathname = usePathname()
 
   return (
-    <nav className="mb-6 flex gap-1 overflow-x-auto rounded-xl bg-warm-sand/40 p-1.5 shadow-card">
+    <nav className="mb-6 flex gap-1 overflow-x-auto rounded-xl bg-red-200 p-1.5 shadow-card">
       {items.map((item) => {
         const isActive = pathname === item.href ||
           (item.href !== items[0]?.href && pathname.startsWith(item.href))

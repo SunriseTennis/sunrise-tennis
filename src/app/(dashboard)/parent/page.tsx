@@ -91,30 +91,33 @@ export default async function ParentDashboard() {
         {players && players.length > 0 ? (
           <div className="mt-3 grid gap-3 sm:grid-cols-2">
             {players.map((player, i) => {
-              // Gender-based card styling — full saturation
-              const genderStyle = player.gender === 'female'
-                ? 'bg-gradient-to-br from-[#B07E9B] to-[#C48EAB] border-[#9A6E8B]'
-                : player.gender === 'non_binary'
-                ? 'bg-gradient-to-br from-[#8B78B0] to-[#9B88C0] border-[#7B68A0]'
-                : 'bg-gradient-to-br from-[#2B5EA7] to-[#4A7EC7] border-[#1F4E97]'
+              // Player colors from brand gradient (blue, coral, gold, slate, purple)
+              const PLAYER_STYLES = [
+                'bg-gradient-to-br from-[#2B5EA7] to-[#4A7EC7] border-[#1F4E97] text-white',
+                'bg-gradient-to-br from-[#E87450] to-[#F08A6A] border-[#D06440] text-white',
+                'bg-gradient-to-br from-[#F5B041] to-[#F7C56A] border-[#E5A031] text-deep-navy',
+                'bg-gradient-to-br from-[#6480A4] to-[#7A96BA] border-[#547094] text-white',
+                'bg-gradient-to-br from-[#8B78B0] to-[#A08EC0] border-[#7B68A0] text-white',
+              ]
+              const style = PLAYER_STYLES[i % PLAYER_STYLES.length]
 
               return (
                 <Link
                   key={player.id}
                   href={`/parent/players/${player.id}`}
-                  className={`group relative block overflow-hidden rounded-xl p-4 shadow-card transition-all hover:shadow-elevated hover:scale-[1.01] hover:brightness-110 ${genderStyle}`}
+                  className={`group relative block overflow-hidden rounded-xl p-4 shadow-card transition-all hover:shadow-elevated hover:scale-[1.01] hover:brightness-110 ${style}`}
                   style={{ animationDelay: `${(i + 1) * 80}ms` }}
                 >
                   <div className="flex items-center gap-3">
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center justify-between">
-                        <p className="font-semibold text-white truncate">
+                        <p className="font-semibold truncate">
                           {player.first_name} {player.last_name}
                         </p>
                         <StatusBadge status={player.status} className="bg-white/20 border-white/30 text-white" />
                       </div>
                     </div>
-                    <ChevronRight className="size-4 shrink-0 text-white/60 transition-transform group-hover:translate-x-0.5" />
+                    <ChevronRight className="size-4 shrink-0 opacity-60 transition-transform group-hover:translate-x-0.5" />
                   </div>
                 </Link>
               )
@@ -148,11 +151,9 @@ export default async function ParentDashboard() {
                   day_of_week: number | null; start_time: string | null; end_time: string | null; status: string
                 } | null
                 const enrolledPlayer = enrollment.players as unknown as { id: string; first_name: string } | null
-                const fullPlayer = players?.find(p => p.id === enrolledPlayer?.id)
                 return {
                   id: enrollment.id,
                   playerName: enrolledPlayer?.first_name ?? '',
-                  playerGender: fullPlayer?.gender ?? null,
                   programId: program?.id ?? '',
                   programName: program?.name ?? '',
                   programType: program?.type ?? '',
