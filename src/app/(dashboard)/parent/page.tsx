@@ -7,13 +7,13 @@ import { EmptyState } from '@/components/empty-state'
 import { Users, GraduationCap, ChevronRight } from 'lucide-react'
 import { EnrolledCalendar } from './enrolled-calendar'
 
-// Player card styles — same palette order as PLAYER_PALETTE in enrolled-calendar.tsx
+// Player card styles — warm sunset gradients from the brand palette
 const PLAYER_CARD_STYLES = [
-  'bg-gradient-to-br from-[#2B5EA7] to-[#4A7EC7] border-[#1F4E97] text-white',
-  'bg-gradient-to-br from-[#E87450] to-[#F08A6A] border-[#D06440] text-white',
-  'bg-gradient-to-br from-[#F5B041] to-[#F7C56A] border-[#E5A031] text-deep-navy',
-  'bg-gradient-to-br from-[#6480A4] to-[#7A96BA] border-[#547094] text-white',
-  'bg-gradient-to-br from-[#8B78B0] to-[#A08EC0] border-[#7B68A0] text-white',
+  'bg-gradient-to-br from-[#E87450] via-[#F5B041] to-[#F7CD5D] border-[#D06440] text-white',
+  'bg-gradient-to-br from-[#B07E9B] via-[#E87450] to-[#F5B041] border-[#9A6E8B] text-white',
+  'bg-gradient-to-br from-[#F5B041] via-[#E87450] to-[#B07E9B] border-[#E5A031] text-white',
+  'bg-gradient-to-br from-[#6480A4] via-[#B07E9B] to-[#E87450] border-[#547094] text-white',
+  'bg-gradient-to-br from-[#8B78B0] via-[#B07E9B] to-[#E87450] border-[#7B68A0] text-white',
 ]
 
 export default async function ParentDashboard() {

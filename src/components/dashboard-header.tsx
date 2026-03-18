@@ -47,19 +47,19 @@ export function DashboardHeader() {
   }, [])
 
   return (
-    <header className="sticky top-0 z-40 border-b border-red-300/50 bg-red-200 backdrop-blur supports-[backdrop-filter]:bg-red-200/90">
+    <header className="sticky top-0 z-40 border-b border-[#D06440]/30 bg-gradient-to-r from-[#2B5EA7] via-[#6480A4] to-[#E87450]">
       <div className="mx-auto flex h-14 max-w-7xl items-center justify-between px-4">
         <div className="flex items-center gap-4">
           <Link
             href={homeHref}
-            className="flex items-center gap-2 text-lg font-bold text-deep-navy transition-colors hover:text-primary"
+            className="flex items-center gap-2 text-lg font-bold text-white transition-colors hover:text-white/80"
           >
-            <Sun className="size-5 text-secondary" />
+            <Sun className="size-5 text-[#F7CD5D]" />
             <span>Sunrise Tennis</span>
           </Link>
           {isAdmin && <RoleSwitcher />}
           {singleRole && (
-            <span className="rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-medium text-primary capitalize">
+            <span className="rounded-full bg-white/15 px-2.5 py-0.5 text-xs font-medium text-white capitalize">
               {singleRole}
             </span>
           )}
@@ -67,7 +67,7 @@ export function DashboardHeader() {
         <div className="flex items-center gap-2">
           <NotificationBell />
           {displayName && (
-            <span className="hidden text-sm text-muted-foreground sm:inline">{displayName}</span>
+            <span className="hidden text-sm text-white/70 sm:inline">{displayName}</span>
           )}
           <SignoutButton />
         </div>

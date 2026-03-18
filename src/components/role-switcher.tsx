@@ -15,7 +15,7 @@ export function RoleSwitcher() {
   const activeView = views.find(v => pathname.startsWith(v.href))
 
   return (
-    <div className="flex items-center gap-0.5 rounded-full border border-border bg-muted p-0.5">
+    <div className="flex items-center gap-0.5 rounded-full border border-white/20 bg-white/10 p-0.5 backdrop-blur-sm">
       {views.map((view) => {
         const isActive = activeView?.href === view.href
         return (
@@ -25,8 +25,8 @@ export function RoleSwitcher() {
             className={cn(
               'rounded-full px-3 py-1 text-xs font-medium transition-colors',
               isActive
-                ? 'bg-primary text-primary-foreground shadow-sm'
-                : 'text-muted-foreground hover:text-foreground'
+                ? 'bg-white text-deep-navy shadow-sm'
+                : 'text-white/70 hover:text-white'
             )}
           >
             {view.label}

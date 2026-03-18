@@ -103,7 +103,7 @@ export function NotificationBell() {
         size="icon"
         onClick={() => setOpen(!open)}
         aria-label="Notifications"
-        className="relative text-muted-foreground"
+        className="relative text-white/70 hover:text-white hover:bg-white/10"
       >
         <Bell className="size-5" />
         {unreadCount > 0 && (

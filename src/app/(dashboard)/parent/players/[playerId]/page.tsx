@@ -7,12 +7,10 @@ import { Badge } from '@/components/ui/badge'
 import { EmptyState } from '@/components/empty-state'
 import {
   ChevronLeft,
-  Pencil,
   Video,
   BookOpen,
   ImageIcon,
   Heart,
-  Calendar,
   ChevronRight,
   GraduationCap,
 } from 'lucide-react'
@@ -324,81 +322,6 @@ export default async function ParentPlayerDetailPage({ params }: { params: Promi
         )}
       </section>
 
-      {/* ── Lesson Notes ── */}
-      <section id="lesson-notes" className="animate-fade-up" style={{ animationDelay: '200ms' }}>
-        <div className="flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-foreground flex items-center gap-2">
-            <span className="inline-block h-4 w-1 rounded-full bg-gradient-to-b from-[#E87450] to-[#F5B041]" />
-            Recent Lesson Notes
-          </h2>
-        </div>
-
-        {lessonNotes && lessonNotes.length > 0 ? (
-          <div className="mt-2.5 space-y-2.5">
-            {lessonNotes.map((note) => {
-              const session = note.sessions as unknown as { date: string; programs: { name: string } | null } | null
-              const drills = note.drills_used as string[] | null
-              return (
-                <div key={note.id} className="relative overflow-hidden rounded-xl border border-border bg-card p-4 shadow-card">
-                  <div className="absolute left-0 top-0 h-full w-1 bg-primary/40" />
-                  <div className="pl-2">
-                    <div className="flex items-center gap-2 text-sm">
-                      <Calendar className="size-3.5 text-muted-foreground" />
-                      <span className="font-medium text-foreground">
-                        {session?.date ? formatDate(session.date) : 'Unknown date'}
-                      </span>
-                      {session?.programs?.name && (
-                        <span className="text-xs text-muted-foreground">· {session.programs.name}</span>
-                      )}
-                    </div>
-                    {note.focus && (
-                      <p className="mt-2 text-sm text-foreground">
-                        <span className="font-medium">Focus:</span> {note.focus}
-                      </p>
-                    )}
-                    {note.notes && (
-                      <p className="mt-1 text-sm text-muted-foreground">{note.notes}</p>
-                    )}
-                    {note.progress && (
-                      <p className="mt-1 text-sm text-muted-foreground">
-                        <span className="font-medium text-foreground">Progress:</span> {note.progress}
-                      </p>
-                    )}
-                    {note.next_plan && (
-                      <p className="mt-1 text-sm text-muted-foreground">
-                        <span className="font-medium text-foreground">Next plan:</span> {note.next_plan}
-                      </p>
-                    )}
-                    {drills && drills.length > 0 && (
-                      <p className="mt-1 text-xs text-muted-foreground/60">Drills: {drills.join(', ')}</p>
-                    )}
-                    {note.video_url && (
-                      <a
-                        href={note.video_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-primary hover:text-primary/80 transition-colors"
-                      >
-                        <Video className="size-3" />
-                        Watch video
-                      </a>
-                    )}
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        ) : (
-          <div className="mt-2.5">
-            <EmptyState
-              icon={BookOpen}
-              title="No lesson notes yet"
-              description="Notes from your coach will appear here after sessions."
-              compact
-            />
-          </div>
-        )}
-      </section>
     </div>
   )
 }
