@@ -19,7 +19,7 @@ export function NavTabs({ items }: NavTabsProps) {
   const pathname = usePathname()
 
   return (
-    <nav className="mb-6 flex gap-1 overflow-x-auto rounded-xl bg-gradient-to-r from-dawn-cream to-peach-mist/60 p-1.5">
+    <nav className="mb-6 flex gap-1 overflow-x-auto rounded-xl bg-[#B07E9B]/12 p-1.5">
       {items.map((item) => {
         const isActive = pathname === item.href ||
           (item.href !== items[0]?.href && pathname.startsWith(item.href))
@@ -31,8 +31,8 @@ export function NavTabs({ items }: NavTabsProps) {
             className={cn(
               'flex items-center gap-2 whitespace-nowrap rounded-lg px-4 py-2 text-sm font-medium transition-all',
               isActive
-                ? 'bg-primary text-white shadow-sm'
-                : 'text-slate-blue hover:bg-white/50 hover:text-foreground'
+                ? 'bg-[#B07E9B] text-white shadow-sm'
+                : 'text-slate-blue hover:bg-[#B07E9B]/15 hover:text-foreground'
             )}
           >
             {item.icon && <item.icon className="size-4" />}

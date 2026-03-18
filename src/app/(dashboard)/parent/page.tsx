@@ -2,19 +2,9 @@ import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { createClient, getSessionUser } from '@/lib/supabase/server'
 import { formatCurrency } from '@/lib/utils/currency'
-import { formatDate, formatTime } from '@/lib/utils/dates'
 import { StatusBadge } from '@/components/status-badge'
-import { BallLevelBadge } from '@/components/ball-level-badge'
 import { EmptyState } from '@/components/empty-state'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
-import { Users, Calendar, GraduationCap, ChevronRight } from 'lucide-react'
+import { Users, GraduationCap, ChevronRight } from 'lucide-react'
 import { EnrolledCalendar } from './enrolled-calendar'
 
 export default async function ParentDashboard() {
@@ -54,7 +44,7 @@ export default async function ParentDashboard() {
     supabase.from('family_balance').select('balance_cents').eq('family_id', familyId).single(),
     supabase
       .from('program_roster')
-      .select('id, status, players!inner(id, first_name), programs:program_id(id, name, type, level, day_of_week, start_time, end_time, status)')
+      .select('id, status, players!inner(id, first_name, gender), programs:program_id(id, name, type, level, day_of_week, start_time, end_time, status)')
       .eq('status', 'enrolled')
       .in('player_id', (await supabase.from('players').select('id').eq('family_id', familyId)).data?.map(p => p.id) ?? []),
   ])
@@ -62,24 +52,6 @@ export default async function ParentDashboard() {
   const contact = family?.primary_contact as { name?: string; phone?: string; email?: string } | null
   const balanceCents = balance?.balance_cents ?? 0
   const firstName = contact?.name?.split(' ')[0] ?? 'Parent'
-
-  const programIds = enrollments?.map(e => {
-    const prog = e.programs as unknown as { id: string } | null
-    return prog?.id
-  }).filter(Boolean) as string[] ?? []
-
-  const today = new Date().toISOString().split('T')[0]
-  const { data: upcomingSessions } = programIds.length > 0
-    ? await supabase
-        .from('sessions')
-        .select('id, date, start_time, end_time, status, programs:program_id(name, level, type)')
-        .in('program_id', programIds)
-        .gte('date', today)
-        .eq('status', 'scheduled')
-        .order('date')
-        .order('start_time')
-        .limit(10)
-    : { data: null }
 
   return (
     <div className="space-y-6">
@@ -118,10 +90,10 @@ export default async function ParentDashboard() {
             {players.map((player, i) => {
               // Gender-based card styling
               const genderStyle = player.gender === 'female'
-                ? 'bg-[#B07E9B]/8 border-[#B07E9B]/20 hover:border-[#B07E9B]/40'
+                ? 'bg-[#B07E9B]/15 border-[#B07E9B]/25 hover:border-[#B07E9B]/50'
                 : player.gender === 'non_binary'
-                ? 'bg-[#8B78B0]/8 border-[#8B78B0]/20 hover:border-[#8B78B0]/40'
-                : 'bg-[#2B5EA7]/8 border-[#2B5EA7]/20 hover:border-[#2B5EA7]/40' // male or unset defaults to blue
+                ? 'bg-[#8B78B0]/15 border-[#8B78B0]/25 hover:border-[#8B78B0]/50'
+                : 'bg-[#2B5EA7]/12 border-[#2B5EA7]/20 hover:border-[#2B5EA7]/40' // male or unset defaults to blue
               const accentBar = player.gender === 'female'
                 ? 'bg-gradient-to-b from-[#B07E9B] to-[#E87450]'
                 : player.gender === 'non_binary'
@@ -167,7 +139,6 @@ export default async function ParentDashboard() {
       {/* ── Weekly Schedule (before Upcoming Sessions) ── */}
       <section className="animate-fade-up" style={{ animationDelay: '160ms' }}>
         <h2 className="text-lg font-semibold text-foreground">Weekly Schedule</h2>
-        <p className="mt-1 text-sm text-muted-foreground">Your enrolled sessions at a glance.</p>
 
         {enrollments && enrollments.length > 0 ? (
           <div className="mt-3">
@@ -177,10 +148,11 @@ export default async function ParentDashboard() {
                   id: string; name: string; type: string; level: string;
                   day_of_week: number | null; start_time: string | null; end_time: string | null; status: string
                 } | null
-                const player = enrollment.players as unknown as { id: string; first_name: string } | null
+                const player = enrollment.players as unknown as { id: string; first_name: string; gender: string | null } | null
                 return {
                   id: enrollment.id,
                   playerName: player?.first_name ?? '',
+                  playerGender: player?.gender ?? null,
                   programId: program?.id ?? '',
                   programName: program?.name ?? '',
                   programType: program?.type ?? '',
@@ -204,57 +176,6 @@ export default async function ParentDashboard() {
         )}
       </section>
 
-      {/* ── Upcoming Sessions ── */}
-      <section className="animate-fade-up" style={{ animationDelay: '240ms' }}>
-        <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-foreground">Upcoming Sessions</h2>
-          {upcomingSessions && upcomingSessions.length > 0 && (
-            <span className="text-xs text-muted-foreground">Next {upcomingSessions.length}</span>
-          )}
-        </div>
-
-        {upcomingSessions && upcomingSessions.length > 0 ? (
-          <div className="mt-3 overflow-hidden rounded-xl border border-border bg-card shadow-card">
-            <Table>
-              <TableHeader>
-                <TableRow className="bg-muted/50 hover:bg-muted/50">
-                  <TableHead>Date</TableHead>
-                  <TableHead>Program</TableHead>
-                  <TableHead>Time</TableHead>
-                  <TableHead>Level</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {upcomingSessions.map((session) => {
-                  const program = session.programs as unknown as { name: string; level: string; type: string } | null
-                  return (
-                    <TableRow key={session.id}>
-                      <TableCell className="font-medium">{formatDate(session.date)}</TableCell>
-                      <TableCell>{program?.name ?? '-'}</TableCell>
-                      <TableCell className="text-muted-foreground">
-                        {session.start_time ? formatTime(session.start_time) : '-'}
-                        {session.end_time ? ` - ${formatTime(session.end_time)}` : ''}
-                      </TableCell>
-                      <TableCell>
-                        {program?.level && <BallLevelBadge ballColor={program.level} />}
-                      </TableCell>
-                    </TableRow>
-                  )
-                })}
-              </TableBody>
-            </Table>
-          </div>
-        ) : (
-          <div className="mt-3">
-            <EmptyState
-              icon={Calendar}
-              title="No upcoming sessions"
-              description="No sessions scheduled yet."
-              compact
-            />
-          </div>
-        )}
-      </section>
     </div>
   )
 }

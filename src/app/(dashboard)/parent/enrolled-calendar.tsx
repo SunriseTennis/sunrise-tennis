@@ -2,12 +2,10 @@
 
 import { WeeklyCalendar, type CalendarEvent } from '@/components/weekly-calendar'
 
-const LEVEL_COLORS: Record<string, string> = {
-  red: 'bg-ball-red/20 border-ball-red/30',
-  orange: 'bg-ball-orange/20 border-ball-orange/30',
-  green: 'bg-ball-green/20 border-ball-green/30',
-  yellow: 'bg-ball-yellow/20 border-ball-yellow/30',
-  competitive: 'bg-primary/15 border-primary/30',
+const GENDER_COLORS: Record<string, string> = {
+  female: 'bg-[#B07E9B]/20 border-[#B07E9B]/35',
+  non_binary: 'bg-[#8B78B0]/20 border-[#8B78B0]/35',
+  male: 'bg-[#2B5EA7]/15 border-[#2B5EA7]/30',
 }
 
 const DAY_PREFIXES = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
@@ -28,6 +26,7 @@ function formatCalendarTitle(name: string, type: string): string {
 type Enrollment = {
   id: string
   playerName: string
+  playerGender: string | null
   programId: string
   programName: string
   programType: string
@@ -47,7 +46,7 @@ export function EnrolledCalendar({ enrollments }: { enrollments: Enrollment[] })
       dayOfWeek: e.dayOfWeek!,
       startTime: e.startTime!,
       endTime: e.endTime!,
-      color: LEVEL_COLORS[e.programLevel ?? ''] ?? 'bg-primary/15 border-primary/30',
+      color: GENDER_COLORS[e.playerGender ?? ''] ?? GENDER_COLORS.male,
       href: `/parent/programs/${e.programId}`,
     }))
 

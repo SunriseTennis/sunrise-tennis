@@ -19,6 +19,19 @@ import {
 import { ParentPlayerEditForm } from './player-edit-form'
 
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+const DAY_PREFIXES = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
+
+function stripDayPrefix(name: string, type: string): string {
+  const lower = name.toLowerCase()
+  for (const prefix of DAY_PREFIXES) {
+    if (lower.startsWith(prefix + ' ')) {
+      const stripped = name.slice(prefix.length + 1)
+      const suffix = type === 'group' ? ' Group' : type === 'squad' ? ' Squad' : ''
+      return stripped + suffix
+    }
+  }
+  return name
+}
 
 const LEVEL_ACCENTS: Record<string, { bar: string }> = {
   red:    { bar: 'bg-ball-red' },
@@ -125,6 +138,12 @@ export default async function ParentPlayerDetailPage({ params }: { params: Promi
             <h1 className="text-xl font-bold truncate">{player.first_name} {player.last_name}</h1>
             <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-white/80">
               <span>{levelText}</span>
+              {player.gender && (
+                <>
+                  <span className="text-white/40">·</span>
+                  <span>{player.gender === 'non_binary' ? 'Non-Binary' : player.gender.charAt(0).toUpperCase() + player.gender.slice(1)}</span>
+                </>
+              )}
               {age !== null && (
                 <>
                   <span className="text-white/40">·</span>
@@ -270,7 +289,7 @@ export default async function ParentPlayerDetailPage({ params }: { params: Promi
                   <div className={`absolute left-0 top-0 h-full w-1 ${accent.bar}`} />
                   <div className="flex items-center justify-between pl-2">
                     <div>
-                      <p className="font-medium text-foreground">{program.name}</p>
+                      <p className="font-medium text-foreground">{stripDayPrefix(program.name, program.type)}</p>
                       <p className="mt-0.5 text-xs text-muted-foreground">
                         {program.day_of_week != null && DAYS[program.day_of_week]}
                         {program.start_time && ` · ${formatTime(program.start_time)}`}
