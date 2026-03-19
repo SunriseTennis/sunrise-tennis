@@ -28,7 +28,9 @@ export async function POST(request: NextRequest) {
   hmac.update(url + body)
   const expectedSignature = hmac.digest('base64')
 
-  if (signature !== expectedSignature) {
+  const sigBuffer = Buffer.from(signature, 'base64')
+  const expectedBuffer = Buffer.from(expectedSignature, 'base64')
+  if (sigBuffer.length !== expectedBuffer.length || !crypto.timingSafeEqual(sigBuffer, expectedBuffer)) {
     return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
   }
 

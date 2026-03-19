@@ -1,6 +1,30 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
+/**
+ * Sign a value with HMAC-SHA256 to prevent cookie tampering.
+ * Uses the Supabase anon key as signing secret (always available in middleware).
+ */
+async function signValue(value: string): Promise<string> {
+  const secret = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  const encoder = new TextEncoder()
+  const key = await crypto.subtle.importKey(
+    'raw', encoder.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']
+  )
+  const sig = await crypto.subtle.sign('HMAC', key, encoder.encode(value))
+  const sigHex = Array.from(new Uint8Array(sig)).map(b => b.toString(16).padStart(2, '0')).join('')
+  return `${value}.${sigHex}`
+}
+
+async function verifySignedValue(signed: string): Promise<string | null> {
+  const lastDot = signed.lastIndexOf('.')
+  if (lastDot === -1) return null
+  const value = signed.substring(0, lastDot)
+  const expected = await signValue(value)
+  if (expected !== signed) return null
+  return value
+}
+
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request })
 
@@ -65,16 +89,22 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(url)
   }
 
-  // Role-based access: use cached roles cookie to avoid DB query per request
+  // Role-based access: use HMAC-signed cached roles cookie to avoid DB query per request
   if (user && (pathname.startsWith('/admin') || pathname.startsWith('/coach') || pathname.startsWith('/parent'))) {
     let roles: string[] = []
 
-    // Try cached roles first
+    // Try cached roles first (verify HMAC signature to prevent tampering)
     const cachedRoles = request.cookies.get('x-user-roles')?.value
     if (cachedRoles) {
-      roles = cachedRoles.split(',')
-    } else {
-      // First request or cache expired — query and cache
+      const verified = await verifySignedValue(cachedRoles)
+      if (verified) {
+        roles = verified.split(',')
+      }
+      // If signature invalid, fall through to re-query (tampered cookie is ignored)
+    }
+
+    if (roles.length === 0) {
+      // First request, cache expired, or tampered cookie — query and cache
       const { data: userRoles } = await supabase
         .from('user_roles')
         .select('role')
@@ -82,8 +112,9 @@ export async function updateSession(request: NextRequest) {
 
       roles = userRoles?.map(r => r.role) ?? []
 
-      // Cache for 5 minutes (roles rarely change)
-      supabaseResponse.cookies.set('x-user-roles', roles.join(','), {
+      // Sign and cache for 5 minutes (roles rarely change)
+      const signedRoles = await signValue(roles.join(','))
+      supabaseResponse.cookies.set('x-user-roles', signedRoles, {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
         sameSite: 'lax',
@@ -93,7 +124,7 @@ export async function updateSession(request: NextRequest) {
     }
 
     // No roles assigned yet → show pending page
-    if (roles.length === 0) {
+    if (roles.length === 0 || (roles.length === 1 && roles[0] === '')) {
       if (pathname !== '/dashboard') {
         const url = request.nextUrl.clone()
         url.pathname = '/dashboard'

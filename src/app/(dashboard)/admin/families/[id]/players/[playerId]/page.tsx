@@ -1,6 +1,6 @@
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
-import { createClient } from '@/lib/supabase/server'
+import { createClient, decryptMedicalNotes } from '@/lib/supabase/server'
 import { formatDate } from '@/lib/utils/dates'
 import { PlayerEditForm } from './player-edit-form'
 import { Card, CardContent } from '@/components/ui/card'
@@ -19,6 +19,13 @@ export default async function PlayerDetailPage({
   ])
 
   if (!player || !family) notFound()
+
+  // Decrypt medical notes (stored encrypted at rest)
+  if (player.medical_notes || player.physical_notes) {
+    const decrypted = await decryptMedicalNotes(supabase, playerId)
+    player.medical_notes = decrypted.medical_notes
+    player.physical_notes = decrypted.physical_notes
+  }
 
   return (
     <div className="max-w-2xl">

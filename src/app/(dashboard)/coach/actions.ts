@@ -2,29 +2,20 @@
 
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
-import { createClient, getSessionUser } from '@/lib/supabase/server'
+import { createClient, requireCoach } from '@/lib/supabase/server'
 import { validateFormData, lessonNoteFormSchema, attendanceStatusSchema } from '@/lib/utils/validation'
 
 // ── Lesson Notes ────────────────────────────────────────────────────────
 
 export async function createLessonNote(sessionId: string, formData: FormData) {
+  const { user, coachId } = await requireCoach()
   const supabase = await createClient()
-  const user = await getSessionUser()
 
   // Rate limit: 20 lesson notes per minute per user
-  if (user) {
-    const { checkRateLimitAsync } = await import('@/lib/utils/rate-limit')
-    if (!await checkRateLimitAsync(`note:${user.id}`, 20, 60_000)) {
-      redirect(`/coach/schedule/${sessionId}?error=${encodeURIComponent('Too many requests. Please wait a moment.')}`)
-    }
+  const { checkRateLimitAsync } = await import('@/lib/utils/rate-limit')
+  if (!await checkRateLimitAsync(`note:${user.id}`, 20, 60_000)) {
+    redirect(`/coach/schedule/${sessionId}?error=${encodeURIComponent('Too many requests. Please wait a moment.')}`)
   }
-
-  // Get coach_id directly from coaches table (works for admin+coach users)
-  const { data: coachRecord } = await supabase
-    .from('coaches')
-    .select('id')
-    .eq('user_id', user?.id ?? '')
-    .single()
 
   const parsed = validateFormData(formData, lessonNoteFormSchema)
   if (!parsed.success) {
@@ -38,7 +29,7 @@ export async function createLessonNote(sessionId: string, formData: FormData) {
     .insert({
       session_id: sessionId,
       player_id: playerId,
-      coach_id: coachRecord?.id ?? null,
+      coach_id: coachId,
       focus: focus || null,
       progress: progress || null,
       drills_used: drillsUsed ? drillsUsed.split(',').map(s => s.trim()) : null,
@@ -48,7 +39,7 @@ export async function createLessonNote(sessionId: string, formData: FormData) {
     })
 
   if (error) {
-    redirect(`/coach/schedule/${sessionId}?error=${encodeURIComponent(error.message)}`)
+    redirect(`/coach/schedule/${sessionId}?error=${encodeURIComponent('Failed to save lesson note')}`)
   }
 
   revalidatePath(`/coach/schedule/${sessionId}`)
@@ -58,7 +49,14 @@ export async function createLessonNote(sessionId: string, formData: FormData) {
 // ── Mark Attendance (coach) ────────────────────────────────────────────
 
 export async function coachUpdateAttendance(sessionId: string, formData: FormData) {
+  const { user } = await requireCoach()
   const supabase = await createClient()
+
+  // Rate limit: 30 attendance updates per minute per user
+  const { checkRateLimitAsync } = await import('@/lib/utils/rate-limit')
+  if (!await checkRateLimitAsync(`attendance:${user.id}`, 30, 60_000)) {
+    redirect(`/coach/schedule/${sessionId}?error=${encodeURIComponent('Too many requests. Please wait a moment.')}`)
+  }
 
   const entries: { playerId: string; status: string }[] = []
   formData.forEach((value, key) => {

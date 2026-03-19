@@ -715,15 +715,13 @@ export async function adminBookPlayer(formData: FormData) {
   const user = await requireAdmin()
   const supabase = await createClient()
 
-  const familyId = formData.get('family_id') as string
-  const playerId = formData.get('player_id') as string
-  const programId = formData.get('program_id') as string
-  const bookingType = formData.get('booking_type') as string
-  const notes = (formData.get('notes') as string)?.trim() || null
-
-  if (!familyId || !playerId || !programId) {
-    redirect(`/admin/programs?error=${encodeURIComponent('Missing required fields')}`)
+  const { validateFormData, adminBookPlayerFormSchema } = await import('@/lib/utils/validation')
+  const parsed = validateFormData(formData, adminBookPlayerFormSchema)
+  if (!parsed.success) {
+    redirect(`/admin/programs?error=${encodeURIComponent(parsed.error)}`)
   }
+
+  const { family_id: familyId, player_id: playerId, program_id: programId, booking_type: bookingType, notes } = parsed.data
 
   // Add to roster if term/casual enrolment
   const { data: existing } = await supabase
@@ -758,7 +756,8 @@ export async function adminBookPlayer(formData: FormData) {
     })
 
   if (error) {
-    redirect(`/admin/programs/${programId}?error=${encodeURIComponent(error.message)}`)
+    console.error('Admin booking failed:', error.message)
+    redirect(`/admin/programs/${programId}?error=${encodeURIComponent('Failed to create booking')}`)
   }
 
   // Send booking confirmation notification to parent

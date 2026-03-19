@@ -4,7 +4,6 @@ import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { createClient, getSessionUser } from '@/lib/supabase/server'
 import { sendPushToUser } from '@/lib/push/send'
-import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { validateFormData, enrolFormSchema } from '@/lib/utils/validation'
 import { createCharge, getTermPrice, getSessionPrice } from '@/lib/utils/billing'
 
@@ -28,6 +27,12 @@ export async function enrolInProgram(programId: string, familyId: string, formDa
   const supabase = await createClient()
   const auth = await getParentFamilyId()
   if (!auth || auth.familyId !== familyId) redirect('/login')
+
+  // Rate limit: 5 enrollment attempts per minute per user
+  const { checkRateLimitAsync } = await import('@/lib/utils/rate-limit')
+  if (!await checkRateLimitAsync(`enrol:${auth.userId}`, 5, 60_000)) {
+    redirect(`/parent/programs/${programId}?error=${encodeURIComponent('Too many requests. Please wait a moment.')}`)
+  }
 
   const parsed = validateFormData(formData, enrolFormSchema)
   if (!parsed.success) {
@@ -81,7 +86,8 @@ export async function enrolInProgram(programId: string, familyId: string, formDa
     })
 
   if (rosterError) {
-    redirect(`/parent/programs/${programId}?error=${encodeURIComponent(rosterError.message)}`)
+    console.error('Roster enrollment failed:', rosterError.message)
+    redirect(`/parent/programs/${programId}?error=${encodeURIComponent('Enrollment failed. Please try again.')}`)
   }
 
   // ── Financial logic ──────────────────────────────────────────────────
@@ -191,30 +197,15 @@ export async function enrolInProgram(programId: string, familyId: string, formDa
   // ── Notification ─────────────────────────────────────────────────────
 
   try {
-    const serviceClient = createServiceClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    )
-
-    const { data: notification } = await serviceClient
-      .from('notifications')
-      .insert({
-        type: 'booking_confirmation',
-        title: 'Booking Confirmed',
-        body: `Successfully enrolled in ${program?.name ?? 'program'}.`,
-        url: `/parent/programs/${programId}`,
-        target_type: 'family',
-        target_id: familyId,
-        created_by: auth.userId,
-      })
-      .select('id')
-      .single()
-
-    if (notification) {
-      await serviceClient
-        .from('notification_recipients')
-        .insert({ notification_id: notification.id, user_id: auth.userId })
-    }
+    // Use RPC function (SECURITY DEFINER with auth check) instead of service role
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (supabase as any).rpc('create_booking_notification', {
+      p_type: 'booking_confirmation',
+      p_title: 'Booking Confirmed',
+      p_body: `Successfully enrolled in ${program?.name ?? 'program'}.`,
+      p_url: `/parent/programs/${programId}`,
+      p_family_id: familyId,
+    })
 
     await sendPushToUser(auth.userId, {
       title: 'Booking Confirmed',

@@ -3,18 +3,20 @@
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { createClient, requireAdmin } from '@/lib/supabase/server'
+import { validateFormData, familyPricingFormSchema } from '@/lib/utils/validation'
 
 export async function addFamilyPricing(familyId: string, formData: FormData) {
   await requireAdmin()
   const supabase = await createClient()
 
-  const programId = (formData.get('program_id') as string) || null
-  const programType = (formData.get('program_type') as string) || null
-  const perSessionDollars = formData.get('per_session_dollars') as string
-  const termFeeDollars = formData.get('term_fee_dollars') as string
-  const notes = (formData.get('notes') as string)?.trim() || null
-  const validFrom = (formData.get('valid_from') as string) || new Date().toISOString().split('T')[0]
-  const validUntil = (formData.get('valid_until') as string) || null
+  // Inject family_id into form data for validation
+  formData.set('family_id', familyId)
+  const parsed = validateFormData(formData, familyPricingFormSchema)
+  if (!parsed.success) {
+    redirect(`/admin/families/${familyId}?error=${encodeURIComponent(parsed.error)}`)
+  }
+
+  const { program_id: programId, program_type: programType, per_session_dollars: perSessionDollars, term_fee_dollars: termFeeDollars, notes, valid_from: validFrom, valid_until: validUntil } = parsed.data
 
   const perSessionCents = perSessionDollars ? Math.round(parseFloat(perSessionDollars) * 100) : null
   const termFeeCents = termFeeDollars ? Math.round(parseFloat(termFeeDollars) * 100) : null
@@ -27,17 +29,18 @@ export async function addFamilyPricing(familyId: string, formData: FormData) {
     .from('family_pricing')
     .insert({
       family_id: familyId,
-      program_id: programId,
-      program_type: programType,
+      program_id: programId || null,
+      program_type: programType || null,
       per_session_cents: perSessionCents,
       term_fee_cents: termFeeCents,
-      notes,
-      valid_from: validFrom,
+      notes: notes || null,
+      valid_from: validFrom || new Date().toISOString().split('T')[0],
       valid_until: validUntil || null,
     })
 
   if (error) {
-    redirect(`/admin/families/${familyId}?error=${encodeURIComponent(error.message)}`)
+    console.error('Family pricing insert failed:', error.message)
+    redirect(`/admin/families/${familyId}?error=${encodeURIComponent('Failed to add pricing override')}`)
   }
 
   revalidatePath(`/admin/families/${familyId}`)

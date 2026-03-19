@@ -25,7 +25,8 @@ self.addEventListener('push', (event) => {
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close()
-  if (event.notification.data?.url) {
-    event.waitUntil(clients.openWindow(event.notification.data.url))
+  const url = event.notification.data?.url
+  if (url && typeof url === 'string' && url.startsWith('/') && !url.startsWith('//')) {
+    event.waitUntil(clients.openWindow(url))
   }
 })

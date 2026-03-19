@@ -73,7 +73,7 @@ export function NotificationBell() {
       prev.map((n) => (n.id === recipientId ? { ...n, read_at: new Date().toISOString() } : n)),
     )
 
-    if (url) {
+    if (url && url.startsWith('/') && !url.startsWith('//')) {
       window.location.href = url
     }
     setOpen(false)

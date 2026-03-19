@@ -1,6 +1,6 @@
 import { redirect, notFound } from 'next/navigation'
 import Link from 'next/link'
-import { createClient, getSessionUser } from '@/lib/supabase/server'
+import { createClient, getSessionUser, decryptMedicalNotes } from '@/lib/supabase/server'
 import { formatDate, formatTime } from '@/lib/utils/dates'
 import { StatusBadge } from '@/components/status-badge'
 import { Badge } from '@/components/ui/badge'
@@ -83,6 +83,13 @@ export default async function ParentPlayerDetailPage({ params }: { params: Promi
     .single()
 
   if (!player) notFound()
+
+  // Decrypt medical notes (stored encrypted at rest)
+  if (player.medical_notes || player.physical_notes) {
+    const decrypted = await decryptMedicalNotes(supabase, playerId)
+    player.medical_notes = decrypted.medical_notes
+    player.physical_notes = decrypted.physical_notes
+  }
 
   const [{ data: enrollments }, { data: lessonNotes }] = await Promise.all([
     supabase

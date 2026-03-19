@@ -1,7 +1,7 @@
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import type { Database } from './types'
-import type { User } from '@supabase/supabase-js'
+import type { SupabaseClient, User } from '@supabase/supabase-js'
 
 export async function createClient() {
   const cookieStore = await cookies()
@@ -61,4 +61,45 @@ export async function requireAdmin(): Promise<User> {
 
   if (!data) return redirect('/dashboard') as never
   return user
+}
+
+/**
+ * Require the current user to have coach (or admin) role.
+ * Returns the user and their coach_id from user_roles.
+ * Throws a redirect if not a coach or admin.
+ */
+export async function requireCoach(): Promise<{ user: User; coachId: string | null }> {
+  const { redirect } = await import('next/navigation')
+  const supabase = await createClient()
+  const user = await getSessionUser()
+  if (!user) return redirect('/login') as never
+
+  const { data: roles } = await supabase
+    .from('user_roles')
+    .select('role, coach_id')
+    .eq('user_id', user.id)
+
+  const coachRole = roles?.find(r => r.role === 'coach')
+  const isAdmin = roles?.some(r => r.role === 'admin')
+
+  if (!coachRole && !isAdmin) return redirect('/dashboard') as never
+  return { user, coachId: coachRole?.coach_id ?? null }
+}
+
+/**
+ * Decrypt medical_notes and physical_notes for a player via the
+ * authorized RPC function. Returns decrypted text or null.
+ * The RPC function enforces auth: admin, parent of family, or assigned coach.
+ */
+export async function decryptMedicalNotes(
+  supabase: SupabaseClient<Database>,
+  playerId: string,
+): Promise<{ medical_notes: string | null; physical_notes: string | null }> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data } = await (supabase as any).rpc('get_player_medical_notes', { p_player_id: playerId })
+  const row = Array.isArray(data) ? data[0] : data
+  return {
+    medical_notes: row?.medical_notes ?? null,
+    physical_notes: row?.physical_notes ?? null,
+  }
 }
