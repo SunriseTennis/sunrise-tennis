@@ -33,7 +33,7 @@ export default async function FamilyStatementPage({ params }: { params: Promise<
   for (const c of charges ?? []) {
     if (c.amount_cents >= 0) {
       entries.push({
-        date: c.created_at,
+        date: c.created_at ?? '',
         description: c.description,
         debit: c.amount_cents,
         credit: 0,
@@ -41,7 +41,7 @@ export default async function FamilyStatementPage({ params }: { params: Promise<
       })
     } else {
       entries.push({
-        date: c.created_at,
+        date: c.created_at ?? '',
         description: c.description,
         debit: 0,
         credit: Math.abs(c.amount_cents),

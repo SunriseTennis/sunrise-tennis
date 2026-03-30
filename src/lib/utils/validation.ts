@@ -317,3 +317,72 @@ export const teamMessageFormSchema = z.object({
 
 // Availability response uses dynamic keys (status_PLAYERID_DATE)
 // so it's validated procedurally, not with a static schema
+
+// ── Competitions ───────────────────────────────────────────────────────
+
+export const competitionStatusSchema = z.enum([
+  'active', 'nominations_open', 'in_season', 'completed', 'archived',
+])
+export const compPlayerRoleSchema = z.enum(['mainstay', 'fill_in', 'potential'])
+export const registrationStatusSchema = z.enum(['registered', 'unregistered', 'pending'])
+export const nominationStatusSchema = z.enum(['draft', 'nominated', 'confirmed'])
+
+export const createCompetitionFormSchema = z.object({
+  name: requiredString('Competition name is required'),
+  short_name: optionalString(20),
+  type: z.enum(['external', 'internal']),
+  season: requiredString('Season is required'),
+  nomination_open: optionalString(),
+  nomination_close: optionalString(),
+  season_start: optionalString(),
+  season_end: optionalString(),
+  finals_start: optionalString(),
+  finals_end: optionalString(),
+  notes: optionalString(5000),
+})
+
+export const updateCompetitionFormSchema = createCompetitionFormSchema.extend({
+  status: competitionStatusSchema.optional().or(z.literal('')),
+})
+
+export const createCompTeamFormSchema = z.object({
+  name: requiredString('Team name is required'),
+  competition_id: uuidString('Invalid competition'),
+  division: optionalString(),
+  gender: z.enum(['male', 'female', 'mixed']).optional().or(z.literal('')),
+  age_group: z.enum(['senior', 'junior']).optional().or(z.literal('')),
+  team_size_required: optionalString(),
+  coach_id: optionalUuid(),
+})
+
+export const updateCompTeamFormSchema = z.object({
+  name: requiredString('Team name is required'),
+  division: optionalString(),
+  gender: z.enum(['male', 'female', 'mixed']).optional().or(z.literal('')),
+  age_group: z.enum(['senior', 'junior']).optional().or(z.literal('')),
+  team_size_required: optionalString(),
+  coach_id: optionalUuid(),
+  nomination_status: nominationStatusSchema.optional().or(z.literal('')),
+})
+
+export const addCompPlayerFormSchema = z.object({
+  team_id: uuidString('Invalid team'),
+  first_name: requiredString('First name is required'),
+  last_name: optionalString(),
+  age: optionalString(),
+  gender: z.enum(['male', 'female']).optional().or(z.literal('')),
+  role: compPlayerRoleSchema,
+  registration_status: registrationStatusSchema,
+  notes: optionalString(1000),
+})
+
+export const updateCompPlayerFormSchema = z.object({
+  first_name: requiredString('First name is required'),
+  last_name: optionalString(),
+  age: optionalString(),
+  gender: z.enum(['male', 'female']).optional().or(z.literal('')),
+  role: compPlayerRoleSchema,
+  registration_status: registrationStatusSchema,
+  player_id: optionalUuid(),
+  notes: optionalString(1000),
+})

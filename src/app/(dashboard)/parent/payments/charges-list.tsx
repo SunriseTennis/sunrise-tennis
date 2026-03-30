@@ -15,7 +15,7 @@ interface Charge {
   status: string
   program_id: string | null
   session_id: string | null
-  created_at: string
+  created_at: string | null
   program_name?: string | null
 }
 
@@ -124,7 +124,7 @@ function ChargeGroupCard({ group }: { group: ChargeGroup }) {
               <div className="flex-1">
                 <p className="text-foreground">{charge.description}</p>
                 <p className="text-xs text-muted-foreground">
-                  {formatDate(charge.created_at)}
+                  {charge.created_at ? formatDate(charge.created_at) : '-'}
                 </p>
               </div>
               <div className="flex items-center gap-2">
@@ -184,7 +184,7 @@ export function ChargesList({
                   <MinusCircle className="size-4 text-success" />
                   <div>
                     <p className="text-foreground">{credit.description}</p>
-                    <p className="text-xs text-muted-foreground">{formatDate(credit.created_at)}</p>
+                    <p className="text-xs text-muted-foreground">{credit.created_at ? formatDate(credit.created_at) : '-'}</p>
                   </div>
                 </div>
                 <span className="tabular-nums font-medium text-success">

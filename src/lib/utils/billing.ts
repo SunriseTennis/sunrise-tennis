@@ -119,7 +119,7 @@ export async function getSessionPrice(
   const { data, error } = await supabase.rpc('get_session_price', {
     target_family_id: familyId,
     target_program_id: programId,
-    target_program_type: programType || null,
+    target_program_type: programType || undefined,
   })
 
   if (error) {
@@ -142,7 +142,7 @@ export async function getTermPrice(
   const { data, error } = await supabase.rpc('get_term_price', {
     target_family_id: familyId,
     target_program_id: programId,
-    target_program_type: programType || null,
+    target_program_type: programType || undefined,
   })
 
   if (error) {

@@ -12,31 +12,6 @@ export type Database = {
   __InternalSupabase: {
     PostgrestVersion: "14.4"
   }
-  graphql_public: {
-    Tables: {
-      [_ in never]: never
-    }
-    Views: {
-      [_ in never]: never
-    }
-    Functions: {
-      graphql: {
-        Args: {
-          extensions?: Json
-          operationName?: string
-          query?: string
-          variables?: Json
-        }
-        Returns: Json
-      }
-    }
-    Enums: {
-      [_ in never]: never
-    }
-    CompositeTypes: {
-      [_ in never]: never
-    }
-  }
   public: {
     Tables: {
       attendances: {
@@ -242,67 +217,159 @@ export type Database = {
           },
         ]
       }
-      club_events: {
+      charges: {
         Row: {
-          id: string
-          title: string
-          description: string | null
-          event_type: string
-          location: string | null
-          start_date: string
-          end_date: string | null
-          start_time: string | null
-          end_time: string | null
-          all_day: boolean
-          external_url: string | null
-          status: string
+          amount_cents: number
+          booking_id: string | null
+          created_at: string | null
           created_by: string | null
-          created_at: string
-          updated_at: string
+          description: string
+          family_id: string
+          id: string
+          invoice_id: string | null
+          player_id: string | null
+          program_id: string | null
+          session_id: string | null
+          source_id: string | null
+          source_type: string
+          status: string
+          type: string
+          updated_at: string | null
         }
         Insert: {
-          id?: string
-          title: string
-          description?: string | null
-          event_type?: string
-          location?: string | null
-          start_date: string
-          end_date?: string | null
-          start_time?: string | null
-          end_time?: string | null
-          all_day?: boolean
-          external_url?: string | null
-          status?: string
+          amount_cents: number
+          booking_id?: string | null
+          created_at?: string | null
           created_by?: string | null
-          created_at?: string
-          updated_at?: string
+          description: string
+          family_id: string
+          id?: string
+          invoice_id?: string | null
+          player_id?: string | null
+          program_id?: string | null
+          session_id?: string | null
+          source_id?: string | null
+          source_type: string
+          status?: string
+          type: string
+          updated_at?: string | null
         }
         Update: {
-          id?: string
-          title?: string
-          description?: string | null
-          event_type?: string
-          location?: string | null
-          start_date?: string
-          end_date?: string | null
-          start_time?: string | null
-          end_time?: string | null
-          all_day?: boolean
-          external_url?: string | null
-          status?: string
+          amount_cents?: number
+          booking_id?: string | null
+          created_at?: string | null
           created_by?: string | null
-          created_at?: string
-          updated_at?: string
+          description?: string
+          family_id?: string
+          id?: string
+          invoice_id?: string | null
+          player_id?: string | null
+          program_id?: string | null
+          session_id?: string | null
+          source_id?: string | null
+          source_type?: string
+          status?: string
+          type?: string
+          updated_at?: string | null
         }
         Relationships: [
           {
-            foreignKeyName: "club_events_created_by_fkey"
-            columns: ["created_by"]
+            foreignKeyName: "charges_booking_id_fkey"
+            columns: ["booking_id"]
             isOneToOne: false
-            referencedRelation: "users"
+            referencedRelation: "bookings"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "charges_family_id_fkey"
+            columns: ["family_id"]
+            isOneToOne: false
+            referencedRelation: "families"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "charges_invoice_id_fkey"
+            columns: ["invoice_id"]
+            isOneToOne: false
+            referencedRelation: "invoices"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "charges_player_id_fkey"
+            columns: ["player_id"]
+            isOneToOne: false
+            referencedRelation: "players"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "charges_program_id_fkey"
+            columns: ["program_id"]
+            isOneToOne: false
+            referencedRelation: "programs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "charges_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "sessions"
             referencedColumns: ["id"]
           },
         ]
+      }
+      club_events: {
+        Row: {
+          all_day: boolean
+          created_at: string
+          created_by: string | null
+          description: string | null
+          end_date: string | null
+          end_time: string | null
+          event_type: string
+          external_url: string | null
+          id: string
+          location: string | null
+          start_date: string
+          start_time: string | null
+          status: string
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          all_day?: boolean
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          end_date?: string | null
+          end_time?: string | null
+          event_type?: string
+          external_url?: string | null
+          id?: string
+          location?: string | null
+          start_date: string
+          start_time?: string | null
+          status?: string
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          all_day?: boolean
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          end_date?: string | null
+          end_time?: string | null
+          event_type?: string
+          external_url?: string | null
+          id?: string
+          location?: string | null
+          start_date?: string
+          start_time?: string | null
+          status?: string
+          title?: string
+          updated_at?: string
+        }
+        Relationships: []
       }
       coaches: {
         Row: {
@@ -340,6 +407,135 @@ export type Database = {
           qualifications?: Json | null
           status?: string
           user_id?: string | null
+        }
+        Relationships: []
+      }
+      competition_players: {
+        Row: {
+          age: number | null
+          created_at: string | null
+          first_name: string
+          gender: string | null
+          id: string
+          last_name: string | null
+          notes: string | null
+          player_id: string | null
+          registration_status: string
+          role: string
+          sort_order: number | null
+          team_id: string
+          updated_at: string | null
+          utr_fetched_at: string | null
+          utr_profile_id: string | null
+          utr_rating_display: string | null
+          utr_rating_status: string | null
+        }
+        Insert: {
+          age?: number | null
+          created_at?: string | null
+          first_name: string
+          gender?: string | null
+          id?: string
+          last_name?: string | null
+          notes?: string | null
+          player_id?: string | null
+          registration_status?: string
+          role?: string
+          sort_order?: number | null
+          team_id: string
+          updated_at?: string | null
+          utr_fetched_at?: string | null
+          utr_profile_id?: string | null
+          utr_rating_display?: string | null
+          utr_rating_status?: string | null
+        }
+        Update: {
+          age?: number | null
+          created_at?: string | null
+          first_name?: string
+          gender?: string | null
+          id?: string
+          last_name?: string | null
+          notes?: string | null
+          player_id?: string | null
+          registration_status?: string
+          role?: string
+          sort_order?: number | null
+          team_id?: string
+          updated_at?: string | null
+          utr_fetched_at?: string | null
+          utr_profile_id?: string | null
+          utr_rating_display?: string | null
+          utr_rating_status?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "competition_players_player_id_fkey"
+            columns: ["player_id"]
+            isOneToOne: false
+            referencedRelation: "players"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "competition_players_team_id_fkey"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      competitions: {
+        Row: {
+          created_at: string | null
+          finals_end: string | null
+          finals_start: string | null
+          id: string
+          name: string
+          nomination_close: string | null
+          nomination_open: string | null
+          notes: string | null
+          season: string
+          season_end: string | null
+          season_start: string | null
+          short_name: string | null
+          status: string
+          type: string
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          finals_end?: string | null
+          finals_start?: string | null
+          id?: string
+          name: string
+          nomination_close?: string | null
+          nomination_open?: string | null
+          notes?: string | null
+          season: string
+          season_end?: string | null
+          season_start?: string | null
+          short_name?: string | null
+          status?: string
+          type?: string
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          finals_end?: string | null
+          finals_start?: string | null
+          id?: string
+          name?: string
+          nomination_close?: string | null
+          nomination_open?: string | null
+          notes?: string | null
+          season?: string
+          season_end?: string | null
+          season_start?: string | null
+          short_name?: string | null
+          status?: string
+          type?: string
+          updated_at?: string | null
         }
         Relationships: []
       }
@@ -417,42 +613,96 @@ export type Database = {
           },
         ]
       }
-      invitations: {
+      family_pricing: {
         Row: {
-          id: string
-          family_id: string
-          email: string
-          token: string
-          status: string
-          created_by: string | null
-          claimed_by: string | null
           created_at: string | null
-          expires_at: string | null
-          claimed_at: string | null
+          family_id: string
+          id: string
+          notes: string | null
+          per_session_cents: number | null
+          program_id: string | null
+          program_type: string | null
+          term_fee_cents: number | null
+          valid_from: string
+          valid_until: string | null
         }
         Insert: {
-          id?: string
-          family_id: string
-          email: string
-          token: string
-          status?: string
-          created_by?: string | null
-          claimed_by?: string | null
           created_at?: string | null
-          expires_at?: string | null
-          claimed_at?: string | null
+          family_id: string
+          id?: string
+          notes?: string | null
+          per_session_cents?: number | null
+          program_id?: string | null
+          program_type?: string | null
+          term_fee_cents?: number | null
+          valid_from?: string
+          valid_until?: string | null
         }
         Update: {
-          id?: string
+          created_at?: string | null
           family_id?: string
-          email?: string
-          token?: string
-          status?: string
-          created_by?: string | null
+          id?: string
+          notes?: string | null
+          per_session_cents?: number | null
+          program_id?: string | null
+          program_type?: string | null
+          term_fee_cents?: number | null
+          valid_from?: string
+          valid_until?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "family_pricing_family_id_fkey"
+            columns: ["family_id"]
+            isOneToOne: false
+            referencedRelation: "families"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "family_pricing_program_id_fkey"
+            columns: ["program_id"]
+            isOneToOne: false
+            referencedRelation: "programs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      invitations: {
+        Row: {
+          claimed_at: string | null
+          claimed_by: string | null
+          created_at: string | null
+          created_by: string | null
+          email: string
+          expires_at: string | null
+          family_id: string
+          id: string
+          status: string
+          token: string
+        }
+        Insert: {
+          claimed_at?: string | null
           claimed_by?: string | null
           created_at?: string | null
+          created_by?: string | null
+          email: string
           expires_at?: string | null
+          family_id: string
+          id?: string
+          status?: string
+          token: string
+        }
+        Update: {
           claimed_at?: string | null
+          claimed_by?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          email?: string
+          expires_at?: string | null
+          family_id?: string
+          id?: string
+          status?: string
+          token?: string
         }
         Relationships: [
           {
@@ -647,25 +897,25 @@ export type Database = {
       }
       notification_recipients: {
         Row: {
+          created_at: string | null
           id: string
           notification_id: string
-          user_id: string
           read_at: string | null
-          created_at: string | null
+          user_id: string
         }
         Insert: {
+          created_at?: string | null
           id?: string
           notification_id: string
-          user_id: string
           read_at?: string | null
-          created_at?: string | null
+          user_id: string
         }
         Update: {
+          created_at?: string | null
           id?: string
           notification_id?: string
-          user_id?: string
           read_at?: string | null
-          created_at?: string | null
+          user_id?: string
         }
         Relationships: [
           {
@@ -1036,6 +1286,71 @@ export type Database = {
         }
         Relationships: []
       }
+      referrals: {
+        Row: {
+          charge_id: string | null
+          created_at: string | null
+          credit_amount_cents: number
+          id: string
+          qualified_at: string | null
+          referred_family_id: string
+          referred_player_id: string | null
+          referring_family_id: string
+          status: string
+        }
+        Insert: {
+          charge_id?: string | null
+          created_at?: string | null
+          credit_amount_cents?: number
+          id?: string
+          qualified_at?: string | null
+          referred_family_id: string
+          referred_player_id?: string | null
+          referring_family_id: string
+          status?: string
+        }
+        Update: {
+          charge_id?: string | null
+          created_at?: string | null
+          credit_amount_cents?: number
+          id?: string
+          qualified_at?: string | null
+          referred_family_id?: string
+          referred_player_id?: string | null
+          referring_family_id?: string
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "referrals_charge_id_fkey"
+            columns: ["charge_id"]
+            isOneToOne: false
+            referencedRelation: "charges"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "referrals_referred_family_id_fkey"
+            columns: ["referred_family_id"]
+            isOneToOne: false
+            referencedRelation: "families"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "referrals_referred_player_id_fkey"
+            columns: ["referred_player_id"]
+            isOneToOne: false
+            referencedRelation: "players"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "referrals_referring_family_id_fkey"
+            columns: ["referring_family_id"]
+            isOneToOne: false
+            referencedRelation: "families"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       sessions: {
         Row: {
           cancellation_reason: string | null
@@ -1176,34 +1491,52 @@ export type Database = {
       }
       teams: {
         Row: {
+          age_group: string | null
           captain_id: string | null
           coach_id: string | null
+          competition_id: string | null
           created_at: string | null
+          division: string | null
+          gender: string | null
           id: string
           name: string
+          nomination_status: string
           program_id: string | null
           season: string | null
           status: string
+          team_size_required: number | null
         }
         Insert: {
+          age_group?: string | null
           captain_id?: string | null
           coach_id?: string | null
+          competition_id?: string | null
           created_at?: string | null
+          division?: string | null
+          gender?: string | null
           id?: string
           name: string
+          nomination_status?: string
           program_id?: string | null
           season?: string | null
           status?: string
+          team_size_required?: number | null
         }
         Update: {
+          age_group?: string | null
           captain_id?: string | null
           coach_id?: string | null
+          competition_id?: string | null
           created_at?: string | null
+          division?: string | null
+          gender?: string | null
           id?: string
           name?: string
+          nomination_status?: string
           program_id?: string | null
           season?: string | null
           status?: string
+          team_size_required?: number | null
         }
         Relationships: [
           {
@@ -1218,6 +1551,13 @@ export type Database = {
             columns: ["coach_id"]
             isOneToOne: false
             referencedRelation: "coaches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "teams_competition_id_fkey"
+            columns: ["competition_id"]
+            isOneToOne: false
+            referencedRelation: "competitions"
             referencedColumns: ["id"]
           },
           {
@@ -1292,198 +1632,117 @@ export type Database = {
         }
         Relationships: []
       }
-      charges: {
-        Row: {
-          id: string
-          family_id: string
-          player_id: string | null
-          type: string
-          source_type: string
-          source_id: string | null
-          session_id: string | null
-          program_id: string | null
-          booking_id: string | null
-          description: string
-          amount_cents: number
-          status: string
-          invoice_id: string | null
-          created_by: string | null
-          created_at: string
-          updated_at: string
-        }
-        Insert: {
-          id?: string
-          family_id: string
-          player_id?: string | null
-          type: string
-          source_type: string
-          source_id?: string | null
-          session_id?: string | null
-          program_id?: string | null
-          booking_id?: string | null
-          description: string
-          amount_cents: number
-          status?: string
-          invoice_id?: string | null
-          created_by?: string | null
-          created_at?: string
-          updated_at?: string
-        }
-        Update: {
-          id?: string
-          family_id?: string
-          player_id?: string | null
-          type?: string
-          source_type?: string
-          source_id?: string | null
-          session_id?: string | null
-          program_id?: string | null
-          booking_id?: string | null
-          description?: string
-          amount_cents?: number
-          status?: string
-          invoice_id?: string | null
-          created_by?: string | null
-          created_at?: string
-          updated_at?: string
-        }
-        Relationships: []
-      }
-      family_pricing: {
-        Row: {
-          id: string
-          family_id: string
-          program_id: string | null
-          program_type: string | null
-          per_session_cents: number | null
-          term_fee_cents: number | null
-          notes: string | null
-          valid_from: string
-          valid_until: string | null
-          created_at: string
-        }
-        Insert: {
-          id?: string
-          family_id: string
-          program_id?: string | null
-          program_type?: string | null
-          per_session_cents?: number | null
-          term_fee_cents?: number | null
-          notes?: string | null
-          valid_from?: string
-          valid_until?: string | null
-          created_at?: string
-        }
-        Update: {
-          id?: string
-          family_id?: string
-          program_id?: string | null
-          program_type?: string | null
-          per_session_cents?: number | null
-          term_fee_cents?: number | null
-          notes?: string | null
-          valid_from?: string
-          valid_until?: string | null
-          created_at?: string
-        }
-        Relationships: []
-      }
       vouchers: {
         Row: {
-          id: string
-          family_id: string
-          voucher_code: string
-          voucher_type: string
           amount_cents: number
-          status: string
-          submitted_by: string | null
-          submitted_at: string | null
+          charge_id: string | null
+          created_at: string | null
+          family_id: string
+          id: string
+          notes: string | null
           reviewed_at: string | null
           reviewed_by: string | null
-          charge_id: string | null
-          notes: string | null
-          created_at: string
+          status: string
+          submitted_at: string | null
+          submitted_by: string | null
+          voucher_code: string
+          voucher_type: string
         }
         Insert: {
-          id?: string
+          amount_cents?: number
+          charge_id?: string | null
+          created_at?: string | null
           family_id: string
+          id?: string
+          notes?: string | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          status?: string
+          submitted_at?: string | null
+          submitted_by?: string | null
           voucher_code: string
           voucher_type?: string
-          amount_cents?: number
-          status?: string
-          submitted_by?: string | null
-          submitted_at?: string | null
-          reviewed_at?: string | null
-          reviewed_by?: string | null
-          charge_id?: string | null
-          notes?: string | null
-          created_at?: string
         }
         Update: {
-          id?: string
+          amount_cents?: number
+          charge_id?: string | null
+          created_at?: string | null
           family_id?: string
+          id?: string
+          notes?: string | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          status?: string
+          submitted_at?: string | null
+          submitted_by?: string | null
           voucher_code?: string
           voucher_type?: string
-          amount_cents?: number
-          status?: string
-          submitted_by?: string | null
-          submitted_at?: string | null
-          reviewed_at?: string | null
-          reviewed_by?: string | null
-          charge_id?: string | null
-          notes?: string | null
-          created_at?: string
         }
-        Relationships: []
-      }
-      referrals: {
-        Row: {
-          id: string
-          referring_family_id: string
-          referred_family_id: string
-          referred_player_id: string | null
-          status: string
-          credit_amount_cents: number
-          charge_id: string | null
-          qualified_at: string | null
-          created_at: string
-        }
-        Insert: {
-          id?: string
-          referring_family_id: string
-          referred_family_id: string
-          referred_player_id?: string | null
-          status?: string
-          credit_amount_cents?: number
-          charge_id?: string | null
-          qualified_at?: string | null
-          created_at?: string
-        }
-        Update: {
-          id?: string
-          referring_family_id?: string
-          referred_family_id?: string
-          referred_player_id?: string | null
-          status?: string
-          credit_amount_cents?: number
-          charge_id?: string | null
-          qualified_at?: string | null
-          created_at?: string
-        }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "vouchers_charge_id_fkey"
+            columns: ["charge_id"]
+            isOneToOne: false
+            referencedRelation: "charges"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "vouchers_family_id_fkey"
+            columns: ["family_id"]
+            isOneToOne: false
+            referencedRelation: "families"
+            referencedColumns: ["id"]
+          },
+        ]
       }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
+      create_booking_notification: {
+        Args: {
+          p_body: string
+          p_family_id: string
+          p_title: string
+          p_type: string
+          p_url: string
+        }
+        Returns: string
+      }
+      decrypt_medical: { Args: { ciphertext: string }; Returns: string }
+      encrypt_medical: { Args: { plaintext: string }; Returns: string }
+      get_player_medical_notes: {
+        Args: { p_player_id: string }
+        Returns: {
+          medical_notes: string
+          physical_notes: string
+        }[]
+      }
+      get_session_price: {
+        Args: {
+          target_family_id: string
+          target_program_id: string
+          target_program_type?: string
+        }
+        Returns: number
+      }
+      get_term_price: {
+        Args: {
+          target_family_id: string
+          target_program_id: string
+          target_program_type?: string
+        }
+        Returns: number
+      }
       get_user_coach_id: { Args: { user_uuid: string }; Returns: string }
       get_user_family_id: { Args: { user_uuid: string }; Returns: string }
       get_user_role: { Args: { user_uuid: string }; Returns: string }
       is_admin: { Args: { user_uuid: string }; Returns: boolean }
-      recalculate_family_balance: { Args: { target_family_id: string }; Returns: number }
-      get_session_price: { Args: { target_family_id: string; target_program_id: string; target_program_type?: string | null }; Returns: number }
-      get_term_price: { Args: { target_family_id: string; target_program_id: string; target_program_type?: string | null }; Returns: number }
+      recalculate_family_balance: {
+        Args: { target_family_id: string }
+        Returns: number
+      }
     }
     Enums: {
       [_ in never]: never
@@ -1612,9 +1871,6 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
-  graphql_public: {
-    Enums: {},
-  },
   public: {
     Enums: {},
   },

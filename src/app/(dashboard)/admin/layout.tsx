@@ -9,6 +9,7 @@ import {
   CreditCard,
   Bell,
   Trophy,
+  Swords,
 } from 'lucide-react'
 
 const navItems = [
@@ -18,6 +19,7 @@ const navItems = [
   { href: '/admin/sessions', label: 'Sessions', icon: Calendar },
   { href: '/admin/payments', label: 'Payments', icon: CreditCard },
   { href: '/admin/notifications', label: 'Notifications', icon: Bell },
+  { href: '/admin/competitions', label: 'Comps', icon: Swords },
   { href: '/admin/teams', label: 'Teams', icon: Trophy },
 ]
 
