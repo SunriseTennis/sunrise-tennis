@@ -19,8 +19,10 @@ export async function searchUTRPlayers(
   query: string,
   top: number = 5,
 ): Promise<UTRSearchResult[]> {
+  // Use utrsports.net directly — app.universaltennis.com 301-redirects here,
+  // and Next.js cached fetch doesn't follow redirects properly on Vercel.
   const res = await fetch(
-    `https://app.universaltennis.com/api/v2/search/players?query=${encodeURIComponent(query)}&top=${top}`,
+    `https://app.utrsports.net/api/v2/search/players?query=${encodeURIComponent(query)}&top=${top}`,
     {
       headers: { Accept: 'application/json' },
       next: { revalidate: 300 },
