@@ -20,10 +20,6 @@ export async function GET(request: NextRequest) {
 
   const top = Math.min(parseInt(request.nextUrl.searchParams.get('top') ?? '5', 10), 10)
 
-  if (!process.env.UTR_API_EMAIL || !process.env.UTR_API_PASSWORD) {
-    return NextResponse.json({ error: 'UTR integration not configured. Add UTR_API_EMAIL and UTR_API_PASSWORD environment variables.' }, { status: 503 })
-  }
-
   try {
     const results = await searchUTRPlayers(q, top)
     return NextResponse.json({ results })
