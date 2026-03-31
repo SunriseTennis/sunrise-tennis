@@ -226,3 +226,222 @@ export async function updatePayPeriod(formData: FormData) {
   revalidatePath('/coach/availability')
   redirect('/coach/availability')
 }
+
+// ── Private Booking Confirmation ───────────────────────────────────────
+
+export async function confirmPrivateBooking(bookingId: string) {
+  const { user, coachId } = await requireCoach()
+  if (!coachId) redirect('/coach?error=No+coach+profile+found')
+  const supabase = await createClient()
+
+  const { data: booking } = await supabase
+    .from('bookings')
+    .select('id, session_id, family_id, approval_status')
+    .eq('id', bookingId)
+    .single()
+
+  if (!booking || booking.approval_status !== 'pending') {
+    redirect('/coach/privates?error=Booking+not+found+or+already+processed')
+  }
+
+  // Verify session belongs to this coach
+  const { data: session } = await supabase
+    .from('sessions')
+    .select('id, coach_id')
+    .eq('id', booking.session_id!)
+    .eq('coach_id', coachId)
+    .single()
+
+  if (!session) {
+    redirect('/coach/privates?error=Not+authorized+to+confirm+this+booking')
+  }
+
+  await supabase
+    .from('bookings')
+    .update({
+      status: 'confirmed',
+      approval_status: 'approved',
+      approved_by: user.id,
+      approved_at: new Date().toISOString(),
+    })
+    .eq('id', bookingId)
+
+  await supabase
+    .from('charges')
+    .update({ status: 'confirmed' })
+    .eq('booking_id', bookingId)
+    .eq('status', 'pending')
+
+  // Notify parent
+  const { data: parentRole } = await supabase
+    .from('user_roles')
+    .select('user_id')
+    .eq('family_id', booking.family_id)
+    .eq('role', 'parent')
+    .limit(1)
+    .single()
+
+  if (parentRole) {
+    const { sendPushToUser } = await import('@/lib/push/send')
+    try {
+      await sendPushToUser(parentRole.user_id, {
+        title: 'Private Lesson Confirmed',
+        body: 'Your booking has been confirmed by the coach',
+        url: '/parent/bookings',
+      })
+    } catch { /* non-blocking */ }
+  }
+
+  revalidatePath('/coach/privates')
+  redirect('/coach/privates')
+}
+
+export async function declinePrivateBooking(bookingId: string) {
+  const { user, coachId } = await requireCoach()
+  if (!coachId) redirect('/coach?error=No+coach+profile+found')
+  const supabase = await createClient()
+
+  const { data: booking } = await supabase
+    .from('bookings')
+    .select('id, session_id, family_id, approval_status')
+    .eq('id', bookingId)
+    .single()
+
+  if (!booking || booking.approval_status !== 'pending') {
+    redirect('/coach/privates?error=Booking+not+found+or+already+processed')
+  }
+
+  const { data: session } = await supabase
+    .from('sessions')
+    .select('id, coach_id')
+    .eq('id', booking.session_id!)
+    .eq('coach_id', coachId)
+    .single()
+
+  if (!session) {
+    redirect('/coach/privates?error=Not+authorized')
+  }
+
+  await supabase
+    .from('bookings')
+    .update({ status: 'cancelled', approval_status: 'declined' })
+    .eq('id', bookingId)
+
+  await supabase
+    .from('sessions')
+    .update({ status: 'cancelled', cancellation_reason: 'Declined by coach' })
+    .eq('id', booking.session_id!)
+
+  // Void charge
+  const { voidCharge } = await import('@/lib/utils/billing')
+  const { data: charge } = await supabase
+    .from('charges')
+    .select('id')
+    .eq('booking_id', bookingId)
+    .in('status', ['pending', 'confirmed'])
+    .single()
+
+  if (charge) {
+    await voidCharge(supabase, charge.id, booking.family_id)
+  }
+
+  // Notify parent
+  const { data: parentRole } = await supabase
+    .from('user_roles')
+    .select('user_id')
+    .eq('family_id', booking.family_id)
+    .eq('role', 'parent')
+    .limit(1)
+    .single()
+
+  if (parentRole) {
+    const { sendPushToUser } = await import('@/lib/push/send')
+    try {
+      await sendPushToUser(parentRole.user_id, {
+        title: 'Booking Declined',
+        body: 'Your private lesson request was not accepted',
+        url: '/parent/bookings',
+      })
+    } catch { /* non-blocking */ }
+  }
+
+  revalidatePath('/coach/privates')
+  redirect('/coach/privates')
+}
+
+export async function completePrivateSession(sessionId: string) {
+  const { user, coachId } = await requireCoach()
+  if (!coachId) redirect('/coach?error=No+coach+profile+found')
+  const supabase = await createClient()
+
+  const { data: session } = await supabase
+    .from('sessions')
+    .select('id, coach_id, date, duration_minutes, status')
+    .eq('id', sessionId)
+    .eq('coach_id', coachId)
+    .eq('session_type', 'private')
+    .single()
+
+  if (!session) {
+    redirect('/coach/privates?error=Session+not+found')
+  }
+
+  if (session.status === 'completed') {
+    redirect(`/coach/privates/${sessionId}?error=Already+completed`)
+  }
+
+  await supabase
+    .from('sessions')
+    .update({ status: 'completed', completed_by: user.id })
+    .eq('id', sessionId)
+
+  // Get booking to find price
+  const { data: booking } = await supabase
+    .from('bookings')
+    .select('id, price_cents')
+    .eq('session_id', sessionId)
+    .eq('booking_type', 'private')
+    .single()
+
+  // Confirm charge if still pending
+  if (booking) {
+    await supabase
+      .from('charges')
+      .update({ status: 'confirmed' })
+      .eq('booking_id', booking.id)
+      .eq('status', 'pending')
+  }
+
+  // Create coach earnings (skip for owner)
+  const { data: coach } = await supabase
+    .from('coaches')
+    .select('is_owner, pay_period')
+    .eq('id', coachId)
+    .single()
+
+  if (coach && !coach.is_owner && booking?.price_cents) {
+    const { calculateCoachPay, getPayPeriodKey } = await import('@/lib/utils/private-booking')
+    const payCents = calculateCoachPay(booking.price_cents)
+    const payPeriodKey = getPayPeriodKey(new Date(session.date), coach.pay_period ?? 'weekly')
+
+    const { data: termData } = await supabase.rpc('get_current_term')
+    const term = termData?.[0]
+
+    await supabase
+      .from('coach_earnings')
+      .insert({
+        coach_id: coachId,
+        session_id: sessionId,
+        session_type: 'private',
+        amount_cents: payCents,
+        duration_minutes: session.duration_minutes ?? 30,
+        term: term?.term ?? null,
+        year: term?.year ?? null,
+        pay_period_key: payPeriodKey,
+        status: 'owed',
+      })
+  }
+
+  revalidatePath('/coach/privates')
+  redirect(`/coach/privates/${sessionId}?success=Session+completed`)
+}
