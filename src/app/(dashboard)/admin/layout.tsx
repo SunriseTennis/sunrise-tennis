@@ -11,6 +11,7 @@ import {
   Bell,
   Trophy,
   Swords,
+  UserPlus,
 } from 'lucide-react'
 
 const navItems = [
@@ -20,6 +21,7 @@ const navItems = [
   { href: '/admin/programs', label: 'Programs', icon: GraduationCap },
   { href: '/admin/sessions', label: 'Sessions', icon: Calendar },
   { href: '/admin/payments', label: 'Payments', icon: CreditCard },
+  { href: '/admin/privates', label: 'Privates', icon: UserPlus },
   { href: '/admin/notifications', label: 'Notifications', icon: Bell },
   { href: '/admin/competitions', label: 'Comps', icon: Swords },
   { href: '/admin/teams', label: 'Teams', icon: Trophy },

@@ -3,7 +3,14 @@
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { createClient, requireCoach } from '@/lib/supabase/server'
-import { validateFormData, lessonNoteFormSchema, attendanceStatusSchema } from '@/lib/utils/validation'
+import {
+  validateFormData,
+  lessonNoteFormSchema,
+  attendanceStatusSchema,
+  coachAvailabilityFormSchema,
+  coachExceptionFormSchema,
+  payPeriodSchema,
+} from '@/lib/utils/validation'
 
 // ── Lesson Notes ────────────────────────────────────────────────────────
 
@@ -88,4 +95,134 @@ export async function coachUpdateAttendance(sessionId: string, formData: FormDat
 
   revalidatePath(`/coach/schedule/${sessionId}`)
   redirect(`/coach/schedule/${sessionId}`)
+}
+
+// ── Coach Availability ─────────────────────────────────────────────────
+
+export async function setAvailability(formData: FormData) {
+  const { user, coachId } = await requireCoach()
+  if (!coachId) redirect('/coach?error=No+coach+profile+found')
+  const supabase = await createClient()
+
+  const { checkRateLimitAsync } = await import('@/lib/utils/rate-limit')
+  if (!await checkRateLimitAsync(`availability:${user.id}`, 20, 60_000)) {
+    redirect('/coach/availability?error=Too+many+requests')
+  }
+
+  const parsed = validateFormData(formData, coachAvailabilityFormSchema)
+  if (!parsed.success) {
+    redirect(`/coach/availability?error=${encodeURIComponent(parsed.error)}`)
+  }
+
+  // Coach can only set their own availability
+  const { error } = await supabase
+    .from('coach_availability')
+    .insert({
+      coach_id: coachId,
+      day_of_week: parsed.data.day_of_week,
+      start_time: parsed.data.start_time,
+      end_time: parsed.data.end_time,
+    })
+
+  if (error) {
+    const msg = error.code === '23505' ? 'This time slot already exists' : 'Failed to add availability'
+    redirect(`/coach/availability?error=${encodeURIComponent(msg)}`)
+  }
+
+  revalidatePath('/coach/availability')
+  redirect('/coach/availability')
+}
+
+export async function removeAvailability(availabilityId: string) {
+  await requireCoach()
+  const supabase = await createClient()
+
+  // RLS ensures coach can only delete their own
+  const { error } = await supabase
+    .from('coach_availability')
+    .delete()
+    .eq('id', availabilityId)
+
+  if (error) {
+    redirect(`/coach/availability?error=${encodeURIComponent('Failed to remove availability')}`)
+  }
+
+  revalidatePath('/coach/availability')
+  redirect('/coach/availability')
+}
+
+export async function addException(formData: FormData) {
+  const { user, coachId } = await requireCoach()
+  if (!coachId) redirect('/coach?error=No+coach+profile+found')
+  const supabase = await createClient()
+
+  const { checkRateLimitAsync } = await import('@/lib/utils/rate-limit')
+  if (!await checkRateLimitAsync(`exception:${user.id}`, 20, 60_000)) {
+    redirect('/coach/availability?error=Too+many+requests')
+  }
+
+  const parsed = validateFormData(formData, coachExceptionFormSchema)
+  if (!parsed.success) {
+    redirect(`/coach/availability?error=${encodeURIComponent(parsed.error)}`)
+  }
+
+  const { error } = await supabase
+    .from('coach_availability_exceptions')
+    .insert({
+      coach_id: coachId,
+      exception_date: parsed.data.exception_date,
+      start_time: parsed.data.start_time || null,
+      end_time: parsed.data.end_time || null,
+      reason: parsed.data.reason || null,
+    })
+
+  if (error) {
+    const msg = error.code === '23505' ? 'This exception already exists' : 'Failed to add exception'
+    redirect(`/coach/availability?error=${encodeURIComponent(msg)}`)
+  }
+
+  revalidatePath('/coach/availability')
+  redirect('/coach/availability')
+}
+
+export async function removeException(exceptionId: string) {
+  await requireCoach()
+  const supabase = await createClient()
+
+  // RLS ensures coach can only delete their own
+  const { error } = await supabase
+    .from('coach_availability_exceptions')
+    .delete()
+    .eq('id', exceptionId)
+
+  if (error) {
+    redirect(`/coach/availability?error=${encodeURIComponent('Failed to remove exception')}`)
+  }
+
+  revalidatePath('/coach/availability')
+  redirect('/coach/availability')
+}
+
+export async function updatePayPeriod(formData: FormData) {
+  const { coachId } = await requireCoach()
+  if (!coachId) redirect('/coach?error=No+coach+profile+found')
+  const supabase = await createClient()
+
+  const payPeriod = formData.get('pay_period') as string
+  const result = payPeriodSchema.safeParse(payPeriod)
+  if (!result.success) {
+    redirect('/coach/availability?error=Invalid+pay+period')
+  }
+
+  const { error } = await supabase
+    .from('coaches')
+    .update({ pay_period: result.data })
+    .eq('id', coachId)
+
+  if (error) {
+    redirect(`/coach/availability?error=${encodeURIComponent('Failed to update pay period')}`)
+  }
+
+  revalidatePath('/coach/availability')
+  redirect('/coach/availability')
 }

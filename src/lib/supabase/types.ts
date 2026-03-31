@@ -12,6 +12,31 @@ export type Database = {
   __InternalSupabase: {
     PostgrestVersion: "14.4"
   }
+  graphql_public: {
+    Tables: {
+      [_ in never]: never
+    }
+    Views: {
+      [_ in never]: never
+    }
+    Functions: {
+      graphql: {
+        Args: {
+          extensions?: Json
+          operationName?: string
+          query?: string
+          variables?: Json
+        }
+        Returns: Json
+      }
+    }
+    Enums: {
+      [_ in never]: never
+    }
+    CompositeTypes: {
+      [_ in never]: never
+    }
+  }
   public: {
     Tables: {
       attendances: {
@@ -136,54 +161,84 @@ export type Database = {
       }
       bookings: {
         Row: {
+          approval_status: string
+          approved_at: string | null
+          approved_by: string | null
+          auto_approved: boolean
           booked_at: string | null
           booked_by: string | null
           booking_type: string
+          cancellation_type: string | null
           discount_cents: number | null
+          duration_minutes: number | null
           family_id: string
           id: string
+          is_standing: boolean
           notes: string | null
           payment_option: string | null
           player_id: string
           price_cents: number | null
           program_id: string | null
+          second_family_id: string | null
+          second_player_id: string | null
           session_id: string | null
           sessions_charged: number | null
           sessions_total: number | null
+          standing_parent_id: string | null
           status: string
         }
         Insert: {
+          approval_status?: string
+          approved_at?: string | null
+          approved_by?: string | null
+          auto_approved?: boolean
           booked_at?: string | null
           booked_by?: string | null
           booking_type: string
+          cancellation_type?: string | null
           discount_cents?: number | null
+          duration_minutes?: number | null
           family_id: string
           id?: string
+          is_standing?: boolean
           notes?: string | null
           payment_option?: string | null
           player_id: string
           price_cents?: number | null
           program_id?: string | null
+          second_family_id?: string | null
+          second_player_id?: string | null
           session_id?: string | null
           sessions_charged?: number | null
           sessions_total?: number | null
+          standing_parent_id?: string | null
           status?: string
         }
         Update: {
+          approval_status?: string
+          approved_at?: string | null
+          approved_by?: string | null
+          auto_approved?: boolean
           booked_at?: string | null
           booked_by?: string | null
           booking_type?: string
+          cancellation_type?: string | null
           discount_cents?: number | null
+          duration_minutes?: number | null
           family_id?: string
           id?: string
+          is_standing?: boolean
           notes?: string | null
           payment_option?: string | null
           player_id?: string
           price_cents?: number | null
           program_id?: string | null
+          second_family_id?: string | null
+          second_player_id?: string | null
           session_id?: string | null
           sessions_charged?: number | null
           sessions_total?: number | null
+          standing_parent_id?: string | null
           status?: string
         }
         Relationships: [
@@ -209,10 +264,72 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "bookings_second_family_id_fkey"
+            columns: ["second_family_id"]
+            isOneToOne: false
+            referencedRelation: "families"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bookings_second_player_id_fkey"
+            columns: ["second_player_id"]
+            isOneToOne: false
+            referencedRelation: "players"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "bookings_session_id_fkey"
             columns: ["session_id"]
             isOneToOne: false
             referencedRelation: "sessions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bookings_standing_parent_id_fkey"
+            columns: ["standing_parent_id"]
+            isOneToOne: false
+            referencedRelation: "bookings"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      cancellation_tracker: {
+        Row: {
+          created_at: string | null
+          family_id: string
+          id: string
+          late_cancellation_count: number
+          noshow_count: number
+          term: number
+          updated_at: string | null
+          year: number
+        }
+        Insert: {
+          created_at?: string | null
+          family_id: string
+          id?: string
+          late_cancellation_count?: number
+          noshow_count?: number
+          term: number
+          updated_at?: string | null
+          year: number
+        }
+        Update: {
+          created_at?: string | null
+          family_id?: string
+          id?: string
+          late_cancellation_count?: number
+          noshow_count?: number
+          term?: number
+          updated_at?: string | null
+          year?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cancellation_tracker_family_id_fkey"
+            columns: ["family_id"]
+            isOneToOne: false
+            referencedRelation: "families"
             referencedColumns: ["id"]
           },
         ]
@@ -371,6 +488,183 @@ export type Database = {
         }
         Relationships: []
       }
+      coach_availability: {
+        Row: {
+          coach_id: string
+          created_at: string | null
+          day_of_week: number
+          effective_from: string
+          effective_until: string | null
+          end_time: string
+          id: string
+          start_time: string
+        }
+        Insert: {
+          coach_id: string
+          created_at?: string | null
+          day_of_week: number
+          effective_from?: string
+          effective_until?: string | null
+          end_time: string
+          id?: string
+          start_time: string
+        }
+        Update: {
+          coach_id?: string
+          created_at?: string | null
+          day_of_week?: number
+          effective_from?: string
+          effective_until?: string | null
+          end_time?: string
+          id?: string
+          start_time?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "coach_availability_coach_id_fkey"
+            columns: ["coach_id"]
+            isOneToOne: false
+            referencedRelation: "coaches"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      coach_availability_exceptions: {
+        Row: {
+          coach_id: string
+          created_at: string | null
+          end_time: string | null
+          exception_date: string
+          id: string
+          reason: string | null
+          start_time: string | null
+        }
+        Insert: {
+          coach_id: string
+          created_at?: string | null
+          end_time?: string | null
+          exception_date: string
+          id?: string
+          reason?: string | null
+          start_time?: string | null
+        }
+        Update: {
+          coach_id?: string
+          created_at?: string | null
+          end_time?: string | null
+          exception_date?: string
+          id?: string
+          reason?: string | null
+          start_time?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "coach_availability_exceptions_coach_id_fkey"
+            columns: ["coach_id"]
+            isOneToOne: false
+            referencedRelation: "coaches"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      coach_earnings: {
+        Row: {
+          amount_cents: number
+          coach_id: string
+          created_at: string | null
+          duration_minutes: number
+          id: string
+          pay_period_key: string
+          session_id: string
+          session_type: string
+          status: string
+          term: number | null
+          year: number | null
+        }
+        Insert: {
+          amount_cents: number
+          coach_id: string
+          created_at?: string | null
+          duration_minutes: number
+          id?: string
+          pay_period_key: string
+          session_id: string
+          session_type: string
+          status?: string
+          term?: number | null
+          year?: number | null
+        }
+        Update: {
+          amount_cents?: number
+          coach_id?: string
+          created_at?: string | null
+          duration_minutes?: number
+          id?: string
+          pay_period_key?: string
+          session_id?: string
+          session_type?: string
+          status?: string
+          term?: number | null
+          year?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "coach_earnings_coach_id_fkey"
+            columns: ["coach_id"]
+            isOneToOne: false
+            referencedRelation: "coaches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "coach_earnings_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      coach_payments: {
+        Row: {
+          amount_cents: number
+          coach_id: string
+          created_at: string | null
+          id: string
+          notes: string | null
+          paid_at: string | null
+          paid_by: string | null
+          pay_period_key: string
+        }
+        Insert: {
+          amount_cents: number
+          coach_id: string
+          created_at?: string | null
+          id?: string
+          notes?: string | null
+          paid_at?: string | null
+          paid_by?: string | null
+          pay_period_key: string
+        }
+        Update: {
+          amount_cents?: number
+          coach_id?: string
+          created_at?: string | null
+          id?: string
+          notes?: string | null
+          paid_at?: string | null
+          paid_by?: string | null
+          pay_period_key?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "coach_payments_coach_id_fkey"
+            columns: ["coach_id"]
+            isOneToOne: false
+            referencedRelation: "coaches"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       coaches: {
         Row: {
           created_at: string | null
@@ -379,6 +673,7 @@ export type Database = {
           id: string
           is_owner: boolean | null
           name: string
+          pay_period: string
           phone: string | null
           qualifications: Json | null
           status: string
@@ -391,6 +686,7 @@ export type Database = {
           id?: string
           is_owner?: boolean | null
           name: string
+          pay_period?: string
           phone?: string | null
           qualifications?: Json | null
           status?: string
@@ -403,6 +699,7 @@ export type Database = {
           id?: string
           is_owner?: boolean | null
           name?: string
+          pay_period?: string
           phone?: string | null
           qualifications?: Json | null
           status?: string
@@ -1029,6 +1326,45 @@ export type Database = {
           },
         ]
       }
+      player_allowed_coaches: {
+        Row: {
+          auto_approve: boolean
+          coach_id: string
+          created_at: string | null
+          id: string
+          player_id: string
+        }
+        Insert: {
+          auto_approve?: boolean
+          coach_id: string
+          created_at?: string | null
+          id?: string
+          player_id: string
+        }
+        Update: {
+          auto_approve?: boolean
+          coach_id?: string
+          created_at?: string | null
+          id?: string
+          player_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "player_allowed_coaches_coach_id_fkey"
+            columns: ["coach_id"]
+            isOneToOne: false
+            referencedRelation: "coaches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "player_allowed_coaches_player_id_fkey"
+            columns: ["player_id"]
+            isOneToOne: false
+            referencedRelation: "players"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       players: {
         Row: {
           ball_color: string | null
@@ -1355,8 +1691,10 @@ export type Database = {
         Row: {
           cancellation_reason: string | null
           coach_id: string | null
+          completed_by: string | null
           created_at: string | null
           date: string
+          duration_minutes: number | null
           end_time: string | null
           id: string
           notes: string | null
@@ -1369,8 +1707,10 @@ export type Database = {
         Insert: {
           cancellation_reason?: string | null
           coach_id?: string | null
+          completed_by?: string | null
           created_at?: string | null
           date: string
+          duration_minutes?: number | null
           end_time?: string | null
           id?: string
           notes?: string | null
@@ -1383,8 +1723,10 @@ export type Database = {
         Update: {
           cancellation_reason?: string | null
           coach_id?: string | null
+          completed_by?: string | null
           created_at?: string | null
           date?: string
+          duration_minutes?: number | null
           end_time?: string | null
           id?: string
           notes?: string | null
@@ -1712,12 +2054,26 @@ export type Database = {
       }
       decrypt_medical: { Args: { ciphertext: string }; Returns: string }
       encrypt_medical: { Args: { plaintext: string }; Returns: string }
+      get_coach_pay: { Args: { price_cents: number }; Returns: number }
+      get_coach_team_ids: { Args: { user_uuid: string }; Returns: string[] }
+      get_current_term: {
+        Args: never
+        Returns: {
+          term: number
+          year: number
+        }[]
+      }
+      get_parent_team_ids: { Args: { user_uuid: string }; Returns: string[] }
       get_player_medical_notes: {
         Args: { p_player_id: string }
         Returns: {
           medical_notes: string
           physical_notes: string
         }[]
+      }
+      get_private_price: {
+        Args: { target_coach_id: string; target_duration_minutes: number }
+        Returns: number
       }
       get_session_price: {
         Args: {
@@ -1738,6 +2094,15 @@ export type Database = {
       get_user_coach_id: { Args: { user_uuid: string }; Returns: string }
       get_user_family_id: { Args: { user_uuid: string }; Returns: string }
       get_user_role: { Args: { user_uuid: string }; Returns: string }
+      increment_cancellation_counter: {
+        Args: {
+          counter_type: string
+          target_family_id: string
+          target_term: number
+          target_year: number
+        }
+        Returns: number
+      }
       is_admin: { Args: { user_uuid: string }; Returns: boolean }
       recalculate_family_balance: {
         Args: { target_family_id: string }
@@ -1871,6 +2236,9 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
+  graphql_public: {
+    Enums: {},
+  },
   public: {
     Enums: {},
   },

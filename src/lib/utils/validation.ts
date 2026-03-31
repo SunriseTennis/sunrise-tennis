@@ -399,3 +399,38 @@ export const updateCompPlayerFormSchema = z.object({
   player_id: optionalUuid(),
   notes: optionalString(1000),
 })
+
+// ── Private Bookings ──────────────────────────────────────────────────
+
+export const payPeriodSchema = z.enum(['weekly', 'end_of_term'])
+export const approvalStatusSchema = z.enum(['pending', 'approved', 'declined', 'auto'])
+
+export const coachAvailabilityFormSchema = z.object({
+  coach_id: uuidString('Invalid coach'),
+  day_of_week: z.coerce.number().int().min(0).max(6),
+  start_time: requiredString('Start time is required'),
+  end_time: requiredString('End time is required'),
+})
+
+export const coachExceptionFormSchema = z.object({
+  coach_id: uuidString('Invalid coach'),
+  exception_date: requiredString('Date is required'),
+  start_time: optionalString(),
+  end_time: optionalString(),
+  reason: optionalString(500),
+})
+
+export const requestPrivateFormSchema = z.object({
+  player_id: uuidString('Invalid player'),
+  coach_id: uuidString('Invalid coach'),
+  date: requiredString('Date is required'),
+  start_time: requiredString('Start time is required'),
+  duration_minutes: z.coerce.number().int().refine(
+    v => [30, 45, 60].includes(v), 'Duration must be 30, 45, or 60 minutes'
+  ),
+})
+
+export const cancelPrivateFormSchema = z.object({
+  booking_id: uuidString('Invalid booking'),
+  reason: optionalString(1000),
+})
