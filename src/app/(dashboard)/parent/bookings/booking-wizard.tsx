@@ -4,7 +4,7 @@ import { useState, useTransition } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { ChevronLeft, ChevronRight, User, Users, Calendar, Clock, Check } from 'lucide-react'
-import { requestPrivateBooking, fetchAvailableSlots } from './actions'
+import { requestPrivateBooking, requestStandingPrivate, fetchAvailableSlots } from './actions'
 import { formatTime } from '@/lib/utils/dates'
 
 interface Player {
@@ -47,6 +47,7 @@ export function BookingWizard({ players, coaches, allowedCoaches }: Props) {
   const [selectedCoach, setSelectedCoach] = useState<Coach | null>(null)
   const [selectedSlot, setSelectedSlot] = useState<TimeSlot | null>(null)
   const [duration, setDuration] = useState(30)
+  const [isStanding, setIsStanding] = useState(false)
   const [slots, setSlots] = useState<TimeSlot[]>([])
   const [loadingSlots, setLoadingSlots] = useState(false)
   const [isPending, startTransition] = useTransition()
@@ -302,14 +303,29 @@ export function BookingWizard({ players, coaches, allowedCoaches }: Props) {
                 </div>
               </div>
 
-              <form action={requestPrivateBooking} className="mt-4">
+              <label className="mt-4 flex items-center gap-2 rounded-lg border border-border p-3 cursor-pointer hover:bg-muted/30">
+                <input
+                  type="checkbox"
+                  checked={isStanding}
+                  onChange={(e) => setIsStanding(e.target.checked)}
+                  className="size-4 rounded border-border"
+                />
+                <div>
+                  <span className="text-sm font-medium">Make this a weekly booking</span>
+                  <p className="text-xs text-muted-foreground">
+                    Books this slot every week for the rest of the term
+                  </p>
+                </div>
+              </label>
+
+              <form action={isStanding ? requestStandingPrivate : requestPrivateBooking} className="mt-4">
                 <input type="hidden" name="player_id" value={selectedPlayer.id} />
                 <input type="hidden" name="coach_id" value={selectedCoach.id} />
                 <input type="hidden" name="date" value={selectedSlot.date} />
                 <input type="hidden" name="start_time" value={selectedSlot.startTime} />
                 <input type="hidden" name="duration_minutes" value={duration} />
                 <Button type="submit" className="w-full" disabled={isPending}>
-                  {isPending ? 'Submitting...' : 'Request Booking'}
+                  {isPending ? 'Submitting...' : isStanding ? 'Book Weekly' : 'Request Booking'}
                 </Button>
               </form>
 

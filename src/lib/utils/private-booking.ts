@@ -250,6 +250,93 @@ export function getPayPeriodKey(date: Date, payPeriod: string): string {
   return `${d.getUTCFullYear()}-W${String(weekNo).padStart(2, '0')}`
 }
 
+// ── Standing Bookings ──────────────────────────────────────────────────
+
+/**
+ * Generate dates for remaining weeks of the current term for a given day of week.
+ * Used when creating a standing (recurring) private lesson booking.
+ */
+export function getStandingDates(
+  dayOfWeek: number,
+  startDate: string,
+): string[] {
+  // Import term data inline to avoid circular deps
+  const SA_TERMS = [
+    { term: 1, year: 2026, start: new Date(2026, 0, 27), end: new Date(2026, 3, 10) },
+    { term: 2, year: 2026, start: new Date(2026, 3, 27), end: new Date(2026, 6, 3) },
+    { term: 3, year: 2026, start: new Date(2026, 6, 20), end: new Date(2026, 8, 25) },
+    { term: 4, year: 2026, start: new Date(2026, 9, 12), end: new Date(2026, 11, 11) },
+  ]
+
+  const start = new Date(startDate + 'T12:00:00')
+  const currentTerm = SA_TERMS.find(t => start >= t.start && start <= t.end)
+  if (!currentTerm) return [] // Not during a term
+
+  const dates: string[] = []
+  const cursor = new Date(start)
+
+  // Advance to the next occurrence of dayOfWeek after startDate
+  while (cursor.getDay() !== dayOfWeek) {
+    cursor.setDate(cursor.getDate() + 1)
+  }
+  // If we landed on startDate itself, skip to next week (first instance already booked)
+  if (cursor.toISOString().split('T')[0] === startDate) {
+    cursor.setDate(cursor.getDate() + 7)
+  }
+
+  while (cursor <= currentTerm.end) {
+    dates.push(cursor.toISOString().split('T')[0])
+    cursor.setDate(cursor.getDate() + 7)
+  }
+
+  return dates
+}
+
+// ── Freed Slot Notification ────────────────────────────────────────────
+
+/**
+ * Get user IDs of parents whose players can book with a given coach.
+ * Used to notify eligible families when a standing slot is freed.
+ */
+export async function getEligibleParentUserIds(
+  supabase: Supabase,
+  coachId: string,
+): Promise<string[]> {
+  // Get players allowed to book with this coach
+  const { data: allowedPlayers } = await supabase
+    .from('player_allowed_coaches')
+    .select('player_id')
+    .eq('coach_id', coachId)
+
+  let familyIds: string[] = []
+
+  if (allowedPlayers && allowedPlayers.length > 0) {
+    // Get families of allowed players
+    const { data: players } = await supabase
+      .from('players')
+      .select('family_id')
+      .in('id', allowedPlayers.map(a => a.player_id))
+    familyIds = [...new Set((players ?? []).map(p => p.family_id))]
+  } else {
+    // No restrictions = all active families
+    const { data: families } = await supabase
+      .from('families')
+      .select('id')
+      .eq('status', 'active')
+    familyIds = (families ?? []).map(f => f.id)
+  }
+
+  if (familyIds.length === 0) return []
+
+  const { data: roles } = await supabase
+    .from('user_roles')
+    .select('user_id')
+    .eq('role', 'parent')
+    .in('family_id', familyIds)
+
+  return (roles ?? []).map(r => r.user_id)
+}
+
 // ── Helpers ────────────────────────────────────────────────────────────
 
 function timeToMinutes(time: string): number {

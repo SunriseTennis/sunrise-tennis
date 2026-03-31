@@ -12,6 +12,8 @@ import {
   getPrivatePrice,
   getAvailableSlots,
   validateBookingConstraints,
+  getStandingDates,
+  getEligibleParentUserIds,
 } from '@/lib/utils/private-booking'
 
 async function getParentAuth(): Promise<{ userId: string; familyId: string }> {
@@ -315,6 +317,27 @@ export async function cancelPrivateBooking(formData: FormData) {
     .update({ status: 'cancelled', cancellation_reason: 'Parent cancelled' })
     .eq('id', booking.session_id!)
 
+  // If this was a standing slot cancelled with 24hr+ notice, notify eligible players
+  const { data: bookingFull } = await supabase
+    .from('bookings')
+    .select('is_standing')
+    .eq('id', booking_id)
+    .single()
+
+  if (bookingFull?.is_standing && !isLate && session.coach_id) {
+    try {
+      const eligibleUserIds = await getEligibleParentUserIds(supabase, session.coach_id)
+      for (const uid of eligibleUserIds) {
+        if (uid === userId) continue // Don't notify the cancelling parent
+        await sendPushToUser(uid, {
+          title: 'Private Slot Available',
+          body: `A private lesson slot is available on ${session.date} at ${formatTime12(session.start_time!)}`,
+          url: '/parent/bookings',
+        })
+      }
+    } catch { /* non-blocking */ }
+  }
+
   revalidatePath('/parent/bookings')
   revalidatePath('/parent')
 
@@ -322,6 +345,126 @@ export async function cancelPrivateBooking(formData: FormData) {
     ? 'Booking+cancelled.+Full+credit+applied.'
     : `Booking+cancelled.+${creditPercent}%25+credit+applied.`
   redirect(`/parent/bookings?success=${msg}`)
+}
+
+// ── Request Standing (Recurring) Private Booking ───────────────────────
+
+export async function requestStandingPrivate(formData: FormData) {
+  const { userId, familyId } = await getParentAuth()
+  const supabase = await createClient()
+
+  const { checkRateLimitAsync } = await import('@/lib/utils/rate-limit')
+  if (!await checkRateLimitAsync(`booking:${userId}`, 5, 60_000)) {
+    redirect('/parent/bookings?error=Too+many+requests')
+  }
+
+  const parsed = validateFormData(formData, requestPrivateFormSchema)
+  if (!parsed.success) {
+    redirect(`/parent/bookings?error=${encodeURIComponent(parsed.error)}`)
+  }
+
+  const { player_id, coach_id, date, start_time, duration_minutes } = parsed.data
+
+  // Verify player, coach, allowlist (same as one-off)
+  const { data: player } = await supabase.from('players').select('id, first_name, family_id').eq('id', player_id).eq('family_id', familyId).single()
+  if (!player) redirect('/parent/bookings?error=Invalid+player')
+
+  const { data: coach } = await supabase.from('coaches').select('id, name, is_owner, user_id').eq('id', coach_id).eq('status', 'active').single()
+  if (!coach) redirect('/parent/bookings?error=Coach+not+found')
+
+  const allowed = await canPlayerBookCoach(supabase, player_id, coach_id)
+  if (!allowed) redirect('/parent/bookings?error=Coach+not+available+for+this+player')
+
+  const autoApprove = await isAutoApproved(supabase, player_id, coach_id)
+  const priceCents = await getPrivatePrice(supabase, coach_id, duration_minutes)
+  const endMinutes = timeToMinutes(start_time) + duration_minutes
+  const endTime = minutesToTime(endMinutes)
+
+  // Create the first session + parent standing booking
+  const { data: firstSession } = await supabase
+    .from('sessions')
+    .insert({ session_type: 'private', date, start_time, end_time: endTime, coach_id, status: 'scheduled', duration_minutes })
+    .select('id')
+    .single()
+
+  if (!firstSession) redirect('/parent/bookings?error=Failed+to+create+session')
+
+  const { data: parentBooking } = await supabase
+    .from('bookings')
+    .insert({
+      family_id: familyId, player_id, session_id: firstSession.id,
+      booking_type: 'private', status: autoApprove ? 'confirmed' : 'pending',
+      approval_status: autoApprove ? 'approved' : 'pending',
+      auto_approved: autoApprove,
+      approved_by: autoApprove ? userId : null,
+      approved_at: autoApprove ? new Date().toISOString() : null,
+      price_cents: priceCents, duration_minutes,
+      booked_by: userId, is_standing: true,
+    })
+    .select('id')
+    .single()
+
+  if (!parentBooking) {
+    await supabase.from('sessions').delete().eq('id', firstSession.id)
+    redirect('/parent/bookings?error=Failed+to+create+booking')
+  }
+
+  // Create charge for first instance
+  await createCharge(supabase, {
+    familyId, playerId: player_id, type: 'private', sourceType: 'enrollment',
+    sessionId: firstSession.id, bookingId: parentBooking.id,
+    description: `Private lesson with ${coach.name} - ${date}`,
+    amountCents: priceCents, status: autoApprove ? 'confirmed' : 'pending', createdBy: userId,
+  })
+
+  // Generate remaining term instances
+  const dayOfWeek = new Date(date + 'T12:00:00').getDay()
+  const futureDates = getStandingDates(dayOfWeek, date)
+
+  for (const futureDate of futureDates) {
+    const { data: sess } = await supabase
+      .from('sessions')
+      .insert({ session_type: 'private', date: futureDate, start_time, end_time: endTime, coach_id, status: 'scheduled', duration_minutes })
+      .select('id')
+      .single()
+
+    if (!sess) continue
+
+    const { data: bk } = await supabase
+      .from('bookings')
+      .insert({
+        family_id: familyId, player_id, session_id: sess.id,
+        booking_type: 'private', status: autoApprove ? 'confirmed' : 'pending',
+        approval_status: autoApprove ? 'approved' : 'pending',
+        auto_approved: autoApprove, price_cents: priceCents, duration_minutes,
+        booked_by: userId, is_standing: true, standing_parent_id: parentBooking.id,
+      })
+      .select('id')
+      .single()
+
+    if (bk) {
+      await createCharge(supabase, {
+        familyId, playerId: player_id, type: 'private', sourceType: 'enrollment',
+        sessionId: sess.id, bookingId: bk.id,
+        description: `Private lesson with ${coach.name} - ${futureDate}`,
+        amountCents: priceCents, status: autoApprove ? 'confirmed' : 'pending', createdBy: userId,
+      })
+    }
+  }
+
+  // Notify coach
+  if (coach.user_id) {
+    try {
+      await sendPushToUser(coach.user_id, {
+        title: 'New Standing Booking',
+        body: `${player.first_name} - ${date} at ${formatTime12(start_time)} (${duration_minutes}min, weekly)`,
+        url: '/coach/privates',
+      })
+    } catch { /* non-blocking */ }
+  }
+
+  revalidatePath('/parent/bookings')
+  redirect('/parent/bookings?success=Standing+booking+' + (autoApprove ? 'confirmed!' : 'submitted!') + `+${futureDates.length + 1}+sessions+created`)
 }
 
 // ── Fetch Available Slots (called from client via server action) ───────

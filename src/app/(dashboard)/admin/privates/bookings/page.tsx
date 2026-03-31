@@ -6,6 +6,7 @@ import { EmptyState } from '@/components/empty-state'
 import { Calendar } from 'lucide-react'
 import { formatDate, formatTime } from '@/lib/utils/dates'
 import { AdminBookForm } from './admin-book-form'
+import { SharedPrivateForm } from './shared-private-form'
 
 export default async function AdminPrivateBookingsPage({
   searchParams,
@@ -68,6 +69,14 @@ export default async function AdminPrivateBookingsPage({
 
       {/* Admin book form */}
       <AdminBookForm
+        families={(families ?? []).map(f => ({ id: f.id, display_id: f.display_id, family_name: f.family_name }))}
+        coaches={(coaches ?? []).map(c => ({
+          id: c.id, name: c.name,
+          rate: (c.hourly_rate as { private_rate_cents?: number } | null)?.private_rate_cents ?? 0,
+        }))}
+      />
+
+      <SharedPrivateForm
         families={(families ?? []).map(f => ({ id: f.id, display_id: f.display_id, family_name: f.family_name }))}
         coaches={(coaches ?? []).map(c => ({
           id: c.id, name: c.name,
