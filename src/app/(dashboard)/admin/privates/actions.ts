@@ -141,3 +141,73 @@ export async function setPlayerAllowedCoaches(formData: FormData) {
   revalidatePath('/admin/privates')
   redirect(`/admin/privates?success=Updated+allowed+coaches`)
 }
+
+// ── Admin: Coach Payment Recording ─────────────────────────────────────
+
+export async function recordCoachPayment(formData: FormData) {
+  await requireAdmin()
+  const supabase = await createClient()
+
+  const coachId = formData.get('coach_id') as string
+  const amountDollars = formData.get('amount_dollars') as string
+  const notes = formData.get('notes') as string
+
+  if (!coachId || !amountDollars) {
+    redirect('/admin/privates/earnings?error=Coach+and+amount+are+required')
+  }
+
+  const amountCents = Math.round(parseFloat(amountDollars) * 100)
+  if (isNaN(amountCents) || amountCents <= 0) {
+    redirect('/admin/privates/earnings?error=Invalid+amount')
+  }
+
+  // Get coach's pay period
+  const { data: coach } = await supabase
+    .from('coaches')
+    .select('pay_period')
+    .eq('id', coachId)
+    .single()
+
+  const { getPayPeriodKey } = await import('@/lib/utils/private-booking')
+  const payPeriodKey = getPayPeriodKey(new Date(), coach?.pay_period ?? 'weekly')
+
+  // Get admin user
+  const { getSessionUser } = await import('@/lib/supabase/server')
+  const user = await getSessionUser()
+
+  // Create payment record
+  const { error: paymentError } = await supabase
+    .from('coach_payments')
+    .insert({
+      coach_id: coachId,
+      amount_cents: amountCents,
+      pay_period_key: payPeriodKey,
+      notes: notes || null,
+      paid_by: user?.id ?? null,
+    })
+
+  if (paymentError) {
+    redirect(`/admin/privates/earnings?error=${encodeURIComponent('Failed to record payment')}`)
+  }
+
+  // Mark matching owed earnings as paid (up to the amount paid)
+  const { data: owedEarnings } = await supabase
+    .from('coach_earnings')
+    .select('id, amount_cents')
+    .eq('coach_id', coachId)
+    .eq('status', 'owed')
+    .order('created_at')
+
+  let remaining = amountCents
+  for (const earning of owedEarnings ?? []) {
+    if (remaining <= 0) break
+    await supabase
+      .from('coach_earnings')
+      .update({ status: 'paid' })
+      .eq('id', earning.id)
+    remaining -= earning.amount_cents
+  }
+
+  revalidatePath('/admin/privates/earnings')
+  redirect('/admin/privates/earnings?success=Payment+recorded')
+}
