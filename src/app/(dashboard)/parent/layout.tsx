@@ -9,11 +9,13 @@ import {
   Trophy,
   Settings,
   CalendarDays,
+  UserPlus,
 } from 'lucide-react'
 
 const navItems = [
   { href: '/parent', label: 'Overview', icon: LayoutDashboard },
   { href: '/parent/programs', label: 'Programs', icon: GraduationCap },
+  { href: '/parent/bookings', label: 'Book Private', icon: UserPlus },
   { href: '/parent/payments', label: 'Payments', icon: CreditCard },
   { href: '/parent/teams', label: 'Comp', icon: Trophy },
   { href: '/parent/events', label: 'Events', icon: CalendarDays },

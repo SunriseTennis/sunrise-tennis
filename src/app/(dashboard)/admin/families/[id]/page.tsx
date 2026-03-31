@@ -7,6 +7,7 @@ import { FamilyEditForm } from './family-edit-form'
 import { AddPlayerForm } from './add-player-form'
 import { InviteParentForm } from './invite-parent-form'
 import { PricingForm } from './pricing-form'
+import { PlayerCoachesForm } from './player-coaches-form'
 import { Suspense } from 'react'
 import { PageHeader } from '@/components/page-header'
 import { StatusBadge } from '@/components/status-badge'
@@ -16,12 +17,14 @@ export default async function FamilyDetailPage({ params }: { params: Promise<{ i
   const { id } = await params
   const supabase = await createClient()
 
-  const [{ data: family }, { data: players }, { data: balance }, { data: pricingOverrides }, { data: allPrograms }] = await Promise.all([
+  const [{ data: family }, { data: players }, { data: balance }, { data: pricingOverrides }, { data: allPrograms }, { data: coaches }, { data: allowedCoaches }] = await Promise.all([
     supabase.from('families').select('*').eq('id', id).single(),
     supabase.from('players').select('*').eq('family_id', id).order('first_name'),
     supabase.from('family_balance').select('balance_cents').eq('family_id', id).single(),
     supabase.from('family_pricing').select('*').eq('family_id', id).order('created_at', { ascending: false }),
     supabase.from('programs').select('id, name, type').eq('status', 'active').order('name'),
+    supabase.from('coaches').select('id, name').eq('status', 'active').order('name'),
+    supabase.from('player_allowed_coaches').select('player_id, coach_id, auto_approve'),
   ])
 
   if (!family) notFound()
@@ -197,6 +200,15 @@ export default async function FamilyDetailPage({ params }: { params: Promise<{ i
           overrides={pricingOverrides ?? []}
           programs={(allPrograms ?? []).map(p => ({ id: p.id, name: p.name, type: p.type }))}
         />
+
+        {/* Private Lesson Coaches */}
+        {players && players.length > 0 && (
+          <PlayerCoachesForm
+            players={(players ?? []).filter(p => p.status === 'active').map(p => ({ id: p.id, first_name: p.first_name, last_name: p.last_name }))}
+            coaches={(coaches ?? []).map(c => ({ id: c.id, name: c.name }))}
+            allowedCoaches={(allowedCoaches ?? []).map(a => ({ player_id: a.player_id, coach_id: a.coach_id, auto_approve: a.auto_approve ?? false }))}
+          />
+        )}
 
         {/* Edit family */}
         <FamilyEditForm family={family} />
