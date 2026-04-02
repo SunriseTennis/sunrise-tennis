@@ -29,7 +29,7 @@ export default async function AdminCompetitionsPage() {
 
   const { data: players } = await supabase
     .from('competition_players')
-    .select('id, team_id, first_name, last_name, role, registration_status, player_id, utr_rating_display')
+    .select('id, team_id, first_name, last_name, role, registration_status, player_id, utr_rating_display, sort_order')
 
   // Build stats per competition
   const teamsByComp = new Map<string, typeof teams>()
@@ -69,6 +69,7 @@ export default async function AdminCompetitionsPage() {
       role: p.role,
       registration_status: p.registration_status,
       player_id: p.player_id,
+      sort_order: p.sort_order ?? null,
       team_name: team?.name ?? 'Unknown',
       team_division: team?.division ?? null,
       team_gender: team?.gender ?? null,

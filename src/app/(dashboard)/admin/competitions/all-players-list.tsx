@@ -12,6 +12,7 @@ interface CompPlayer {
   role: string
   registration_status: string
   player_id: string | null
+  sort_order: number | null
   team_name: string
   team_division: string | null
   team_gender: string | null
@@ -24,6 +25,8 @@ type GroupMode = 'competition' | 'name'
 
 function compSortKey(compName: string): number {
   const lower = compName.toLowerCase()
+  // Friday Night replaces JSL — stays first in list
+  if (lower.includes('friday night') || lower.includes('fri night')) return 0
   if (lower.includes('jsl') || lower.includes('junior state league')) return 0
   if (lower.includes('glenelg') || lower.includes('g&wd') || lower.includes('western district')) return 1
   if (lower.includes('pennant') || lower.includes('senior')) return 3
@@ -40,8 +43,32 @@ function divisionSortKey(division: string | null): number {
   return 500
 }
 
-function teamSortKey(player: CompPlayer): number {
-  return compSortKey(player.comp_name) * 1000 + divisionSortKey(player.team_division)
+function isGWD(compName: string): boolean {
+  const lower = compName.toLowerCase()
+  return lower.includes('glenelg') || lower.includes('g&wd') || lower.includes('western district')
+}
+
+// Returns a tuple for multi-key sort: [compOrder, genderOrder, divOrder, teamName]
+function teamSortTuple(player: CompPlayer): [number, number, number, string] {
+  const compOrder = compSortKey(player.comp_name)
+  // G&WD: female (0) before male (1); other comps: no gender distinction (0)
+  const genderOrder = isGWD(player.comp_name)
+    ? (player.team_gender === 'female' ? 0 : 1)
+    : 0
+  const divOrder = divisionSortKey(player.team_division)
+  return [compOrder, genderOrder, divOrder, player.team_name]
+}
+
+function compareTeamTuples(a: CompPlayer, b: CompPlayer): number {
+  const ta = teamSortTuple(a)
+  const tb = teamSortTuple(b)
+  for (let i = 0; i < ta.length; i++) {
+    const va = ta[i] as number | string
+    const vb = tb[i] as number | string
+    if (va < vb) return -1
+    if (va > vb) return 1
+  }
+  return 0
 }
 
 // ── Contact popup ────────────────────────────────────────────────────
@@ -252,11 +279,14 @@ export function AllPlayersList({ players }: { players: CompPlayer[] }) {
         return a.first_name.toLowerCase().localeCompare(b.first_name.toLowerCase())
       })
     }
-    // By team: sort by comp order, then division, then player first name
+    // By team: comp order → gender (G&WD: female first) → division → team name → sort_order
     return [...filtered].sort((a, b) => {
-      const teamOrder = teamSortKey(a) - teamSortKey(b)
-      if (teamOrder !== 0) return teamOrder
-      if (a.team_name !== b.team_name) return a.team_name.localeCompare(b.team_name)
+      const teamCmp = compareTeamTuples(a, b)
+      if (teamCmp !== 0) return teamCmp
+      // Within the same team, respect sort_order (as set in the workspace)
+      const soA = a.sort_order ?? 999
+      const soB = b.sort_order ?? 999
+      if (soA !== soB) return soA - soB
       return a.first_name.toLowerCase().localeCompare(b.first_name.toLowerCase())
     })
   }, [filtered, groupMode])
