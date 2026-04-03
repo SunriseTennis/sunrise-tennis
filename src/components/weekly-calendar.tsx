@@ -44,6 +44,8 @@ export interface CalendarEvent {
   isEnrolled?: boolean
   /** Spots remaining (null = unlimited) */
   spotsLeft?: number | null
+  /** If true, clicking fires onEventClick directly without opening popup */
+  selectable?: boolean
 }
 
 function parseTime(time: string): number {
@@ -453,6 +455,12 @@ export function WeeklyCalendar({
   }, [weekOffset])
 
   function handleEventClick(event: CalendarEvent, buttonEl: HTMLButtonElement) {
+    // Selectable events fire callback directly without popup
+    if (event.selectable) {
+      onEventClick?.(event)
+      return
+    }
+
     if (popupEvent?.id === event.id) {
       setPopupEvent(null)
       setPopupPos(null)

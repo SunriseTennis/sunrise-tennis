@@ -3,8 +3,6 @@
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { StatusBadge } from '@/components/status-badge'
-import { EmptyState } from '@/components/empty-state'
-import { Calendar } from 'lucide-react'
 import { formatDate, formatTime } from '@/lib/utils/dates'
 import { cancelPrivateBooking } from './actions'
 
@@ -42,91 +40,52 @@ export function MyBookings({ bookings, playerMap }: Props) {
     new Date(`${b.sessions.date}T${b.sessions.start_time || '00:00'}`) > new Date()
   )
 
-  const past = bookings.filter(b =>
-    b.status === 'cancelled' ||
-    (b.sessions && new Date(`${b.sessions.date}T${b.sessions.start_time || '00:00'}`) <= new Date())
-  )
+  if (upcoming.length === 0) return null
 
   return (
-    <div className="space-y-4">
-      <h2 className="text-lg font-semibold text-foreground">Your Private Lessons</h2>
+    <div className="space-y-2">
+      <h2 className="text-lg font-semibold text-foreground">Upcoming Lessons</h2>
+      {upcoming.map((booking) => {
+        const session = booking.sessions
+        const coachName = session?.coaches?.name?.split(' ')[0] ?? 'Unknown'
+        const playerName = playerMap[booking.player_id] ?? 'Unknown'
 
-      {bookings.length === 0 && (
-        <EmptyState
-          icon={Calendar}
-          title="No private lessons"
-          description="Book your first private lesson using the form above"
-        />
-      )}
+        let displayStatus = booking.status
+        if (booking.approval_status === 'pending') displayStatus = 'pending'
+        if (booking.approval_status === 'declined') displayStatus = 'declined'
 
-      {upcoming.length > 0 && (
-        <div className="space-y-2">
-          <h3 className="text-sm font-medium text-muted-foreground">Upcoming</h3>
-          {upcoming.map((booking) => (
-            <BookingCard key={booking.id} booking={booking} playerMap={playerMap} canCancel />
-          ))}
-        </div>
-      )}
+        return (
+          <Card key={booking.id} className="rounded-xl shadow-card">
+            <CardContent className="flex items-center justify-between p-4">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <p className="text-sm font-medium text-foreground">{playerName}</p>
+                  <StatusBadge status={displayStatus} />
+                </div>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  {session
+                    ? `${formatDate(session.date)} · ${session.start_time ? formatTime(session.start_time) : ''} · ${booking.duration_minutes}min · ${coachName}`
+                    : 'Session details unavailable'}
+                </p>
+                {booking.price_cents != null && (
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    ${(booking.price_cents / 100).toFixed(2)}
+                  </p>
+                )}
+              </div>
 
-      {past.length > 0 && (
-        <div className="space-y-2">
-          <h3 className="text-sm font-medium text-muted-foreground">Past</h3>
-          {past.map((booking) => (
-            <BookingCard key={booking.id} booking={booking} playerMap={playerMap} />
-          ))}
-        </div>
-      )}
+              {booking.status !== 'cancelled' && (
+                <form action={cancelPrivateBooking}>
+                  <input type="hidden" name="booking_id" value={booking.id} />
+                  <Button type="submit" variant="ghost" size="sm" className="h-7 text-xs text-red-600 hover:bg-red-50 hover:text-red-700">
+                    Cancel
+                  </Button>
+                </form>
+              )}
+            </CardContent>
+          </Card>
+        )
+      })}
     </div>
-  )
-}
-
-function BookingCard({
-  booking,
-  playerMap,
-  canCancel,
-}: {
-  booking: Booking
-  playerMap: Record<string, string>
-  canCancel?: boolean
-}) {
-  const session = booking.sessions
-  const coachName = session?.coaches?.name ?? 'Unknown'
-  const playerName = playerMap[booking.player_id] ?? 'Unknown'
-
-  // Determine display status
-  let displayStatus = booking.status
-  if (booking.approval_status === 'pending') displayStatus = 'pending'
-  if (booking.approval_status === 'declined') displayStatus = 'declined'
-
-  return (
-    <Card>
-      <CardContent className="flex items-center justify-between p-4">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <p className="text-sm font-medium text-foreground">{playerName}</p>
-            <StatusBadge status={displayStatus} />
-          </div>
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            {session
-              ? `${formatDate(session.date)} · ${session.start_time ? formatTime(session.start_time) : ''} · ${booking.duration_minutes}min · ${coachName}`
-              : 'Session details unavailable'}
-          </p>
-          {booking.price_cents != null && (
-            <p className="mt-0.5 text-xs text-muted-foreground">
-              ${(booking.price_cents / 100).toFixed(2)}
-            </p>
-          )}
-        </div>
-
-        {canCancel && booking.status !== 'cancelled' && (
-          <form action={cancelPrivateBooking}>
-            <input type="hidden" name="booking_id" value={booking.id} />
-            <Button type="submit" variant="ghost" size="sm" className="h-7 text-xs text-red-600 hover:bg-red-50 hover:text-red-700">
-              Cancel
-            </Button>
-          </form>
-        )}
-      </CardContent>
-    </Card>
   )
 }

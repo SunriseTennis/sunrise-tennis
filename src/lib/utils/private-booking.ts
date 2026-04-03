@@ -82,50 +82,43 @@ export function calculateCoachPay(priceCents: number): number {
 
 // ── Availability ───────────────────────────────────────────────────────
 
-interface TimeSlot {
+export interface TimeSlot {
   date: string      // YYYY-MM-DD
   startTime: string  // HH:MM
   endTime: string    // HH:MM
 }
 
+export interface AvailabilityWindow {
+  day_of_week: number
+  start_time: string
+  end_time: string
+}
+
+export interface AvailabilityException {
+  exception_date: string
+  start_time: string | null
+  end_time: string | null
+}
+
+export interface BookedSession {
+  date: string
+  start_time: string | null
+  end_time: string | null
+}
+
 /**
- * Get available 30-minute slots for a coach within a date range.
- * Computes: recurring windows - exceptions - booked sessions
+ * Pure function: compute available 30-minute slots from pre-fetched data.
+ * Can run on both server and client (no Supabase dependency).
  */
-export async function getAvailableSlots(
-  supabase: Supabase,
-  coachId: string,
+export function computeAvailableSlots(
+  windows: AvailabilityWindow[],
+  exceptions: AvailabilityException[],
+  bookedSessions: BookedSession[],
   startDate: string,
   endDate: string,
-): Promise<TimeSlot[]> {
-  // 1. Get recurring availability windows
-  const { data: windows } = await supabase
-    .from('coach_availability')
-    .select('day_of_week, start_time, end_time')
-    .eq('coach_id', coachId)
-    .lte('effective_from', endDate)
-    .or(`effective_until.is.null,effective_until.gte.${startDate}`)
+): TimeSlot[] {
+  if (!windows.length) return []
 
-  if (!windows?.length) return []
-
-  // 2. Get exceptions for this date range
-  const { data: exceptions } = await supabase
-    .from('coach_availability_exceptions')
-    .select('exception_date, start_time, end_time')
-    .eq('coach_id', coachId)
-    .gte('exception_date', startDate)
-    .lte('exception_date', endDate)
-
-  // 3. Get booked sessions (not cancelled) for this coach in range
-  const { data: bookedSessions } = await supabase
-    .from('sessions')
-    .select('date, start_time, end_time')
-    .eq('coach_id', coachId)
-    .neq('status', 'cancelled')
-    .gte('date', startDate)
-    .lte('date', endDate)
-
-  // Generate all dates in range
   const dates: string[] = []
   const current = new Date(startDate + 'T00:00:00')
   const end = new Date(endDate + 'T00:00:00')
@@ -137,19 +130,16 @@ export async function getAvailableSlots(
   const slots: TimeSlot[] = []
 
   for (const dateStr of dates) {
-    const dayOfWeek = new Date(dateStr + 'T12:00:00').getDay() // Use noon to avoid timezone issues
+    const dayOfWeek = new Date(dateStr + 'T12:00:00').getDay()
 
-    // Find matching windows for this day
     const dayWindows = windows.filter(w => w.day_of_week === dayOfWeek)
     if (!dayWindows.length) continue
 
-    // Check for full-day exception
-    const dayExceptions = (exceptions ?? []).filter(e => e.exception_date === dateStr)
+    const dayExceptions = exceptions.filter(e => e.exception_date === dateStr)
     const fullDayBlocked = dayExceptions.some(e => !e.start_time && !e.end_time)
     if (fullDayBlocked) continue
 
     for (const window of dayWindows) {
-      // Generate 30-min slots within this window
       const windowStart = timeToMinutes(window.start_time)
       const windowEnd = timeToMinutes(window.end_time)
 
@@ -158,7 +148,6 @@ export async function getAvailableSlots(
         const startTime = minutesToTime(slotStart)
         const endTime = minutesToTime(slotEnd)
 
-        // Check against partial exceptions
         const blocked = dayExceptions.some(e => {
           if (!e.start_time || !e.end_time) return false
           const excStart = timeToMinutes(e.start_time)
@@ -167,8 +156,7 @@ export async function getAvailableSlots(
         })
         if (blocked) continue
 
-        // Check against booked sessions
-        const booked = (bookedSessions ?? []).some(s => {
+        const booked = bookedSessions.some(s => {
           if (s.date !== dateStr) return false
           if (!s.start_time || !s.end_time) return false
           const sessStart = timeToMinutes(s.start_time)
@@ -183,6 +171,51 @@ export async function getAvailableSlots(
   }
 
   return slots
+}
+
+/**
+ * Get available 30-minute slots for a coach within a date range.
+ * Fetches data from Supabase then delegates to computeAvailableSlots.
+ */
+export async function getAvailableSlots(
+  supabase: Supabase,
+  coachId: string,
+  startDate: string,
+  endDate: string,
+): Promise<TimeSlot[]> {
+  const [
+    { data: windows },
+    { data: exceptions },
+    { data: bookedSessions },
+  ] = await Promise.all([
+    supabase
+      .from('coach_availability')
+      .select('day_of_week, start_time, end_time')
+      .eq('coach_id', coachId)
+      .lte('effective_from', endDate)
+      .or(`effective_until.is.null,effective_until.gte.${startDate}`),
+    supabase
+      .from('coach_availability_exceptions')
+      .select('exception_date, start_time, end_time')
+      .eq('coach_id', coachId)
+      .gte('exception_date', startDate)
+      .lte('exception_date', endDate),
+    supabase
+      .from('sessions')
+      .select('date, start_time, end_time')
+      .eq('coach_id', coachId)
+      .neq('status', 'cancelled')
+      .gte('date', startDate)
+      .lte('date', endDate),
+  ])
+
+  return computeAvailableSlots(
+    windows ?? [],
+    exceptions ?? [],
+    bookedSessions ?? [],
+    startDate,
+    endDate,
+  )
 }
 
 // ── Booking Constraints ────────────────────────────────────────────────
