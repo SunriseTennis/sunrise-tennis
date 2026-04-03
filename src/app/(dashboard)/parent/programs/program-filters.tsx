@@ -193,22 +193,38 @@ function filterByLevel(programs: Program[], level: string): Program[] {
   })
 }
 
+type Attendance = {
+  session_id: string
+  player_id: string
+  status: string
+}
+
 export function ParentProgramFilters({
   programs,
   sessions,
   playerLevels,
   familyPlayerIds,
   familyPlayers,
+  attendances,
 }: {
   programs: Program[]
   sessions: Session[]
   playerLevels: string[]
   familyPlayerIds: string[]
   familyPlayers: { id: string; name: string }[]
+  attendances: Attendance[]
 }) {
   const [tab, setTab] = useState<Tab>('calendar')
-  const [levelFilter, setLevelFilter] = useState('')
-  const [typeFilter, setTypeFilter] = useState('')
+  // Default level to the strongest player's level (highest in order)
+  const strongestLevel = useMemo(() => {
+    const order = ['blue', 'yellow', 'green', 'orange', 'red']
+    for (const lvl of order) {
+      if (playerLevels.includes(lvl)) return lvl
+    }
+    return playerLevels[0] ?? ''
+  }, [playerLevels])
+  const [levelFilter, setLevelFilter] = useState(strongestLevel)
+  const [typeFilter, setTypeFilter] = useState('group')
   const [calendarFilter, setCalendarFilter] = useState<'all' | 'mine'>('mine')
   const playerIds = useMemo(() => new Set(familyPlayerIds), [familyPlayerIds])
   const playerLevelSet = useMemo(() => new Set(playerLevels), [playerLevels])
@@ -217,10 +233,6 @@ export function ParentProgramFilters({
     const lvls = new Set<string>()
     programs.forEach(p => {
       if (p.level) lvls.add(p.level)
-      const nameLower = p.name.toLowerCase()
-      for (const l of ['red', 'orange', 'green', 'yellow', 'blue']) {
-        if (nameLower.includes(l)) lvls.add(l)
-      }
     })
     const order = ['red', 'orange', 'green', 'yellow', 'blue', 'competitive']
     return [...lvls].sort((a, b) => {
@@ -272,6 +284,24 @@ export function ParentProgramFilters({
     return ids
   }, [programs, playerLevelSet])
 
+  // Attendance lookup: sessionId → Set of statuses for family players
+  const sessionAttendanceMap = useMemo(() => {
+    const map = new Map<string, { booked: boolean; allAway: boolean }>()
+    // Group attendances by session
+    const bySession = new Map<string, Attendance[]>()
+    for (const a of attendances) {
+      const list = bySession.get(a.session_id)
+      if (list) list.push(a)
+      else bySession.set(a.session_id, [a])
+    }
+    for (const [sessionId, records] of bySession) {
+      const hasPresent = records.some(r => r.status === 'present')
+      const allExcused = records.length > 0 && records.every(r => r.status === 'excused')
+      map.set(sessionId, { booked: hasPresent, allAway: allExcused })
+    }
+    return map
+  }, [attendances])
+
   // Build calendar events from sessions
   const calendarEvents: CalendarEvent[] = useMemo(() => {
     return sessions
@@ -280,7 +310,7 @@ export function ParentProgramFilters({
         if (!prog) return false
         if (!s.start_time || !s.end_time) return false
 
-        // Apply "For your players" filter
+        // Apply "For you" filter
         if (calendarFilter === 'mine') {
           return enrolledProgramIds.has(s.program_id) || recommendedProgramIds.has(s.program_id)
         }
@@ -293,10 +323,12 @@ export function ParentProgramFilters({
         const spotsLeft = prog.max_capacity ? prog.max_capacity - enrolledCount : null
         const isEnrolled = enrolledProgramIds.has(prog.id)
 
-        // Pick level-based color, solid for enrolled, lighter for available
+        // Color logic: enrolled + booked/default = solid, away = faded, not enrolled = faded
         const levelKey = prog.level?.split('-')[0] ?? ''
         const colors = LEVEL_CAL_COLORS[levelKey] ?? DEFAULT_CAL_COLORS
-        const color = isEnrolled ? colors.enrolled : colors.available
+        const att = sessionAttendanceMap.get(s.id)
+        const isAway = isEnrolled && att?.allAway === true
+        const color = (isEnrolled && !isAway) ? colors.enrolled : colors.available
 
         const eventDate = new Date(s.date + 'T12:00:00')
         const dayOfWeek = eventDate.getDay()
@@ -322,10 +354,10 @@ export function ParentProgramFilters({
           spotsLeft,
         }
       })
-  }, [sessions, programMap, calendarFilter, enrolledProgramIds, recommendedProgramIds])
+  }, [sessions, programMap, calendarFilter, enrolledProgramIds, recommendedProgramIds, sessionAttendanceMap])
 
-  const filteredByLevel = levelFilter ? filterByLevel(programs, levelFilter) : programs
-  const filteredByType = typeFilter ? programs.filter(p => p.type === typeFilter) : programs
+  const filteredByLevel = filterByLevel(programs, levelFilter)
+  const filteredByType = programs.filter(p => p.type === typeFilter)
 
   const tabDefs: { key: Tab; label: string; icon: typeof Calendar }[] = [
     { key: 'calendar', label: 'Calendar', icon: Calendar },
@@ -350,7 +382,7 @@ export function ParentProgramFilters({
         {tabDefs.map(({ key, label, icon: Icon }) => (
           <button
             key={key}
-            onClick={() => { setTab(key); setLevelFilter(''); setTypeFilter('') }}
+            onClick={() => { setTab(key); setLevelFilter(strongestLevel); setTypeFilter('group') }}
             className={`flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition-all ${
               tab === key
                 ? 'bg-card text-foreground shadow-card'
@@ -368,6 +400,17 @@ export function ParentProgramFilters({
           {/* Calendar filter toggle */}
           <div className="mb-3 flex items-center gap-1">
             <button
+              onClick={() => setCalendarFilter('mine')}
+              className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-all ${
+                calendarFilter === 'mine'
+                  ? 'bg-[#2B5EA7] text-white shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
+              }`}
+            >
+              <Filter className="size-3" />
+              For you
+            </button>
+            <button
               onClick={() => setCalendarFilter('all')}
               className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-all ${
                 calendarFilter === 'all'
@@ -377,17 +420,6 @@ export function ParentProgramFilters({
             >
               <Calendar className="size-3" />
               All sessions
-            </button>
-            <button
-              onClick={() => setCalendarFilter('mine')}
-              className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-all ${
-                calendarFilter === 'mine'
-                  ? 'bg-[#2B5EA7] text-white shadow-sm'
-                  : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
-              }`}
-            >
-              <Filter className="size-3" />
-              For your players
             </button>
           </div>
 
@@ -415,20 +447,12 @@ export function ParentProgramFilters({
       {tab === 'level' && (
         <div className="mt-4">
           <div className="mb-4 flex flex-wrap gap-2">
-            <button
-              onClick={() => setLevelFilter('')}
-              className={`rounded-full px-3 py-1.5 text-sm font-medium transition-all ${
-                !levelFilter ? 'bg-foreground text-background shadow-sm' : 'bg-muted text-muted-foreground hover:bg-accent'
-              }`}
-            >
-              All
-            </button>
             {levels.map(l => {
               const style = LEVEL_PILL_STYLES[l] ?? { active: 'bg-primary text-white shadow-sm', inactive: 'bg-muted text-muted-foreground hover:bg-accent' }
               return (
                 <button
                   key={l}
-                  onClick={() => setLevelFilter(l === levelFilter ? '' : l)}
+                  onClick={() => setLevelFilter(l)}
                   className={`rounded-full px-3 py-1.5 text-sm font-medium capitalize transition-all ${
                     levelFilter === l ? style.active : style.inactive
                   }`}
@@ -446,20 +470,12 @@ export function ParentProgramFilters({
       {tab === 'type' && (
         <div className="mt-4">
           <div className="mb-4 flex flex-wrap gap-2">
-            <button
-              onClick={() => setTypeFilter('')}
-              className={`rounded-full px-3 py-1.5 text-sm font-medium transition-all ${
-                !typeFilter ? 'bg-foreground text-background shadow-sm' : 'bg-muted text-muted-foreground hover:bg-accent'
-              }`}
-            >
-              All
-            </button>
             {types.map(t => {
               const style = TYPE_PILL_STYLES[t] ?? { active: 'bg-primary text-white shadow-sm', inactive: 'bg-muted text-muted-foreground hover:bg-accent' }
               return (
                 <button
                   key={t}
-                  onClick={() => setTypeFilter(t === typeFilter ? '' : t)}
+                  onClick={() => setTypeFilter(t)}
                   className={`rounded-full px-3 py-1.5 text-sm font-medium capitalize transition-all ${
                     typeFilter === t ? style.active : style.inactive
                   }`}

@@ -142,6 +142,152 @@ export async function setPlayerAllowedCoaches(formData: FormData) {
   redirect(`/admin/privates?success=Updated+allowed+coaches`)
 }
 
+// ── Admin: Confirm/Decline Private Booking ────────────────────────────
+
+export async function adminConfirmBooking(bookingId: string) {
+  const user = await requireAdmin()
+  const supabase = await createClient()
+
+  const { data: booking } = await supabase
+    .from('bookings')
+    .select('id, session_id, family_id, approval_status')
+    .eq('id', bookingId)
+    .single()
+
+  if (!booking || booking.approval_status !== 'pending') {
+    redirect('/admin/privates/bookings?error=Booking+not+found+or+already+processed')
+  }
+
+  await supabase
+    .from('bookings')
+    .update({
+      status: 'confirmed',
+      approval_status: 'approved',
+      approved_by: user.id,
+      approved_at: new Date().toISOString(),
+    })
+    .eq('id', bookingId)
+
+  await supabase
+    .from('charges')
+    .update({ status: 'confirmed' })
+    .eq('booking_id', bookingId)
+    .eq('status', 'pending')
+
+  // Notify parent
+  const { data: parentRole } = await supabase
+    .from('user_roles')
+    .select('user_id')
+    .eq('family_id', booking.family_id)
+    .eq('role', 'parent')
+    .limit(1)
+    .single()
+
+  // Notify coach (cross-notification)
+  const { data: session } = await supabase
+    .from('sessions')
+    .select('coach_id, coaches:coach_id(user_id)')
+    .eq('id', booking.session_id!)
+    .single()
+
+  const { sendPushToUser } = await import('@/lib/push/send')
+  try {
+    if (parentRole) {
+      await sendPushToUser(parentRole.user_id, {
+        title: 'Private Lesson Confirmed',
+        body: 'Your booking has been confirmed',
+        url: '/parent/bookings',
+      })
+    }
+    const coachUserId = (session?.coaches as unknown as { user_id: string } | null)?.user_id
+    if (coachUserId) {
+      await sendPushToUser(coachUserId, {
+        title: 'Booking Confirmed by Admin',
+        body: 'A pending private lesson has been confirmed',
+        url: '/coach/privates',
+      })
+    }
+  } catch { /* non-blocking */ }
+
+  revalidatePath('/admin/privates/bookings')
+  redirect('/admin/privates/bookings?success=Booking+confirmed')
+}
+
+export async function adminDeclineBooking(bookingId: string) {
+  await requireAdmin()
+  const supabase = await createClient()
+
+  const { data: booking } = await supabase
+    .from('bookings')
+    .select('id, session_id, family_id, approval_status')
+    .eq('id', bookingId)
+    .single()
+
+  if (!booking || booking.approval_status !== 'pending') {
+    redirect('/admin/privates/bookings?error=Booking+not+found+or+already+processed')
+  }
+
+  await supabase
+    .from('bookings')
+    .update({ status: 'cancelled', approval_status: 'declined' })
+    .eq('id', bookingId)
+
+  await supabase
+    .from('sessions')
+    .update({ status: 'cancelled', cancellation_reason: 'Declined by admin' })
+    .eq('id', booking.session_id!)
+
+  // Void charge
+  const { voidCharge } = await import('@/lib/utils/billing')
+  const { data: charge } = await supabase
+    .from('charges')
+    .select('id')
+    .eq('booking_id', bookingId)
+    .in('status', ['pending', 'confirmed'])
+    .single()
+
+  if (charge) {
+    await voidCharge(supabase, charge.id, booking.family_id)
+  }
+
+  // Notify parent and coach
+  const { data: parentRole } = await supabase
+    .from('user_roles')
+    .select('user_id')
+    .eq('family_id', booking.family_id)
+    .eq('role', 'parent')
+    .limit(1)
+    .single()
+
+  const { data: session } = await supabase
+    .from('sessions')
+    .select('coach_id, coaches:coach_id(user_id)')
+    .eq('id', booking.session_id!)
+    .single()
+
+  const { sendPushToUser } = await import('@/lib/push/send')
+  try {
+    if (parentRole) {
+      await sendPushToUser(parentRole.user_id, {
+        title: 'Booking Declined',
+        body: 'Your private lesson request was not accepted',
+        url: '/parent/bookings',
+      })
+    }
+    const coachUserId = (session?.coaches as unknown as { user_id: string } | null)?.user_id
+    if (coachUserId) {
+      await sendPushToUser(coachUserId, {
+        title: 'Booking Declined by Admin',
+        body: 'A pending private lesson was declined',
+        url: '/coach/privates',
+      })
+    }
+  } catch { /* non-blocking */ }
+
+  revalidatePath('/admin/privates/bookings')
+  redirect('/admin/privates/bookings?success=Booking+declined')
+}
+
 // ── Admin: Coach Payment Recording ─────────────────────────────────────
 
 export async function recordCoachPayment(formData: FormData) {

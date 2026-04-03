@@ -1,7 +1,9 @@
 'use client'
 
 import { useState } from 'react'
-import { WeeklyCalendar, type CalendarEvent } from '@/components/weekly-calendar'
+import { WeeklyCalendar, type CalendarEvent, type CalendarPlayer, type EnrolledPlayersMap } from '@/components/weekly-calendar'
+import { markSessionAway } from './programs/actions'
+import { cancelPrivateFromOverview } from './overview-actions'
 import { Users, Layers } from 'lucide-react'
 
 // Brand palette colors for players (from the sunrise gradient)
@@ -83,6 +85,7 @@ type PrivateBooking = {
   startTime: string | null
   endTime: string | null
   date?: string | null
+  sessionId?: string | null
 }
 
 type ColorMode = 'player' | 'type'
@@ -92,11 +95,17 @@ export function EnrolledCalendar({
   sessions,
   privateBookings,
   playerOrder,
+  familyPlayers,
+  onMarkAway,
+  onCancelPrivate,
 }: {
   enrollments: Enrollment[]
   sessions: SessionData[]
   privateBookings?: PrivateBooking[]
   playerOrder: string[]
+  familyPlayers?: CalendarPlayer[]
+  onMarkAway?: (sessionId: string, playerId: string) => Promise<{ error?: string }>
+  onCancelPrivate?: (bookingId: string) => Promise<{ error?: string }>
 }) {
   const [colorMode, setColorMode] = useState<ColorMode>('player')
   const [hiddenPlayers, setHiddenPlayers] = useState<Set<string>>(new Set())
@@ -112,6 +121,17 @@ export function EnrolledCalendar({
     const existing = programEnrollments.get(e.programId)
     if (existing) existing.push(e)
     else programEnrollments.set(e.programId, [e])
+  }
+
+  // Build enrolled players map for booking actions
+  const enrolledPlayersMapData: EnrolledPlayersMap = {}
+  for (const e of enrollments) {
+    const existing = enrolledPlayersMapData[e.programId]
+    if (existing) {
+      if (!existing.includes(e.playerId)) existing.push(e.playerId)
+    } else {
+      enrolledPlayersMapData[e.programId] = [e.playerId]
+    }
   }
 
   // Build session-based events
@@ -138,9 +158,11 @@ export function EnrolledCalendar({
         color,
         href: first?.programId ? `/parent/programs/${first.programId}` : undefined,
         programType: first?.programType,
+        programId: first?.programId,
         playerNames,
         date: s.date,
         isEnrolled: true,
+        sessionId: s.id,
       }
     })
 
@@ -160,6 +182,8 @@ export function EnrolledCalendar({
       programType: 'private',
       playerNames: [b.playerName],
       date: b.date ?? undefined,
+      bookingId: b.id,
+      sessionId: b.sessionId ?? undefined,
     }))
 
   const events = [...sessionEvents, ...privateEvents]
@@ -233,7 +257,13 @@ export function EnrolledCalendar({
         </div>
       )}
 
-      <WeeklyCalendar events={visibleEvents} />
+      <WeeklyCalendar
+        events={visibleEvents}
+        players={familyPlayers}
+        enrolledPlayersMap={enrolledPlayersMapData}
+        onMarkAway={onMarkAway ?? markSessionAway}
+        onCancelPrivate={onCancelPrivate ?? cancelPrivateFromOverview}
+      />
     </div>
   )
 }

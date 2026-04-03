@@ -272,7 +272,7 @@ export async function confirmPrivateBooking(bookingId: string) {
     .eq('booking_id', bookingId)
     .eq('status', 'pending')
 
-  // Notify parent
+  // Notify parent + admins (cross-notification)
   const { data: parentRole } = await supabase
     .from('user_roles')
     .select('user_id')
@@ -281,16 +281,23 @@ export async function confirmPrivateBooking(bookingId: string) {
     .limit(1)
     .single()
 
-  if (parentRole) {
-    const { sendPushToUser } = await import('@/lib/push/send')
-    try {
+  const { sendPushToUser, sendPushToAdmins } = await import('@/lib/push/send')
+  try {
+    // Notify parent
+    if (parentRole) {
       await sendPushToUser(parentRole.user_id, {
         title: 'Private Lesson Confirmed',
         body: 'Your booking has been confirmed by the coach',
         url: '/parent/bookings',
       })
-    } catch { /* non-blocking */ }
-  }
+    }
+    // Notify admins that coach confirmed
+    await sendPushToAdmins({
+      title: 'Booking Confirmed by Coach',
+      body: 'A private lesson booking has been confirmed',
+      url: '/admin/bookings',
+    })
+  } catch { /* non-blocking */ }
 
   revalidatePath('/coach/privates')
   redirect('/coach/privates')
@@ -345,7 +352,7 @@ export async function declinePrivateBooking(bookingId: string) {
     await voidCharge(supabase, charge.id, booking.family_id)
   }
 
-  // Notify parent
+  // Notify parent + admins
   const { data: parentRole } = await supabase
     .from('user_roles')
     .select('user_id')
@@ -354,16 +361,21 @@ export async function declinePrivateBooking(bookingId: string) {
     .limit(1)
     .single()
 
-  if (parentRole) {
-    const { sendPushToUser } = await import('@/lib/push/send')
-    try {
+  const { sendPushToUser, sendPushToAdmins } = await import('@/lib/push/send')
+  try {
+    if (parentRole) {
       await sendPushToUser(parentRole.user_id, {
         title: 'Booking Declined',
         body: 'Your private lesson request was not accepted',
         url: '/parent/bookings',
       })
-    } catch { /* non-blocking */ }
-  }
+    }
+    await sendPushToAdmins({
+      title: 'Booking Declined by Coach',
+      body: 'A private lesson request was declined',
+      url: '/admin/bookings',
+    })
+  } catch { /* non-blocking */ }
 
   revalidatePath('/coach/privates')
   redirect('/coach/privates')

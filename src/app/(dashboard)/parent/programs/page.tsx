@@ -47,6 +47,14 @@ export default async function ParentProgramsPage() {
     .eq('status', 'scheduled')
     .order('date')
 
+  // Get attendances for family players (to show booked vs away on calendar)
+  const { data: attendances } = playerIds.length > 0
+    ? await supabase
+        .from('attendances')
+        .select('session_id, player_id, status')
+        .in('player_id', playerIds)
+    : { data: [] }
+
   return (
     <div>
       <PageHeader title="Programs" description="Browse sessions and enrol in programs." />
@@ -59,6 +67,7 @@ export default async function ParentProgramsPage() {
             playerLevels={playerLevels}
             familyPlayerIds={playerIds}
             familyPlayers={players?.map(p => ({ id: p.id, name: p.first_name })) ?? []}
+            attendances={(attendances ?? []) as { session_id: string; player_id: string; status: string }[]}
           />
         </div>
       ) : (

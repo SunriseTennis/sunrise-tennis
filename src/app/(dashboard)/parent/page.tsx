@@ -217,6 +217,7 @@ export default async function ParentDashboard() {
           <div className="mt-3">
             <EnrolledCalendar
               playerOrder={players?.map(p => p.first_name) ?? []}
+              familyPlayers={players?.map(p => ({ id: p.id, name: p.first_name })) ?? []}
               enrollments={(enrollments ?? []).map((enrollment) => {
                 const program = enrollment.programs as unknown as {
                   id: string; name: string; type: string; level: string; status: string
@@ -240,7 +241,7 @@ export default async function ParentDashboard() {
                 end_time: s.end_time,
               }))}
               privateBookings={(privateBookings ?? []).map((b) => {
-                const session = b.sessions as unknown as { date: string; start_time: string; end_time: string; coaches: { name: string } | null } | null
+                const session = b.sessions as unknown as { date: string; start_time: string; end_time: string; status: string; coaches: { name: string } | null } | null
                 const player = b.players as unknown as { first_name: string } | null
                 const dayOfWeek = session?.date ? new Date(session.date + 'T12:00:00').getDay() : null
                 return {
@@ -251,6 +252,7 @@ export default async function ParentDashboard() {
                   startTime: session?.start_time ?? null,
                   endTime: session?.end_time ?? null,
                   date: session?.date ?? null,
+                  sessionId: (b as unknown as { session_id: string }).session_id ?? null,
                 }
               })}
             />

@@ -95,6 +95,26 @@ export async function sendPushToUser(
 }
 
 /**
+ * Get all admin user IDs (for notifications).
+ */
+export async function getAdminUserIds(): Promise<string[]> {
+  const supabase = getServiceClient()
+  const { data: roles } = await supabase
+    .from('user_roles')
+    .select('user_id')
+    .eq('role', 'admin')
+  return roles?.map(r => r.user_id) ?? []
+}
+
+/**
+ * Send push notification to all admin users.
+ */
+export async function sendPushToAdmins(payload: PushPayload): Promise<void> {
+  const adminIds = await getAdminUserIds()
+  await Promise.allSettled(adminIds.map(uid => sendPushToUser(uid, payload)))
+}
+
+/**
  * Resolve notification target to user IDs and send push notifications.
  * Returns list of user_ids that were notified.
  */

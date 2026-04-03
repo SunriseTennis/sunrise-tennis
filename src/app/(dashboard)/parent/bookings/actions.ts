@@ -5,7 +5,7 @@ import { redirect } from 'next/navigation'
 import { createClient, getSessionUser } from '@/lib/supabase/server'
 import { validateFormData, requestPrivateFormSchema, cancelPrivateFormSchema } from '@/lib/utils/validation'
 import { createCharge, voidCharge } from '@/lib/utils/billing'
-import { sendPushToUser } from '@/lib/push/send'
+import { sendPushToUser, sendPushToAdmins } from '@/lib/push/send'
 import {
   canPlayerBookCoach,
   isAutoApproved,
@@ -169,22 +169,21 @@ export async function requestPrivateBooking(formData: FormData) {
     createdBy: userId,
   })
 
-  // Push notification to coach
-  if (coach.user_id) {
-    try {
-      await sendPushToUser(coach.user_id, {
-        title: autoApprove ? 'Private Lesson Booked' : 'New Booking Request',
-        body: `${player.first_name} - ${date} at ${formatTime12(start_time)} (${duration_minutes}min)`,
-        url: '/coach/privates',
-      })
-    } catch {
-      // Notification failure is not blocking
-    }
+  // Notify coach AND admin(s) about the booking
+  const notifPayload = {
+    title: autoApprove ? 'Private Lesson Booked' : 'New Booking Request',
+    body: `${player.first_name} - ${date} at ${formatTime12(start_time)} (${duration_minutes}min)`,
   }
 
-  // If auto-approved, also notify parent
-  if (autoApprove) {
-    // Parent already knows since they booked it, but good for confirmation
+  try {
+    // Notify coach
+    if (coach.user_id) {
+      await sendPushToUser(coach.user_id, { ...notifPayload, url: '/coach/privates' })
+    }
+    // Notify all admins
+    await sendPushToAdmins({ ...notifPayload, url: '/admin/bookings' })
+  } catch {
+    // Notification failure is not blocking
   }
 
   revalidatePath('/parent/bookings')
@@ -452,16 +451,18 @@ export async function requestStandingPrivate(formData: FormData) {
     }
   }
 
-  // Notify coach
-  if (coach.user_id) {
-    try {
-      await sendPushToUser(coach.user_id, {
-        title: 'New Standing Booking',
-        body: `${player.first_name} - ${date} at ${formatTime12(start_time)} (${duration_minutes}min, weekly)`,
-        url: '/coach/privates',
-      })
-    } catch { /* non-blocking */ }
-  }
+  // Notify coach AND admin(s) about the standing booking
+  try {
+    const standingPayload = {
+      title: 'New Standing Booking',
+      body: `${player.first_name} - ${date} at ${formatTime12(start_time)} (${duration_minutes}min, weekly)`,
+    }
+    if (coach.user_id) {
+      await sendPushToUser(coach.user_id, { ...standingPayload, url: '/coach/privates' })
+    }
+    await sendPushToAdmins({ ...standingPayload, url: '/admin/bookings' })
+  } catch { /* non-blocking */ }
+
 
   revalidatePath('/parent/bookings')
   redirect('/parent/bookings?success=Standing+booking+' + (autoApprove ? 'confirmed!' : 'submitted!') + `+${futureDates.length + 1}+sessions+created`)

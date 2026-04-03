@@ -46,6 +46,8 @@ export interface CalendarEvent {
   spotsLeft?: number | null
   /** If true, clicking fires onEventClick directly without opening popup */
   selectable?: boolean
+  /** Booking ID for private lessons (used for cancel action) */
+  bookingId?: string
 }
 
 function parseTime(time: string): number {
@@ -373,6 +375,7 @@ export function WeeklyCalendar({
   enrolledPlayersMap,
   onBookSession,
   onMarkAway,
+  onCancelPrivate,
 }: {
   events: CalendarEvent[]
   onEventClick?: (event: CalendarEvent) => void
@@ -384,8 +387,22 @@ export function WeeklyCalendar({
   onBookSession?: (sessionId: string, programId: string, playerIds: string[]) => Promise<{ error?: string }>
   /** Called when user marks a player as away for a session */
   onMarkAway?: (sessionId: string, playerId: string) => Promise<{ error?: string }>
+  /** Called when user cancels a private booking */
+  onCancelPrivate?: (bookingId: string) => Promise<{ error?: string }>
 }) {
-  const [weekOffset, setWeekOffset] = useState(0)
+  // Default to term start week if we're before the next term, otherwise today
+  const [weekOffset, setWeekOffset] = useState(() => {
+    const today = new Date()
+    const termInfo = getTermInfo(getMonday(today))
+    // If we're currently in a term or holidays info doesn't indicate a gap, default to today (0)
+    if (termInfo && !termInfo.includes('Holidays') && !termInfo.includes('Summer')) return 0
+    // We're in holidays — jump to next term start
+    const nextStart = getNextTermStart(today)
+    if (!nextStart) return 0
+    const todayMonday = getMonday(today)
+    const nextTermMonday = getMonday(nextStart)
+    return Math.round((nextTermMonday.getTime() - todayMonday.getTime()) / (7 * 24 * 60 * 60 * 1000))
+  })
   const [popupEvent, setPopupEvent] = useState<CalendarEvent | null>(null)
   const [popupPos, setPopupPos] = useState<{ top: number; left: number; preferRight: boolean } | null>(null)
   const [selectedPlayerIds, setSelectedPlayerIds] = useState<Set<string>>(new Set())
@@ -759,6 +776,30 @@ export function WeeklyCalendar({
                   : 'bg-red-50 border border-red-200 text-red-700'
               }`}>
                 {actionResult.message}
+              </div>
+            )}
+
+            {/* Cancel private booking */}
+            {onCancelPrivate && popupEvent.bookingId && popupEvent.programType === 'private' && (
+              <div className="mt-3">
+                <button
+                  disabled={actionLoading}
+                  onClick={async () => {
+                    setActionLoading(true)
+                    setActionResult(null)
+                    const result = await onCancelPrivate(popupEvent.bookingId!)
+                    setActionLoading(false)
+                    if (result.error) {
+                      setActionResult({ type: 'error', message: result.error })
+                    } else {
+                      setActionResult({ type: 'success', message: 'Booking cancelled' })
+                      setTimeout(() => { setPopupEvent(null); setPopupPos(null); setActionResult(null) }, 1200)
+                    }
+                  }}
+                  className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-danger/30 bg-danger/5 px-4 py-2 text-sm font-medium text-danger transition-all hover:bg-danger/10 disabled:opacity-50"
+                >
+                  {actionLoading ? <Loader2 className="size-4 animate-spin" /> : 'Cancel booking'}
+                </button>
               </div>
             )}
 
