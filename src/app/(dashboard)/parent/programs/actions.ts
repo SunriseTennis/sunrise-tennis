@@ -5,7 +5,7 @@ import { redirect } from 'next/navigation'
 import { createClient, getSessionUser } from '@/lib/supabase/server'
 import { sendPushToUser } from '@/lib/push/send'
 import { validateFormData, enrolFormSchema } from '@/lib/utils/validation'
-import { createCharge, getTermPrice, getSessionPrice } from '@/lib/utils/billing'
+import { createCharge, getTermPrice, getSessionPrice, voidCharge, getExistingSessionCharge } from '@/lib/utils/billing'
 
 async function getParentFamilyId(): Promise<{ userId: string; familyId: string } | null> {
   const supabase = await createClient()
@@ -232,4 +232,139 @@ export async function enrolInProgram(programId: string, familyId: string, formDa
   revalidatePath('/parent/programs')
   revalidatePath('/parent')
   redirect(`/parent/programs/${programId}?success=${encodeURIComponent('Successfully enrolled!')}`)
+}
+
+// ── Quick book a single session from calendar popup ──────────────────────
+
+export async function bookSession(
+  sessionId: string,
+  programId: string,
+  playerIds: string[],
+): Promise<{ error?: string }> {
+  const supabase = await createClient()
+  const auth = await getParentFamilyId()
+  if (!auth) return { error: 'Not authenticated' }
+
+  const { checkRateLimitAsync } = await import('@/lib/utils/rate-limit')
+  if (!await checkRateLimitAsync(`book-session:${auth.userId}`, 10, 60_000)) {
+    return { error: 'Too many requests. Please wait a moment.' }
+  }
+
+  // Verify all players belong to this family
+  const { data: players } = await supabase
+    .from('players')
+    .select('id')
+    .eq('family_id', auth.familyId)
+    .in('id', playerIds)
+
+  if (!players || players.length !== playerIds.length) {
+    return { error: 'Player not found' }
+  }
+
+  // Get session + program info
+  const { data: session } = await supabase
+    .from('sessions')
+    .select('id, date, program_id, status')
+    .eq('id', sessionId)
+    .single()
+
+  if (!session || session.status !== 'scheduled') {
+    return { error: 'Session not available' }
+  }
+
+  const { data: program } = await supabase
+    .from('programs')
+    .select('name, type, per_session_cents')
+    .eq('id', programId)
+    .single()
+
+  const sessionPrice = await getSessionPrice(supabase, auth.familyId, programId, program?.type)
+
+  for (const playerId of playerIds) {
+    // Check not already attending
+    const { data: existingAttendance } = await supabase
+      .from('attendances')
+      .select('id')
+      .eq('session_id', sessionId)
+      .eq('player_id', playerId)
+      .single()
+
+    if (existingAttendance) continue // skip if already booked
+
+    // Create attendance record
+    await supabase
+      .from('attendances')
+      .insert({
+        session_id: sessionId,
+        player_id: playerId,
+        status: 'present',
+      })
+
+    // Create charge
+    if (sessionPrice > 0) {
+      await createCharge(supabase, {
+        familyId: auth.familyId,
+        playerId,
+        type: 'session',
+        sourceType: 'attendance',
+        sourceId: sessionId,
+        sessionId,
+        programId,
+        description: `${program?.name ?? 'Session'} - ${session.date}`,
+        amountCents: sessionPrice,
+        status: 'confirmed',
+        createdBy: auth.userId,
+      })
+    }
+  }
+
+  revalidatePath('/parent/programs')
+  revalidatePath('/parent')
+  revalidatePath('/parent/payments')
+  return {}
+}
+
+// ── Mark away / cancel attendance for a session ──────────────────────────
+
+export async function markSessionAway(
+  sessionId: string,
+  playerId: string,
+): Promise<{ error?: string }> {
+  const supabase = await createClient()
+  const auth = await getParentFamilyId()
+  if (!auth) return { error: 'Not authenticated' }
+
+  const { checkRateLimitAsync } = await import('@/lib/utils/rate-limit')
+  if (!await checkRateLimitAsync(`mark-away:${auth.userId}`, 10, 60_000)) {
+    return { error: 'Too many requests. Please wait a moment.' }
+  }
+
+  // Verify player belongs to family
+  const { data: player } = await supabase
+    .from('players')
+    .select('id')
+    .eq('id', playerId)
+    .eq('family_id', auth.familyId)
+    .single()
+
+  if (!player) return { error: 'Player not found' }
+
+  // Update or create attendance as excused
+  await supabase
+    .from('attendances')
+    .upsert(
+      { session_id: sessionId, player_id: playerId, status: 'excused' },
+      { onConflict: 'session_id,player_id' }
+    )
+
+  // Void the charge if one exists for this session+player
+  const existingCharge = await getExistingSessionCharge(supabase, sessionId, playerId)
+  if (existingCharge) {
+    await voidCharge(supabase, existingCharge.id, auth.familyId)
+  }
+
+  revalidatePath('/parent/programs')
+  revalidatePath('/parent')
+  revalidatePath('/parent/payments')
+  return {}
 }

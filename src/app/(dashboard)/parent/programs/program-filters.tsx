@@ -5,8 +5,9 @@ import Link from 'next/link'
 import { formatCurrency } from '@/lib/utils/currency'
 import { formatTime } from '@/lib/utils/dates'
 import { Badge } from '@/components/ui/badge'
-import { WeeklyCalendar, type CalendarEvent } from '@/components/weekly-calendar'
+import { WeeklyCalendar, type CalendarEvent, type EnrolledPlayersMap } from '@/components/weekly-calendar'
 import { Calendar, List, Layers, Tag, ChevronRight, Users, Filter } from 'lucide-react'
+import { bookSession, markSessionAway } from './actions'
 
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
@@ -87,17 +88,31 @@ type Session = {
 
 type Tab = 'calendar' | 'list' | 'level' | 'type'
 
-/** Strip day prefix from program name for calendar display */
+/** Strip day prefix from program name for calendar display, clean up "Ball" and avoid double suffix */
 function formatCalendarTitle(name: string, type: string): string {
-  const lower = name.toLowerCase()
+  let result = name
+  const lower = result.toLowerCase()
+
+  // Strip day prefix (e.g. "Mon ", "Wed ")
   for (const prefix of DAY_PREFIXES) {
     if (lower.startsWith(prefix + ' ')) {
-      const stripped = name.slice(prefix.length + 1)
-      const suffix = type === 'group' ? ' Group' : type === 'squad' ? ' Squad' : ''
-      return stripped + suffix
+      result = result.slice(prefix.length + 1)
+      break
     }
   }
-  return name
+
+  // Remove "Ball" (e.g. "Orange Ball" → "Orange")
+  result = result.replace(/\s+Ball\b/gi, '')
+
+  // Add type suffix if not already present
+  const resultLower = result.toLowerCase()
+  if (type === 'group' && !resultLower.includes('group')) {
+    result = result + ' Group'
+  } else if (type === 'squad' && !resultLower.includes('squad')) {
+    result = result + ' Squad'
+  }
+
+  return result
 }
 
 function ProgramCard({
@@ -183,16 +198,18 @@ export function ParentProgramFilters({
   sessions,
   playerLevels,
   familyPlayerIds,
+  familyPlayers,
 }: {
   programs: Program[]
   sessions: Session[]
   playerLevels: string[]
   familyPlayerIds: string[]
+  familyPlayers: { id: string; name: string }[]
 }) {
   const [tab, setTab] = useState<Tab>('calendar')
   const [levelFilter, setLevelFilter] = useState('')
   const [typeFilter, setTypeFilter] = useState('')
-  const [calendarFilter, setCalendarFilter] = useState<'all' | 'mine'>('all')
+  const [calendarFilter, setCalendarFilter] = useState<'all' | 'mine'>('mine')
   const playerIds = useMemo(() => new Set(familyPlayerIds), [familyPlayerIds])
   const playerLevelSet = useMemo(() => new Set(playerLevels), [playerLevels])
 
@@ -232,6 +249,18 @@ export function ParentProgramFilters({
       if (familyEnrolled) ids.add(p.id)
     })
     return ids
+  }, [programs, playerIds])
+
+  // Map of programId → enrolled family playerIds (for calendar booking UI)
+  const enrolledPlayersMap: EnrolledPlayersMap = useMemo(() => {
+    const map: Record<string, string[]> = {}
+    programs.forEach(p => {
+      const enrolled = (p.program_roster ?? [])
+        .filter(r => r.status === 'enrolled' && playerIds.has(r.player_id))
+        .map(r => r.player_id)
+      if (enrolled.length > 0) map[p.id] = enrolled
+    })
+    return map
   }, [programs, playerIds])
 
   // Programs matching family player levels (recommended)
@@ -363,7 +392,13 @@ export function ParentProgramFilters({
           </div>
 
           {calendarEvents.length > 0 || sessions.length > 0 ? (
-            <WeeklyCalendar events={calendarEvents} />
+            <WeeklyCalendar
+              events={calendarEvents}
+              players={familyPlayers}
+              enrolledPlayersMap={enrolledPlayersMap}
+              onBookSession={bookSession}
+              onMarkAway={markSessionAway}
+            />
           ) : (
             <p className="rounded-xl border border-border bg-card p-8 text-center text-sm text-muted-foreground">No scheduled sessions.</p>
           )}

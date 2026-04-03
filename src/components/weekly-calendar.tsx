@@ -2,9 +2,9 @@
 
 import { useState, useMemo, useRef, useEffect, useCallback } from 'react'
 import Link from 'next/link'
-import { ChevronLeft, ChevronRight, X, Clock, Users, Tag, DollarSign, CheckCircle, ExternalLink } from 'lucide-react'
+import { ChevronLeft, ChevronRight, X, Clock, Users, DollarSign, CheckCircle, ExternalLink, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
-import { getTermInfo } from '@/lib/utils/school-terms'
+import { getTermInfo, getNextTermStart } from '@/lib/utils/school-terms'
 import { formatCurrency } from '@/lib/utils/currency'
 
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
@@ -99,6 +99,13 @@ function formatDateShort(dateStr: string): string {
   return `${d.getDate()} ${MONTHS[d.getMonth()]}`
 }
 
+const SHORT_DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+
+function formatDayDate(dateStr: string): string {
+  const d = new Date(dateStr + 'T12:00:00')
+  return `${SHORT_DAYS[d.getDay()]}, ${d.getDate()} ${MONTHS[d.getMonth()]}`
+}
+
 function isToday(date: Date): boolean {
   const now = new Date()
   return date.getDate() === now.getDate() &&
@@ -173,16 +180,168 @@ function computeCollisionLayout(dayEvents: CalendarEvent[]): Map<string, { col: 
   return layout
 }
 
+export interface CalendarPlayer {
+  id: string
+  name: string
+}
+
+/** Map of programId → Set of enrolled playerIds */
+export type EnrolledPlayersMap = Record<string, string[]>
+
+/** Popup actions: book session / mark away */
+function PopupActions({
+  event,
+  players,
+  enrolledPlayersMap,
+  selectedPlayerIds,
+  setSelectedPlayerIds,
+  actionLoading,
+  onBookSession,
+  onMarkAway,
+}: {
+  event: CalendarEvent
+  players?: CalendarPlayer[]
+  enrolledPlayersMap?: EnrolledPlayersMap
+  selectedPlayerIds: Set<string>
+  setSelectedPlayerIds: (ids: Set<string>) => void
+  actionLoading: boolean
+  onBookSession?: (sessionId: string, programId: string, playerIds: string[]) => void
+  onMarkAway?: (sessionId: string, playerId: string) => void
+}) {
+  if (!event.sessionId || !event.programId || !players || players.length === 0) {
+    // No booking actions — just show program link
+    return (
+      <div className="mt-3">
+        {event.href && (
+          <Link
+            href={event.href}
+            className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-[#2B5EA7] px-4 py-2 text-sm font-medium text-white shadow-sm transition-all hover:brightness-110"
+          >
+            {event.isEnrolled ? 'View program' : 'Book program'}
+            <ExternalLink className="size-3.5" />
+          </Link>
+        )}
+      </div>
+    )
+  }
+
+  const enrolledPlayerIds = new Set(enrolledPlayersMap?.[event.programId] ?? [])
+  const enrolledPlayers = players.filter(p => enrolledPlayerIds.has(p.id))
+  const availablePlayers = players.filter(p => !enrolledPlayerIds.has(p.id))
+
+  return (
+    <div className="mt-3 space-y-3">
+      {/* Enrolled players — can mark away */}
+      {enrolledPlayers.length > 0 && onMarkAway && (
+        <div>
+          <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide mb-1.5">Enrolled</p>
+          <div className="space-y-1">
+            {enrolledPlayers.map(p => (
+              <div key={p.id} className="flex items-center justify-between rounded-lg border border-success/20 bg-success/5 px-3 py-1.5">
+                <span className="text-sm font-medium text-success">{p.name}</span>
+                <button
+                  disabled={actionLoading}
+                  onClick={() => onMarkAway(event.sessionId!, p.id)}
+                  className="text-xs font-medium text-muted-foreground hover:text-danger transition-colors disabled:opacity-50"
+                >
+                  {actionLoading ? <Loader2 className="size-3 animate-spin" /> : 'Mark away'}
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Available players — can book */}
+      {availablePlayers.length > 0 && onBookSession && event.spotsLeft !== 0 && (
+        <div>
+          <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide mb-1.5">Book session</p>
+          <div className="space-y-1">
+            {availablePlayers.map(p => {
+              const selected = selectedPlayerIds.has(p.id)
+              return (
+                <button
+                  key={p.id}
+                  onClick={() => {
+                    const next = new Set(selectedPlayerIds)
+                    if (next.has(p.id)) next.delete(p.id)
+                    else next.add(p.id)
+                    setSelectedPlayerIds(next)
+                  }}
+                  className={`flex w-full items-center gap-2 rounded-lg border px-3 py-1.5 text-sm font-medium transition-all ${
+                    selected
+                      ? 'border-primary bg-primary/5 text-primary'
+                      : 'border-border text-foreground hover:border-primary/30'
+                  }`}
+                >
+                  <div className={`size-4 rounded border-2 flex items-center justify-center transition-all ${
+                    selected ? 'border-primary bg-primary' : 'border-muted-foreground/30'
+                  }`}>
+                    {selected && <CheckCircle className="size-3 text-white" />}
+                  </div>
+                  {p.name}
+                </button>
+              )
+            })}
+          </div>
+          {selectedPlayerIds.size > 0 && (
+            <button
+              disabled={actionLoading}
+              onClick={() => onBookSession(event.sessionId!, event.programId!, [...selectedPlayerIds])}
+              className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg bg-[#2B5EA7] px-4 py-2 text-sm font-medium text-white shadow-sm transition-all hover:brightness-110 disabled:opacity-50"
+            >
+              {actionLoading ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <>
+                  Book {selectedPlayerIds.size} player{selectedPlayerIds.size > 1 ? 's' : ''}
+                  {event.priceCents ? ` · ${formatCurrency(event.priceCents * selectedPlayerIds.size)}` : ''}
+                </>
+              )}
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Program link */}
+      {event.href && (
+        <Link
+          href={event.href}
+          className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-border px-4 py-2 text-sm font-medium text-foreground transition-all hover:bg-muted/50"
+        >
+          Book full term
+          <ExternalLink className="size-3.5" />
+        </Link>
+      )}
+    </div>
+  )
+}
+
 export function WeeklyCalendar({
   events,
   onEventClick,
+  players,
+  enrolledPlayersMap,
+  onBookSession,
+  onMarkAway,
 }: {
   events: CalendarEvent[]
   onEventClick?: (event: CalendarEvent) => void
+  /** Family players available for booking */
+  players?: CalendarPlayer[]
+  /** Which players are enrolled in which programs */
+  enrolledPlayersMap?: EnrolledPlayersMap
+  /** Called when user books a session for selected players */
+  onBookSession?: (sessionId: string, programId: string, playerIds: string[]) => Promise<{ error?: string }>
+  /** Called when user marks a player as away for a session */
+  onMarkAway?: (sessionId: string, playerId: string) => Promise<{ error?: string }>
 }) {
   const [weekOffset, setWeekOffset] = useState(0)
   const [popupEvent, setPopupEvent] = useState<CalendarEvent | null>(null)
   const [popupPos, setPopupPos] = useState<{ top: number; left: number; preferRight: boolean } | null>(null)
+  const [selectedPlayerIds, setSelectedPlayerIds] = useState<Set<string>>(new Set())
+  const [actionLoading, setActionLoading] = useState(false)
+  const [actionResult, setActionResult] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
   const popupRef = useRef<HTMLDivElement>(null)
   const calendarRef = useRef<HTMLDivElement>(null)
   const hourHeight = 60
@@ -263,6 +422,8 @@ export function WeeklyCalendar({
 
     setPopupEvent(event)
     setPopupPos({ top, left, preferRight })
+    setSelectedPlayerIds(new Set())
+    setActionResult(null)
     onEventClick?.(event)
   }
 
@@ -302,6 +463,22 @@ export function WeeklyCalendar({
                 Today
               </button>
             )}
+            {(() => {
+              const nextTerm = getNextTermStart(new Date())
+              if (!nextTerm) return null
+              const todayMonday = getMonday(new Date())
+              const nextTermMonday = getMonday(nextTerm)
+              const diffWeeks = Math.round((nextTermMonday.getTime() - todayMonday.getTime()) / (7 * 24 * 60 * 60 * 1000))
+              if (diffWeeks <= 0 || diffWeeks === weekOffset) return null
+              return (
+                <button
+                  onClick={() => setWeekOffset(diffWeeks)}
+                  className="rounded-md bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary transition-colors hover:bg-primary/20"
+                >
+                  Next term
+                </button>
+              )
+            })()}
           </div>
           {(() => {
             const term = getTermInfo(monday)
@@ -483,12 +660,15 @@ export function WeeklyCalendar({
             </div>
 
             <div className="mt-3 space-y-1.5">
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Clock className="size-3.5 shrink-0" />
-                <span>
-                  {popupEvent.date && `${formatDateShort(popupEvent.date)} · `}
-                  {formatTimeShort(popupEvent.startTime)} – {formatTimeShort(popupEvent.endTime)}
-                </span>
+              {popupEvent.date && (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Clock className="size-3.5 shrink-0" />
+                  <span>{formatDayDate(popupEvent.date)}</span>
+                </div>
+              )}
+              <div className={`flex items-center gap-2 text-sm text-muted-foreground ${popupEvent.date ? 'pl-[22px]' : ''}`}>
+                {!popupEvent.date && <Clock className="size-3.5 shrink-0" />}
+                <span>{formatTimeShort(popupEvent.startTime)} – {formatTimeShort(popupEvent.endTime)}</span>
               </div>
               {popupEvent.playerNames && popupEvent.playerNames.length > 0 && (
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -522,29 +702,50 @@ export function WeeklyCalendar({
               </div>
             )}
 
-            {/* Action buttons */}
-            <div className="mt-3 space-y-2">
-              {popupEvent.isEnrolled ? (
-                <div className="flex items-center gap-2 rounded-lg bg-success/5 border border-success/20 px-3 py-2.5 text-sm font-medium text-success">
-                  <CheckCircle className="size-4" />
-                  Enrolled
-                </div>
-              ) : popupEvent.spotsLeft === 0 ? (
-                <div className="rounded-lg bg-muted px-3 py-2.5 text-center text-sm font-medium text-muted-foreground">
-                  Program full
-                </div>
-              ) : null}
+            {/* Action result message */}
+            {actionResult && (
+              <div className={`mt-3 rounded-lg px-3 py-2 text-xs font-medium ${
+                actionResult.type === 'success'
+                  ? 'bg-success/5 border border-success/20 text-success'
+                  : 'bg-red-50 border border-red-200 text-red-700'
+              }`}>
+                {actionResult.message}
+              </div>
+            )}
 
-              {popupEvent.href && (
-                <Link
-                  href={popupEvent.href}
-                  className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-[#2B5EA7] px-4 py-2 text-sm font-medium text-white shadow-sm transition-all hover:brightness-110"
-                >
-                  {popupEvent.isEnrolled ? 'View program' : 'Book program'}
-                  <ExternalLink className="size-3.5" />
-                </Link>
-              )}
-            </div>
+            {/* Booking/away actions */}
+            <PopupActions
+              event={popupEvent}
+              players={players}
+              enrolledPlayersMap={enrolledPlayersMap}
+              selectedPlayerIds={selectedPlayerIds}
+              setSelectedPlayerIds={setSelectedPlayerIds}
+              actionLoading={actionLoading}
+              onBookSession={onBookSession ? async (sessionId, programId, playerIds) => {
+                setActionLoading(true)
+                setActionResult(null)
+                const result = await onBookSession(sessionId, programId, playerIds)
+                setActionLoading(false)
+                if (result.error) {
+                  setActionResult({ type: 'error', message: result.error })
+                } else {
+                  setActionResult({ type: 'success', message: 'Booked!' })
+                  setTimeout(() => { setPopupEvent(null); setPopupPos(null); setActionResult(null) }, 1200)
+                }
+              } : undefined}
+              onMarkAway={onMarkAway ? async (sessionId, playerId) => {
+                setActionLoading(true)
+                setActionResult(null)
+                const result = await onMarkAway(sessionId, playerId)
+                setActionLoading(false)
+                if (result.error) {
+                  setActionResult({ type: 'error', message: result.error })
+                } else {
+                  setActionResult({ type: 'success', message: 'Marked as away' })
+                  setTimeout(() => { setPopupEvent(null); setPopupPos(null); setActionResult(null) }, 1200)
+                }
+              } : undefined}
+            />
           </div>
         </div>
       )}

@@ -58,6 +58,7 @@ export default async function ParentProgramsPage() {
             sessions={(sessions ?? []) as never}
             playerLevels={playerLevels}
             familyPlayerIds={playerIds}
+            familyPlayers={players?.map(p => ({ id: p.id, name: p.first_name })) ?? []}
           />
         </div>
       ) : (

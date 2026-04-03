@@ -118,3 +118,16 @@ export function getTermInfo(monday: Date): string | null {
 
   return null
 }
+
+/**
+ * Returns the start date of the next upcoming term (after `from`).
+ * Returns null if no future terms are configured.
+ */
+export function getNextTermStart(from: Date): Date | null {
+  const day = startOfDay(from)
+  for (const t of SA_TERMS) {
+    const tStart = startOfDay(t.start)
+    if (tStart > day) return tStart
+  }
+  return null
+}

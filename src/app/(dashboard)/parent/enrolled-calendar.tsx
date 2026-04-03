@@ -5,7 +5,6 @@ import { WeeklyCalendar, type CalendarEvent } from '@/components/weekly-calendar
 import { Users, Layers } from 'lucide-react'
 
 // Brand palette colors for players (from the sunrise gradient)
-// Used by both player cards and calendar — keep in sync
 const PLAYER_PALETTE = [
   'bg-[#2B5EA7] border-[#1F4E97] text-white',       // blue
   'bg-[#E87450] border-[#D06440] text-white',        // coral/orange
@@ -36,76 +35,134 @@ const TYPE_COLORS: Record<string, string> = {
 const DAY_PREFIXES = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
 
 function formatCalendarTitle(name: string, type: string): string {
-  const lower = name.toLowerCase()
+  let result = name
+  const lower = result.toLowerCase()
+
   for (const prefix of DAY_PREFIXES) {
     if (lower.startsWith(prefix + ' ')) {
-      const stripped = name.slice(prefix.length + 1)
-      const suffix = type === 'group' ? ' Group' : type === 'squad' ? ' Squad' : ''
-      return stripped + suffix
+      result = result.slice(prefix.length + 1)
+      break
     }
   }
-  return name
+
+  result = result.replace(/\s+Ball\b/gi, '')
+
+  const resultLower = result.toLowerCase()
+  if (type === 'group' && !resultLower.includes('group')) {
+    result = result + ' Group'
+  } else if (type === 'squad' && !resultLower.includes('squad')) {
+    result = result + ' Squad'
+  }
+
+  return result
 }
 
 type Enrollment = {
   id: string
+  playerId: string
   playerName: string
   programId: string
   programName: string
   programType: string
   programLevel: string | null
+}
+
+type SessionData = {
+  id: string
+  program_id: string | null
+  date: string
+  start_time: string | null
+  end_time: string | null
+}
+
+type PrivateBooking = {
+  id: string
+  playerName: string
+  programName: string
   dayOfWeek: number | null
   startTime: string | null
   endTime: string | null
+  date?: string | null
 }
 
 type ColorMode = 'player' | 'type'
 
 export function EnrolledCalendar({
   enrollments,
+  sessions,
+  privateBookings,
   playerOrder,
 }: {
   enrollments: Enrollment[]
+  sessions: SessionData[]
+  privateBookings?: PrivateBooking[]
   playerOrder: string[]
 }) {
   const [colorMode, setColorMode] = useState<ColorMode>('player')
   const [hiddenPlayers, setHiddenPlayers] = useState<Set<string>>(new Set())
 
-  // Use the canonical player order (from sorted players array) for consistent colors
   const playerColorMap = new Map<string, string>()
   playerOrder.forEach((name, i) => {
     playerColorMap.set(name, PLAYER_PALETTE[i % PLAYER_PALETTE.length])
   })
 
-  // Group enrollments by program to merge player names into one event
-  const grouped = new Map<string, Enrollment[]>()
-  for (const e of enrollments.filter(e => e.dayOfWeek != null && e.startTime && e.endTime)) {
-    const key = e.programId
-    const existing = grouped.get(key)
+  // Build a map of programId → enrollment info (player names, types, etc.)
+  const programEnrollments = new Map<string, Enrollment[]>()
+  for (const e of enrollments) {
+    const existing = programEnrollments.get(e.programId)
     if (existing) existing.push(e)
-    else grouped.set(key, [e])
+    else programEnrollments.set(e.programId, [e])
   }
 
-  const events: CalendarEvent[] = Array.from(grouped.values()).map(group => {
-    const first = group[0]
-    const playerNames = group.map(e => e.playerName).filter(Boolean)
-    const color = colorMode === 'player'
-      ? (playerColorMap.get(playerNames[0] ?? '') ?? PLAYER_PALETTE[0])
-      : (TYPE_COLORS[first.programType] ?? TYPE_COLORS.group)
+  // Build session-based events
+  const sessionEvents: CalendarEvent[] = sessions
+    .filter(s => s.start_time && s.end_time && s.program_id)
+    .map(s => {
+      const enrolmentGroup = programEnrollments.get(s.program_id!) ?? []
+      const playerNames = enrolmentGroup.map(e => e.playerName).filter(Boolean)
+      const first = enrolmentGroup[0]
+      const eventDate = new Date(s.date + 'T12:00:00')
+      const dayOfWeek = eventDate.getDay()
 
-    return {
-      id: first.id,
-      title: formatCalendarTitle(first.programName, first.programType),
-      subtitle: playerNames.join(', '),
-      dayOfWeek: first.dayOfWeek!,
-      startTime: first.startTime!,
-      endTime: first.endTime!,
-      color,
-      href: `/parent/programs/${first.programId}`,
-      programType: first.programType,
-      playerNames,
-    }
-  })
+      const color = colorMode === 'player'
+        ? (playerColorMap.get(playerNames[0] ?? '') ?? PLAYER_PALETTE[0])
+        : (TYPE_COLORS[first?.programType ?? 'group'] ?? TYPE_COLORS.group)
+
+      return {
+        id: s.id,
+        title: formatCalendarTitle(first?.programName ?? '', first?.programType ?? 'group'),
+        subtitle: playerNames.join(', '),
+        dayOfWeek,
+        startTime: s.start_time!,
+        endTime: s.end_time!,
+        color,
+        href: first?.programId ? `/parent/programs/${first.programId}` : undefined,
+        programType: first?.programType,
+        playerNames,
+        date: s.date,
+        isEnrolled: true,
+      }
+    })
+
+  // Private booking events (still use dayOfWeek if no date)
+  const privateEvents: CalendarEvent[] = (privateBookings ?? [])
+    .filter(b => b.startTime && b.endTime && (b.dayOfWeek != null || b.date))
+    .map(b => ({
+      id: b.id,
+      title: b.programName,
+      subtitle: b.playerName,
+      dayOfWeek: b.dayOfWeek ?? 0,
+      startTime: b.startTime!,
+      endTime: b.endTime!,
+      color: colorMode === 'player'
+        ? (playerColorMap.get(b.playerName) ?? PLAYER_PALETTE[0])
+        : TYPE_COLORS.private,
+      programType: 'private',
+      playerNames: [b.playerName],
+      date: b.date ?? undefined,
+    }))
+
+  const events = [...sessionEvents, ...privateEvents]
 
   // Filter out events where ALL players are hidden
   const visibleEvents = colorMode === 'player'

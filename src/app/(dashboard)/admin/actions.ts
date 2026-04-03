@@ -447,7 +447,8 @@ export async function generateTermSessions(formData: FormData) {
     if (!isPublicHoliday(current)) {
       for (const program of programs) {
         if (program.day_of_week === jsDay) {
-          const dateStr = current.toISOString().split('T')[0]
+          // Use local date parts — toISOString() shifts to UTC which is the previous day in AU
+          const dateStr = `${current.getFullYear()}-${String(current.getMonth() + 1).padStart(2, '0')}-${String(current.getDate()).padStart(2, '0')}`
           const key = `${program.id}:${dateStr}`
 
           if (!existingSet.has(key)) {
