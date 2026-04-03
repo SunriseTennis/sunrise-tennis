@@ -1533,6 +1533,7 @@ export type Database = {
           day_of_week: number | null
           description: string | null
           duration_min: number | null
+          early_bird_deadline: string | null
           early_pay_discount_pct: number | null
           end_time: string | null
           id: string
@@ -1553,6 +1554,7 @@ export type Database = {
           day_of_week?: number | null
           description?: string | null
           duration_min?: number | null
+          early_bird_deadline?: string | null
           early_pay_discount_pct?: number | null
           end_time?: string | null
           id?: string
@@ -1573,6 +1575,7 @@ export type Database = {
           day_of_week?: number | null
           description?: string | null
           duration_min?: number | null
+          early_bird_deadline?: string | null
           early_pay_discount_pct?: number | null
           end_time?: string | null
           id?: string
@@ -2055,6 +2058,7 @@ export type Database = {
       decrypt_medical: { Args: { ciphertext: string }; Returns: string }
       encrypt_medical: { Args: { plaintext: string }; Returns: string }
       get_coach_pay: { Args: { price_cents: number }; Returns: number }
+      get_coach_session_ids: { Args: { p_coach_id: string }; Returns: string[] }
       get_coach_team_ids: { Args: { user_uuid: string }; Returns: string[] }
       get_current_term: {
         Args: never
@@ -2062,6 +2066,10 @@ export type Database = {
           term: number
           year: number
         }[]
+      }
+      get_family_booking_session_ids: {
+        Args: { p_family_id: string }
+        Returns: string[]
       }
       get_parent_team_ids: { Args: { user_uuid: string }; Returns: string[] }
       get_player_medical_notes: {

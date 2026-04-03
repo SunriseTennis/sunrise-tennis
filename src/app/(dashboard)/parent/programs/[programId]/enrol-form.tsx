@@ -17,6 +17,7 @@ export function EnrolForm({
   termFeeCents,
   perSessionCents,
   earlyPayDiscountPct,
+  earlyBirdDeadline,
   remainingSessions,
 }: {
   programId: string
@@ -26,6 +27,7 @@ export function EnrolForm({
   termFeeCents?: number | null
   perSessionCents?: number | null
   earlyPayDiscountPct?: number | null
+  earlyBirdDeadline?: string | null
   remainingSessions?: number | null
 }) {
   const [bookingType, setBookingType] = useState('term')
@@ -34,7 +36,9 @@ export function EnrolForm({
   const enrolWithIds = enrolInProgram.bind(null, programId, familyId)
 
   const showPaymentOptions = bookingType === 'term'
-  const hasDiscount = earlyPayDiscountPct && earlyPayDiscountPct > 0
+  const todayStr = new Date().toISOString().split('T')[0]
+  const deadlineActive = !earlyBirdDeadline || todayStr <= earlyBirdDeadline
+  const hasDiscount = earlyPayDiscountPct && earlyPayDiscountPct > 0 && deadlineActive
 
   // Calculate prices
   const termPrice = termFeeCents ?? (perSessionCents && remainingSessions ? perSessionCents * remainingSessions : null)

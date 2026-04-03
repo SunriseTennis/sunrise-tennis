@@ -171,6 +171,7 @@ export default async function ParentProgramDetailPage({
             termFeeCents={program.term_fee_cents}
             perSessionCents={program.per_session_cents}
             earlyPayDiscountPct={program.early_pay_discount_pct}
+            earlyBirdDeadline={program.early_bird_deadline}
             remainingSessions={upcomingSessions?.length ?? null}
           />
         )}

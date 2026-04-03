@@ -32,22 +32,30 @@ export default async function ParentProgramsPage() {
   const playerLevels = players?.map(p => p.ball_color).filter(Boolean) as string[] ?? []
   const playerIds = players?.map(p => p.id) ?? []
 
-  // Get all active programs
+  // Get all active programs with roster
   const { data: programs } = await supabase
     .from('programs')
-    .select('*, program_roster(id, player_id, status)')
+    .select('id, name, type, level, day_of_week, start_time, end_time, max_capacity, per_session_cents, term_fee_cents, early_pay_discount_pct, early_bird_deadline, description, program_roster(id, player_id, status)')
     .eq('status', 'active')
     .order('day_of_week')
     .order('start_time')
 
+  // Get all scheduled sessions for active programs
+  const { data: sessions } = await supabase
+    .from('sessions')
+    .select('id, program_id, date, start_time, end_time, status')
+    .eq('status', 'scheduled')
+    .order('date')
+
   return (
     <div>
-      <PageHeader title="Available Programs" description="Browse and enrol in programs for your players." />
+      <PageHeader title="Programs" description="Browse sessions and enrol in programs." />
 
       {programs && programs.length > 0 ? (
         <div className="mt-6">
           <ParentProgramFilters
             programs={programs as never}
+            sessions={(sessions ?? []) as never}
             playerLevels={playerLevels}
             familyPlayerIds={playerIds}
           />

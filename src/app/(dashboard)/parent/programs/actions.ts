@@ -68,7 +68,7 @@ export async function enrolInProgram(programId: string, familyId: string, formDa
 
   // Check capacity and get program details
   const [{ data: program }, { count: enrolledCount }] = await Promise.all([
-    supabase.from('programs').select('max_capacity, name, type, term_fee_cents, per_session_cents, early_pay_discount_pct').eq('id', programId).single(),
+    supabase.from('programs').select('max_capacity, name, type, term_fee_cents, per_session_cents, early_pay_discount_pct, early_bird_deadline').eq('id', programId).single(),
     supabase.from('program_roster').select('*', { count: 'exact', head: true }).eq('program_id', programId).eq('status', 'enrolled'),
   ])
 
@@ -117,9 +117,12 @@ export async function enrolInProgram(programId: string, familyId: string, formDa
     // Use term fee if set, otherwise per-session * remaining sessions
     priceCents = termPrice > 0 ? termPrice : sessionPrice * sessionsTotal
 
-    // Apply early-pay discount
+    // Apply early-pay discount (only if before deadline)
     const discountPct = program?.early_pay_discount_pct ?? 0
-    if (discountPct > 0 && priceCents > 0) {
+    const deadline = program?.early_bird_deadline
+    const todayStr = new Date().toISOString().split('T')[0]
+    const deadlineActive = !deadline || todayStr <= deadline
+    if (discountPct > 0 && priceCents > 0 && deadlineActive) {
       discountCents = Math.round(priceCents * (discountPct / 100))
     }
   } else if (isTermEnrollment && effectivePaymentOption === 'pay_later') {
