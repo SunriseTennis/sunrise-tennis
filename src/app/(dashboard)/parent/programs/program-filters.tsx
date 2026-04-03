@@ -217,7 +217,7 @@ export function ParentProgramFilters({
   const [tab, setTab] = useState<Tab>('calendar')
   // Default level to the strongest player's level (blue = highest)
   const strongestLevel = useMemo(() => {
-    const strength = ['blue', 'yellow', 'green', 'orange', 'red']
+    const strength = ['blue', 'red', 'orange', 'green', 'yellow']
     for (const lvl of strength) {
       if (playerLevels.includes(lvl)) return lvl
     }
@@ -229,8 +229,8 @@ export function ParentProgramFilters({
   const playerIds = useMemo(() => new Set(familyPlayerIds), [familyPlayerIds])
   const playerLevelSet = useMemo(() => new Set(playerLevels), [playerLevels])
 
-  // Single-colour levels only (filter out composites like "red-orange"), blue first
-  const LEVEL_ORDER = ['blue', 'yellow', 'green', 'orange', 'red', 'competitive']
+  // Single-colour levels only (filter out composites like "red-orange")
+  const LEVEL_ORDER = ['blue', 'red', 'orange', 'green', 'yellow', 'competitive']
   const SINGLE_LEVELS = new Set(LEVEL_ORDER)
 
   const levels = useMemo(() => {
@@ -283,21 +283,28 @@ export function ParentProgramFilters({
     return map
   }, [programs, playerIds])
 
-  // Programs matching family player levels (recommended)
+  // Programs matching family player levels (recommended) — includes composite levels
   const recommendedProgramIds = useMemo(() => {
     const ids = new Set<string>()
     programs.forEach(p => {
-      if (playerLevelSet.has(p.level ?? '')) ids.add(p.id)
+      if (!p.level) return
+      // Check if any player level matches the program level (exact or within composite)
+      for (const pl of playerLevels) {
+        if (p.level === pl || p.level.includes(pl)) {
+          ids.add(p.id)
+          break
+        }
+      }
     })
     return ids
-  }, [programs, playerLevelSet])
+  }, [programs, playerLevels])
 
-  // Attendance lookup: sessionId → booking status + per-player details
+  // Attendance lookup: sessionId → booking status + per-player status map
   const sessionAttendanceMap = useMemo(() => {
-    const map = new Map<string, { booked: boolean; allAway: boolean; bookedPlayerIds: Set<string>; awayPlayerIds: Set<string> }>()
+    const map = new Map<string, { booked: boolean; allAway: boolean; bookedPlayerIds: Set<string>; awayPlayerIds: Set<string>; playerStatus: Record<string, string> }>()
     const bySession = new Map<string, Attendance[]>()
     for (const a of attendances) {
-      if (!playerIds.has(a.player_id)) continue // Only family players
+      if (!playerIds.has(a.player_id)) continue
       const list = bySession.get(a.session_id)
       if (list) list.push(a)
       else bySession.set(a.session_id, [a])
@@ -307,7 +314,9 @@ export function ParentProgramFilters({
       const awayPlayerIds = new Set(records.filter(r => r.status === 'excused').map(r => r.player_id))
       const hasPresent = bookedPlayerIds.size > 0
       const allExcused = records.length > 0 && records.every(r => r.status === 'excused')
-      map.set(sessionId, { booked: hasPresent, allAway: allExcused, bookedPlayerIds, awayPlayerIds })
+      const playerStatus: Record<string, string> = {}
+      for (const r of records) playerStatus[r.player_id] = r.status
+      map.set(sessionId, { booked: hasPresent, allAway: allExcused, bookedPlayerIds, awayPlayerIds, playerStatus })
     }
     return map
   }, [attendances, playerIds])
@@ -380,6 +389,7 @@ export function ParentProgramFilters({
           earlyBirdDeadline: prog.early_bird_deadline,
           isEnrolled,
           spotsLeft,
+          playerAttendance: sessionAttendanceMap.get(s.id)?.playerStatus,
         }
       })
   }, [sessions, programMap, calendarFilter, enrolledProgramIds, recommendedProgramIds, sessionAttendanceMap])
@@ -390,8 +400,19 @@ export function ParentProgramFilters({
     return programs.filter(p => enrolledProgramIds.has(p.id) || recommendedProgramIds.has(p.id))
   }, [programs, calendarFilter, enrolledProgramIds, recommendedProgramIds])
 
-  const filteredByLevel = filterByLevel(relevantPrograms, levelFilter)
-  const filteredByType = relevantPrograms.filter(p => p.type === typeFilter)
+  // Visible levels/types — in "For you" mode, hide empty ones
+  const visibleLevels = useMemo(() => {
+    if (calendarFilter === 'all') return levels
+    return levels.filter(l => filterByLevel(relevantPrograms, l).length > 0)
+  }, [levels, calendarFilter, relevantPrograms])
+
+  const visibleTypes = useMemo(() => {
+    if (calendarFilter === 'all') return types
+    return types.filter(t => relevantPrograms.some(p => p.type === t))
+  }, [types, calendarFilter, relevantPrograms])
+
+  const filteredByLevel = levelFilter === '' ? relevantPrograms : filterByLevel(relevantPrograms, levelFilter)
+  const filteredByType = typeFilter === '' ? relevantPrograms : relevantPrograms.filter(p => p.type === typeFilter)
 
   const tabDefs: { key: Tab; label: string; icon: typeof Calendar }[] = [
     { key: 'calendar', label: 'Calendar', icon: Calendar },
@@ -404,6 +425,24 @@ export function ParentProgramFilters({
     return (
       <div className="grid gap-3 sm:grid-cols-2">
         {items.map((p, i) => <ProgramCard key={p.id} program={p} familyPlayerIds={playerIds} index={i} />)}
+      </div>
+    )
+  }
+
+  /** Grouped program grid with section headers */
+  function GroupedProgramGrid({ groups, labelMap }: { groups: { key: string; items: Program[] }[]; labelMap?: Record<string, string> }) {
+    const nonEmpty = groups.filter(g => g.items.length > 0)
+    if (nonEmpty.length === 0) return <p className="mt-4 text-center text-sm text-muted-foreground">No programs match.</p>
+    return (
+      <div className="space-y-5">
+        {nonEmpty.map(g => (
+          <div key={g.key}>
+            <h3 className="mb-2 text-sm font-semibold capitalize text-foreground">{labelMap?.[g.key] ?? g.key}</h3>
+            <div className="grid gap-3 sm:grid-cols-2">
+              {g.items.map((p, i) => <ProgramCard key={p.id} program={p} familyPlayerIds={playerIds} index={i} />)}
+            </div>
+          </div>
+        ))}
       </div>
     )
   }
@@ -475,7 +514,17 @@ export function ParentProgramFilters({
       {tab === 'level' && (
         <div className="mt-4">
           <div className="mb-4 flex flex-wrap gap-2">
-            {levels.map(l => {
+            {calendarFilter === 'mine' && (
+              <button
+                onClick={() => setLevelFilter('')}
+                className={`rounded-full px-3 py-1.5 text-sm font-medium transition-all ${
+                  !levelFilter ? 'bg-foreground text-background shadow-sm' : 'bg-muted text-muted-foreground hover:bg-accent'
+                }`}
+              >
+                All
+              </button>
+            )}
+            {visibleLevels.map(l => {
               const style = LEVEL_PILL_STYLES[l] ?? { active: 'bg-primary text-white shadow-sm', inactive: 'bg-muted text-muted-foreground hover:bg-accent' }
               return (
                 <button
@@ -490,7 +539,13 @@ export function ParentProgramFilters({
               )
             })}
           </div>
-          <ProgramGrid items={filteredByLevel} />
+          {levelFilter === '' ? (
+            <GroupedProgramGrid
+              groups={visibleLevels.map(l => ({ key: l, items: filterByLevel(relevantPrograms, l) }))}
+            />
+          ) : (
+            <ProgramGrid items={filteredByLevel} />
+          )}
         </div>
       )}
 
@@ -498,7 +553,17 @@ export function ParentProgramFilters({
       {tab === 'type' && (
         <div className="mt-4">
           <div className="mb-4 flex flex-wrap gap-2">
-            {types.map(t => {
+            {calendarFilter === 'mine' && (
+              <button
+                onClick={() => setTypeFilter('')}
+                className={`rounded-full px-3 py-1.5 text-sm font-medium transition-all ${
+                  !typeFilter ? 'bg-foreground text-background shadow-sm' : 'bg-muted text-muted-foreground hover:bg-accent'
+                }`}
+              >
+                All
+              </button>
+            )}
+            {visibleTypes.map(t => {
               const style = TYPE_PILL_STYLES[t] ?? { active: 'bg-primary text-white shadow-sm', inactive: 'bg-muted text-muted-foreground hover:bg-accent' }
               return (
                 <button
@@ -513,7 +578,13 @@ export function ParentProgramFilters({
               )
             })}
           </div>
-          <ProgramGrid items={filteredByType} />
+          {typeFilter === '' ? (
+            <GroupedProgramGrid
+              groups={visibleTypes.map(t => ({ key: t, items: relevantPrograms.filter(p => p.type === t) }))}
+            />
+          ) : (
+            <ProgramGrid items={filteredByType} />
+          )}
         </div>
       )}
     </div>

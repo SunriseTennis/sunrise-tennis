@@ -79,7 +79,8 @@ export default async function ParentDashboard() {
     return prog?.id
   }).filter(Boolean))] as string[]
 
-  const { data: enrolledSessions } = enrolledProgramIds.length > 0
+  // Fetch sessions for enrolled programs
+  const { data: rosterSessions } = enrolledProgramIds.length > 0
     ? await supabase
         .from('sessions')
         .select('id, program_id, date, start_time, end_time, status')
@@ -87,6 +88,29 @@ export default async function ParentDashboard() {
         .eq('status', 'scheduled')
         .order('date')
     : { data: [] }
+
+  // Also fetch sessions where players have attendance records (booked via calendar)
+  const { data: attendedSessions } = familyPlayerIdList.length > 0
+    ? await supabase
+        .from('attendances')
+        .select('session_id, sessions:session_id(id, program_id, date, start_time, end_time, status)')
+        .in('player_id', familyPlayerIdList)
+        .eq('status', 'present')
+    : { data: [] }
+
+  // Merge and deduplicate sessions
+  type SessionRow = { id: string; program_id: string | null; date: string; start_time: string | null; end_time: string | null; status: string }
+  const enrolledSessions: SessionRow[] = (() => {
+    const map = new Map<string, SessionRow>()
+    for (const s of (rosterSessions ?? []) as SessionRow[]) map.set(s.id, s)
+    for (const a of attendedSessions ?? []) {
+      const s = a.sessions as unknown as SessionRow | null
+      if (s && s.status === 'scheduled' && !map.has(s.id)) {
+        map.set(s.id, s)
+      }
+    }
+    return [...map.values()]
+  })()
 
   const contact = family?.primary_contact as { name?: string; phone?: string; email?: string } | null
   const balanceCents = balance?.balance_cents ?? 0

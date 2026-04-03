@@ -48,6 +48,8 @@ export interface CalendarEvent {
   selectable?: boolean
   /** Booking ID for private lessons (used for cancel action) */
   bookingId?: string
+  /** Per-player attendance status for this session: playerId → 'present'|'excused'|'absent'|'noshow' */
+  playerAttendance?: Record<string, string>
 }
 
 function parseTime(time: string): number {
@@ -242,7 +244,15 @@ function PopupContainer({
   )
 }
 
-/** Popup actions: book session / mark away */
+/** Attendance status display styles */
+const ATTENDANCE_STYLES: Record<string, { label: string; bg: string; text: string }> = {
+  present:  { label: 'Attending',  bg: 'bg-success/5 border-success/20',  text: 'text-success' },
+  excused:  { label: 'Away',       bg: 'bg-muted/50 border-border',       text: 'text-muted-foreground' },
+  absent:   { label: 'Absent',     bg: 'bg-amber-50 border-amber-200',    text: 'text-amber-600' },
+  noshow:   { label: 'No show',    bg: 'bg-red-50 border-red-200',        text: 'text-red-600' },
+}
+
+/** Popup actions: attendance checklist + booking */
 function PopupActions({
   event,
   players,
@@ -265,7 +275,6 @@ function PopupActions({
   onMarkAway?: (sessionId: string, playerId: string) => void
 }) {
   if (!event.sessionId || !event.programId || !players || players.length === 0) {
-    // No booking actions — just show program link
     return (
       <div className="mt-3">
         {event.href && (
@@ -281,32 +290,67 @@ function PopupActions({
     )
   }
 
-  // Use session-level enrolled map (includes booked players), fallback to program-level
   const enrolledPlayerIds = new Set(
     sessionEnrolledMap?.[event.sessionId!] ?? enrolledPlayersMap?.[event.programId] ?? []
   )
   const enrolledPlayers = players.filter(p => enrolledPlayerIds.has(p.id))
   const availablePlayers = players.filter(p => !enrolledPlayerIds.has(p.id))
+  const att = event.playerAttendance ?? {}
+
+  // Check if session is coach-completed (has absent/noshow statuses)
+  const isCoachMarked = Object.values(att).some(s => s === 'absent' || s === 'noshow')
 
   return (
     <div className="mt-3 space-y-3">
-      {/* Enrolled players — can mark away */}
-      {enrolledPlayers.length > 0 && onMarkAway && (
+      {/* Enrolled/booked players — attendance checklist */}
+      {enrolledPlayers.length > 0 && (
         <div>
-          <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide mb-1.5">Enrolled</p>
+          <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide mb-1.5">
+            {isCoachMarked ? 'Attendance' : 'Your players'}
+          </p>
           <div className="space-y-1">
-            {enrolledPlayers.map(p => (
-              <div key={p.id} className="flex items-center justify-between rounded-lg border border-success/20 bg-success/5 px-3 py-1.5">
-                <span className="text-sm font-medium text-success">{p.name}</span>
-                <button
-                  disabled={actionLoading}
-                  onClick={() => onMarkAway(event.sessionId!, p.id)}
-                  className="text-xs font-medium text-muted-foreground hover:text-danger transition-colors disabled:opacity-50"
-                >
-                  {actionLoading ? <Loader2 className="size-3 animate-spin" /> : 'Mark away'}
-                </button>
-              </div>
-            ))}
+            {enrolledPlayers.map(p => {
+              const status = att[p.id]
+              const style = ATTENDANCE_STYLES[status ?? 'present'] ?? ATTENDANCE_STYLES.present
+
+              // Coach has marked attendance — read-only display
+              if (isCoachMarked) {
+                return (
+                  <div key={p.id} className={`flex items-center justify-between rounded-lg border px-3 py-1.5 ${style.bg}`}>
+                    <span className={`text-sm font-medium ${style.text}`}>{p.name}</span>
+                    <span className={`text-xs font-medium ${style.text}`}>{style.label}</span>
+                  </div>
+                )
+              }
+
+              // Parent can toggle between attending/away
+              const isAway = status === 'excused'
+              return (
+                <div key={p.id} className={`flex items-center justify-between rounded-lg border px-3 py-1.5 ${isAway ? 'bg-muted/50 border-border' : 'bg-success/5 border-success/20'}`}>
+                  <span className={`text-sm font-medium ${isAway ? 'text-muted-foreground' : 'text-success'}`}>{p.name}</span>
+                  <div className="flex gap-1">
+                    {onBookSession && isAway && (
+                      <button
+                        disabled={actionLoading}
+                        onClick={() => onBookSession(event.sessionId!, event.programId!, [p.id])}
+                        className="rounded-md bg-success/10 px-2 py-0.5 text-xs font-medium text-success hover:bg-success/20 transition-colors disabled:opacity-50"
+                      >
+                        {actionLoading ? <Loader2 className="size-3 animate-spin" /> : 'Attending'}
+                      </button>
+                    )}
+                    {onMarkAway && !isAway && (
+                      <button
+                        disabled={actionLoading}
+                        onClick={() => onMarkAway(event.sessionId!, p.id)}
+                        className="rounded-md bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground hover:text-danger hover:bg-danger/10 transition-colors disabled:opacity-50"
+                      >
+                        {actionLoading ? <Loader2 className="size-3 animate-spin" /> : 'Away'}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )
+            })}
           </div>
         </div>
       )}
