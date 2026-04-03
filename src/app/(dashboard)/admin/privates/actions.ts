@@ -288,6 +288,86 @@ export async function adminDeclineBooking(bookingId: string) {
   redirect('/admin/privates/bookings?success=Booking+declined')
 }
 
+// ── Admin: Batch Confirm/Decline ─────────────────────────────────────
+
+export async function adminBatchConfirm(formData: FormData) {
+  const user = await requireAdmin()
+  const supabase = await createClient()
+  const ids = formData.getAll('booking_ids') as string[]
+  if (!ids.length) redirect('/admin/privates/bookings?error=No+bookings+selected')
+
+  let confirmed = 0
+  const { sendPushToUser } = await import('@/lib/push/send')
+
+  for (const bookingId of ids) {
+    const { data: booking } = await supabase
+      .from('bookings')
+      .select('id, session_id, family_id, approval_status')
+      .eq('id', bookingId)
+      .single()
+
+    if (!booking || booking.approval_status !== 'pending') continue
+
+    await supabase.from('bookings').update({
+      status: 'confirmed', approval_status: 'approved',
+      approved_by: user.id, approved_at: new Date().toISOString(),
+    }).eq('id', bookingId)
+
+    await supabase.from('charges').update({ status: 'confirmed' }).eq('booking_id', bookingId).eq('status', 'pending')
+
+    // Notifications
+    try {
+      const { data: parentRole } = await supabase.from('user_roles').select('user_id').eq('family_id', booking.family_id).eq('role', 'parent').limit(1).single()
+      if (parentRole) await sendPushToUser(parentRole.user_id, { title: 'Private Lesson Confirmed', body: 'Your booking has been confirmed', url: '/parent/bookings' })
+      const { data: session } = await supabase.from('sessions').select('coaches:coach_id(user_id)').eq('id', booking.session_id!).single()
+      const coachUserId = (session?.coaches as unknown as { user_id: string } | null)?.user_id
+      if (coachUserId) await sendPushToUser(coachUserId, { title: 'Booking Confirmed', body: 'A private lesson has been confirmed', url: '/coach/privates' })
+    } catch { /* non-blocking */ }
+
+    confirmed++
+  }
+
+  revalidatePath('/admin/privates/bookings')
+  redirect(`/admin/privates/bookings?success=${confirmed}+booking(s)+confirmed`)
+}
+
+export async function adminBatchDecline(formData: FormData) {
+  await requireAdmin()
+  const supabase = await createClient()
+  const ids = formData.getAll('booking_ids') as string[]
+  if (!ids.length) redirect('/admin/privates/bookings?error=No+bookings+selected')
+
+  let declined = 0
+  const { voidCharge } = await import('@/lib/utils/billing')
+  const { sendPushToUser } = await import('@/lib/push/send')
+
+  for (const bookingId of ids) {
+    const { data: booking } = await supabase
+      .from('bookings')
+      .select('id, session_id, family_id, approval_status')
+      .eq('id', bookingId)
+      .single()
+
+    if (!booking || booking.approval_status !== 'pending') continue
+
+    await supabase.from('bookings').update({ status: 'cancelled', approval_status: 'declined' }).eq('id', bookingId)
+    await supabase.from('sessions').update({ status: 'cancelled', cancellation_reason: 'Declined by admin' }).eq('id', booking.session_id!)
+
+    const { data: charge } = await supabase.from('charges').select('id').eq('booking_id', bookingId).in('status', ['pending', 'confirmed']).single()
+    if (charge) await voidCharge(supabase, charge.id, booking.family_id)
+
+    try {
+      const { data: parentRole } = await supabase.from('user_roles').select('user_id').eq('family_id', booking.family_id).eq('role', 'parent').limit(1).single()
+      if (parentRole) await sendPushToUser(parentRole.user_id, { title: 'Booking Declined', body: 'Your private lesson request was not accepted', url: '/parent/bookings' })
+    } catch { /* non-blocking */ }
+
+    declined++
+  }
+
+  revalidatePath('/admin/privates/bookings')
+  redirect(`/admin/privates/bookings?success=${declined}+booking(s)+declined`)
+}
+
 // ── Admin: Coach Payment Recording ─────────────────────────────────────
 
 export async function recordCoachPayment(formData: FormData) {

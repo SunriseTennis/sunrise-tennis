@@ -131,3 +131,21 @@ export function getNextTermStart(from: Date): Date | null {
   }
   return null
 }
+
+/**
+ * Returns the end date of the current term if inside one,
+ * or the end of the next upcoming term if in holidays.
+ * Used to determine how far ahead to show availability.
+ */
+export function getCurrentOrNextTermEnd(from: Date): Date | null {
+  const day = startOfDay(from)
+  // Check if inside a term
+  for (const t of SA_TERMS) {
+    if (day >= startOfDay(t.start) && day <= startOfDay(t.end)) return t.end
+  }
+  // In holidays — return end of next term
+  for (const t of SA_TERMS) {
+    if (startOfDay(t.start) > day) return t.end
+  }
+  return null
+}

@@ -387,6 +387,7 @@ export function WeeklyCalendar({
   onCancelPrivate,
   nextJumpDate,
   nextJumpLabel,
+  headerLeft,
 }: {
   events: CalendarEvent[]
   onEventClick?: (event: CalendarEvent) => void
@@ -406,6 +407,8 @@ export function WeeklyCalendar({
   nextJumpDate?: string
   /** Label for the jump button (e.g. "Next private") */
   nextJumpLabel?: string
+  /** Content to render at the left of the week navigation header */
+  headerLeft?: React.ReactNode
 }) {
   // Default to term start week if we're before the next term, otherwise today
   const [weekOffset, setWeekOffset] = useState(() => {
@@ -535,12 +538,15 @@ export function WeeklyCalendar({
     <div ref={calendarRef} className="relative overflow-hidden rounded-xl border border-border bg-card shadow-card">
       {/* Week navigation header */}
       <div className="flex items-center justify-between border-b border-border bg-gradient-to-r from-dawn-cream to-peach-mist/40 px-4 py-2.5">
-        <button
-          onClick={() => setWeekOffset(o => o - 1)}
-          className="flex size-7 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-white/60 hover:text-foreground"
-        >
-          <ChevronLeft className="size-4" />
-        </button>
+        <div className="flex items-center gap-2">
+          {headerLeft}
+          <button
+            onClick={() => setWeekOffset(o => o - 1)}
+            className="flex size-7 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-white/60 hover:text-foreground"
+          >
+            <ChevronLeft className="size-4" />
+          </button>
+        </div>
         <div className="flex flex-col items-center gap-0.5">
           <div className="flex items-center gap-2">
             <span className="text-sm font-semibold text-foreground">{formatWeekRange(monday)}</span>

@@ -4,6 +4,7 @@ import { PageHeader } from '@/components/page-header'
 import { AvailabilityCalendar } from './availability-calendar'
 import { MyBookings } from './my-bookings'
 import { LessonHistory } from './lesson-history'
+import { getCurrentOrNextTermEnd } from '@/lib/utils/school-terms'
 
 export default async function ParentBookingsPage({
   searchParams,
@@ -27,12 +28,12 @@ export default async function ParentBookingsPage({
   if (!userRole?.family_id) redirect('/login')
   const familyId = userRole.family_id
 
-  // Date range for availability calendar
+  // Date range for availability calendar — extend to end of current/next term
   const today = new Date()
-  const threeWeeks = new Date()
-  threeWeeks.setDate(today.getDate() + 21)
+  const termEnd = getCurrentOrNextTermEnd(today)
+  const rangeEnd = termEnd ?? new Date(today.getTime() + 21 * 24 * 60 * 60 * 1000) // fallback 3 weeks
   const todayStr = today.toISOString().split('T')[0]
-  const threeWeeksStr = threeWeeks.toISOString().split('T')[0]
+  const rangeEndStr = rangeEnd.toISOString().split('T')[0]
 
   // Fetch all needed data in parallel
   const [
@@ -75,21 +76,21 @@ export default async function ParentBookingsPage({
     supabase
       .from('coach_availability')
       .select('id, coach_id, day_of_week, start_time, end_time, effective_from, effective_until')
-      .lte('effective_from', threeWeeksStr)
+      .lte('effective_from', rangeEndStr)
       .or(`effective_until.is.null,effective_until.gte.${todayStr}`),
     // Coach availability exceptions for 3-week window
     supabase
       .from('coach_availability_exceptions')
       .select('id, coach_id, exception_date, start_time, end_time')
       .gte('exception_date', todayStr)
-      .lte('exception_date', threeWeeksStr),
+      .lte('exception_date', rangeEndStr),
     // All booked sessions for calendar display (all coaches, 3-week window)
     supabase
       .from('sessions')
       .select('id, date, start_time, end_time, coach_id, status')
       .neq('status', 'cancelled')
       .gte('date', todayStr)
-      .lte('date', threeWeeksStr),
+      .lte('date', rangeEndStr),
   ])
 
   // Fetch lesson notes (needs player IDs from first batch)
@@ -196,6 +197,7 @@ export default async function ParentBookingsPage({
             end_time: s.end_time,
           }))}
         existingBookings={allBookings}
+        rangeEndDate={rangeEndStr}
         playerMap={Object.fromEntries(playerMap)}
       />
 

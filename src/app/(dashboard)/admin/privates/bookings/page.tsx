@@ -7,6 +7,7 @@ import { Calendar } from 'lucide-react'
 import { formatDate, formatTime } from '@/lib/utils/dates'
 import { AdminBookForm } from './admin-book-form'
 import { SharedPrivateForm } from './shared-private-form'
+import { PendingBookings } from './pending-bookings'
 
 export default async function AdminPrivateBookingsPage({
   searchParams,
@@ -66,6 +67,30 @@ export default async function AdminPrivateBookingsPage({
           {decodeURIComponent(success)}
         </div>
       )}
+
+      {/* Pending booking requests */}
+      <PendingBookings
+        bookings={(bookings ?? [])
+          .filter(b => (b.approval_status as string) === 'pending')
+          .map(b => {
+            const session = b.sessions as unknown as { date: string; start_time: string; end_time: string; coaches: { name: string } | null } | null
+            const player = b.players as unknown as { first_name: string; last_name: string } | null
+            const family = b.families as unknown as { display_id: string } | null
+            return {
+              id: b.id,
+              player_name: `${player?.first_name ?? ''} ${player?.last_name ?? ''}`.trim(),
+              family_id: b.family_id,
+              family_display_id: family?.display_id ?? '',
+              coach_name: session?.coaches?.name?.split(' ')[0] ?? '',
+              date: session?.date ?? '',
+              start_time: session?.start_time ?? '',
+              end_time: session?.end_time ?? '',
+              duration_minutes: b.duration_minutes ?? 30,
+              price_cents: b.price_cents ?? 0,
+            }
+          })
+        }
+      />
 
       {/* Admin book form */}
       <AdminBookForm
