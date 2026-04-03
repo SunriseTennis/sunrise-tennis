@@ -66,7 +66,7 @@ export default async function ParentDashboard() {
       .limit(4),
     supabase
       .from('bookings')
-      .select('id, player_id, duration_minutes, sessions:session_id(date, start_time, end_time, status, coaches:coach_id(name)), players:player_id(first_name)')
+      .select('id, player_id, duration_minutes, approval_status, sessions:session_id(date, start_time, end_time, status, coaches:coach_id(name)), players:player_id(first_name)')
       .eq('family_id', familyId)
       .eq('booking_type', 'private')
       .in('status', ['confirmed', 'pending'])
@@ -247,12 +247,13 @@ export default async function ParentDashboard() {
                 return {
                   id: b.id,
                   playerName: player?.first_name ?? '',
-                  programName: `Private - ${session?.coaches?.name ?? 'Coach'}`,
+                  programName: `Private w/ ${(session?.coaches?.name ?? 'Coach').split(' ')[0]}`,
                   dayOfWeek,
                   startTime: session?.start_time ?? null,
                   endTime: session?.end_time ?? null,
                   date: session?.date ?? null,
                   sessionId: (b as unknown as { session_id: string }).session_id ?? null,
+                  approvalStatus: (b as unknown as { approval_status: string | null }).approval_status ?? null,
                 }
               })}
             />

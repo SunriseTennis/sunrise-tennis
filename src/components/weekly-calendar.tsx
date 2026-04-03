@@ -376,6 +376,8 @@ export function WeeklyCalendar({
   onBookSession,
   onMarkAway,
   onCancelPrivate,
+  nextJumpDate,
+  nextJumpLabel,
 }: {
   events: CalendarEvent[]
   onEventClick?: (event: CalendarEvent) => void
@@ -389,6 +391,10 @@ export function WeeklyCalendar({
   onMarkAway?: (sessionId: string, playerId: string) => Promise<{ error?: string }>
   /** Called when user cancels a private booking */
   onCancelPrivate?: (bookingId: string) => Promise<{ error?: string }>
+  /** Date string (YYYY-MM-DD) to jump to via a custom button */
+  nextJumpDate?: string
+  /** Label for the jump button (e.g. "Next private") */
+  nextJumpLabel?: string
 }) {
   // Default to term start week if we're before the next term, otherwise today
   const [weekOffset, setWeekOffset] = useState(() => {
@@ -551,6 +557,21 @@ export function WeeklyCalendar({
                 </button>
               )
             })()}
+            {nextJumpDate && nextJumpLabel && (() => {
+              const jumpDate = new Date(nextJumpDate + 'T12:00:00')
+              const todayMonday = getMonday(new Date())
+              const jumpMonday = getMonday(jumpDate)
+              const diffWeeks = Math.round((jumpMonday.getTime() - todayMonday.getTime()) / (7 * 24 * 60 * 60 * 1000))
+              if (diffWeeks === weekOffset) return null
+              return (
+                <button
+                  onClick={() => setWeekOffset(diffWeeks)}
+                  className="rounded-md bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary transition-colors hover:bg-primary/20"
+                >
+                  {nextJumpLabel}
+                </button>
+              )
+            })()}
           </div>
           {(() => {
             const term = getTermInfo(monday)
@@ -567,6 +588,12 @@ export function WeeklyCalendar({
         </button>
       </div>
 
+      {weekEvents.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-10 text-center">
+          <p className="text-sm text-muted-foreground">No sessions this week</p>
+          <p className="mt-1 text-xs text-muted-foreground/70">Use the arrows to navigate to another week</p>
+        </div>
+      ) : (
       <div className="overflow-x-auto">
         <div className="min-w-[700px]">
           {/* Day headers with dates */}
@@ -691,14 +718,9 @@ export function WeeklyCalendar({
             })}
           </div>
 
-          {/* Empty state for weeks with no events */}
-          {weekEvents.length === 0 && (
-            <div className="flex items-center justify-center py-12 text-sm text-muted-foreground">
-              No sessions this week
-            </div>
-          )}
         </div>
       </div>
+      )}
 
       {/* ── Positioned popup ── */}
       {popupEvent && popupPos && (

@@ -5,9 +5,9 @@ import { WeeklyCalendar, type CalendarEvent } from '@/components/weekly-calendar
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils/cn'
 import { formatTime } from '@/lib/utils/dates'
-import { Calendar, CalendarDays, RefreshCw, X } from 'lucide-react'
+import { Calendar, CalendarDays, X, ChevronRight } from 'lucide-react'
 import { DurationPills } from './duration-pills'
-import { requestPrivateBooking, requestStandingPrivate } from './actions'
+import { requestPrivateBooking, requestStandingPrivate, cancelPrivateBooking } from './actions'
 import type {
   AvailabilityWindow,
   AvailabilityException,
@@ -67,7 +67,7 @@ interface Props {
   playerMap: Record<string, string>
 }
 
-type ActiveTab = 'yours' | string // 'yours' or coach ID
+type ActiveTab = 'yours' | 'all' | string // 'yours', 'all', or coach ID
 type ViewMode = 'weekly' | 'monthly'
 
 // ── Helpers ───────────────────────────────────────────────────────────
@@ -92,7 +92,6 @@ function formatTimeShort(time: string): string {
   return m > 0 ? `${h12}:${String(m).padStart(2, '0')}${ampm}` : `${h12}${ampm}`
 }
 
-// Status colors for existing bookings
 function getBookingColor(status: string, approvalStatus: string | null, cancellationType: string | null): string {
   if (status === 'cancelled') {
     if (cancellationType === 'parent_24h' || cancellationType === 'parent_late') {
@@ -107,12 +106,97 @@ function getBookingColor(status: string, approvalStatus: string | null, cancella
 
 function getBookingLabel(status: string, approvalStatus: string | null, cancellationType: string | null): string {
   if (status === 'cancelled') {
-    if (cancellationType === 'parent_24h' || cancellationType === 'parent_late') return 'Cancelled'
+    if (cancellationType === 'parent_24h' || cancellationType === 'parent_late') return 'Cancelled by you'
     return 'Cancelled by coach'
   }
   if (approvalStatus === 'pending') return 'Pending'
   if (approvalStatus === 'declined') return 'Declined'
   return 'Confirmed'
+}
+
+// ── Coach availability event generation ───────────────────────────────
+
+function generateCoachAvailabilityEvents(
+  coachId: string,
+  coachName: string,
+  windows: AvailabilityWindow[],
+  exceptions: AvailabilityException[],
+  sessions: BookedSession[],
+  duration: number,
+  idPrefix: string,
+): CalendarEvent[] {
+  const today = new Date()
+  const calEvents: CalendarEvent[] = []
+  let eventId = 0
+
+  for (let dayOffset = 0; dayOffset < 28; dayOffset++) {
+    const d = new Date(today)
+    d.setDate(d.getDate() + dayOffset)
+    const dateStr = d.toISOString().split('T')[0]
+    const dayOfWeek = new Date(dateStr + 'T12:00:00').getDay()
+
+    const dayWindows = windows.filter(w => w.day_of_week === dayOfWeek)
+    if (!dayWindows.length) continue
+
+    const dayExceptions = exceptions.filter(e => e.exception_date === dateStr)
+    const fullDayBlocked = dayExceptions.some(e => !e.start_time && !e.end_time)
+    if (fullDayBlocked) continue
+
+    for (const window of dayWindows) {
+      const windowStart = timeToMinutes(window.start_time)
+      const windowEnd = timeToMinutes(window.end_time)
+
+      for (let slotStart = windowStart; slotStart + duration <= windowEnd; slotStart += 30) {
+        const slotEnd = slotStart + duration
+        const startTime = minutesToTime(slotStart)
+        const endTime = minutesToTime(slotEnd)
+
+        let blocked = false
+        for (let sub = slotStart; sub < slotEnd; sub += 30) {
+          const subEnd = sub + 30
+          if (dayExceptions.some(e => {
+            if (!e.start_time || !e.end_time) return false
+            return sub < timeToMinutes(e.end_time) && subEnd > timeToMinutes(e.start_time)
+          })) { blocked = true; break }
+        }
+        if (blocked) continue
+
+        let isBooked = false
+        for (let sub = slotStart; sub < slotEnd; sub += 30) {
+          const subEnd = sub + 30
+          if (sessions.some(s => {
+            if (s.date !== dateStr || !s.start_time || !s.end_time) return false
+            return sub < timeToMinutes(s.end_time) && subEnd > timeToMinutes(s.start_time)
+          })) { isBooked = true; break }
+        }
+
+        eventId++
+        if (isBooked) {
+          calEvents.push({
+            id: `${idPrefix}-booked-${eventId}`,
+            title: 'Booked',
+            dayOfWeek, startTime, endTime,
+            date: dateStr,
+            color: 'bg-muted/60 border-border text-muted-foreground opacity-60',
+          })
+        } else {
+          calEvents.push({
+            id: `${idPrefix}-avail-${eventId}`,
+            title: formatTimeShort(startTime),
+            subtitle: coachName,
+            dayOfWeek, startTime, endTime,
+            date: dateStr,
+            color: 'bg-primary/15 border-primary/30 text-primary hover:bg-primary/25',
+            selectable: true,
+          })
+        }
+
+        if (duration === 60) slotStart += 30
+      }
+    }
+  }
+
+  return calEvents
 }
 
 // ── Monthly Calendar ──────────────────────────────────────────────────
@@ -129,13 +213,11 @@ function MonthlyCalendar({
   const viewMonth = new Date(today.getFullYear(), today.getMonth() + monthOffset, 1)
   const year = viewMonth.getFullYear()
   const month = viewMonth.getMonth()
-
   const monthName = viewMonth.toLocaleDateString('en-AU', { month: 'long', year: 'numeric' })
 
-  // Build calendar grid
   const firstDay = new Date(year, month, 1)
   const lastDay = new Date(year, month + 1, 0)
-  const startDow = (firstDay.getDay() + 6) % 7 // Mon=0
+  const startDow = (firstDay.getDay() + 6) % 7
   const totalDays = lastDay.getDate()
 
   const cells: (number | null)[] = []
@@ -143,7 +225,6 @@ function MonthlyCalendar({
   for (let d = 1; d <= totalDays; d++) cells.push(d)
   while (cells.length % 7 !== 0) cells.push(null)
 
-  // Group events by date
   const eventsByDate = new Map<string, CalendarEvent[]>()
   for (const ev of events) {
     if (!ev.date) continue
@@ -156,7 +237,6 @@ function MonthlyCalendar({
 
   return (
     <div className="overflow-hidden rounded-xl border border-border bg-card shadow-card">
-      {/* Month navigation */}
       <div className="flex items-center justify-between border-b border-border bg-gradient-to-r from-dawn-cream to-peach-mist/40 px-4 py-2.5">
         <button onClick={() => setMonthOffset(o => o - 1)} className="flex size-7 items-center justify-center rounded-lg text-muted-foreground hover:bg-white/60 hover:text-foreground">
           <span className="text-sm">&lsaquo;</span>
@@ -164,30 +244,21 @@ function MonthlyCalendar({
         <div className="flex items-center gap-2">
           <span className="text-sm font-semibold text-foreground">{monthName}</span>
           {monthOffset !== 0 && (
-            <button onClick={() => setMonthOffset(0)} className="rounded-md bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary hover:bg-primary/20">
-              Today
-            </button>
+            <button onClick={() => setMonthOffset(0)} className="rounded-md bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary hover:bg-primary/20">Today</button>
           )}
         </div>
         <button onClick={() => setMonthOffset(o => o + 1)} className="flex size-7 items-center justify-center rounded-lg text-muted-foreground hover:bg-white/60 hover:text-foreground">
           <span className="text-sm">&rsaquo;</span>
         </button>
       </div>
-
-      {/* Day headers */}
       <div className="grid grid-cols-7 border-b border-border bg-muted/30">
         {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(d => (
-          <div key={d} className="py-1.5 text-center text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-            {d}
-          </div>
+          <div key={d} className="py-1.5 text-center text-[10px] font-medium uppercase tracking-wide text-muted-foreground">{d}</div>
         ))}
       </div>
-
-      {/* Day cells */}
       <div className="grid grid-cols-7">
         {cells.map((day, i) => {
-          if (day === null) return <div key={i} className="border-b border-r border-border/30 bg-muted/10 p-1" style={{ minHeight: 60 }} />
-
+          if (day === null) return <div key={i} className="border-b border-r border-border/30 bg-muted/10 p-1" style={{ minHeight: 56 }} />
           const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
           const dayEvents = eventsByDate.get(dateStr) ?? []
           const isToday = dateStr === todayStr
@@ -204,21 +275,17 @@ function MonthlyCalendar({
                 dayEvents.length > 0 ? 'hover:bg-primary/5 cursor-pointer' : 'cursor-default',
                 isToday && 'bg-primary/5'
               )}
-              style={{ minHeight: 60 }}
+              style={{ minHeight: 56 }}
             >
               <span className={cn(
-                'inline-flex size-6 items-center justify-center rounded-full text-xs',
+                'inline-flex size-5 items-center justify-center rounded-full text-[11px]',
                 isToday ? 'bg-primary text-white font-bold' : 'text-foreground'
-              )}>
-                {day}
-              </span>
+              )}>{day}</span>
               {dayEvents.length > 0 && (
                 <div className="mt-0.5 flex flex-wrap gap-0.5">
                   {hasAvailable && <span className="size-1.5 rounded-full bg-primary" />}
                   {hasBooked && <span className="size-1.5 rounded-full bg-muted-foreground" />}
-                  {dayEvents.length > 2 && (
-                    <span className="text-[9px] text-muted-foreground">{dayEvents.length}</span>
-                  )}
+                  {dayEvents.length > 2 && <span className="text-[9px] text-muted-foreground">{dayEvents.length}</span>}
                 </div>
               )}
             </button>
@@ -248,11 +315,12 @@ export function AvailabilityCalendar({
     slot: TimeSlot
     coachId: string
   } | null>(null)
+  // Popup for viewing/cancelling existing booking
+  const [viewPopup, setViewPopup] = useState<ExistingBooking | null>(null)
   const [selectedPlayerId, setSelectedPlayerId] = useState<string | null>(null)
   const [isStanding, setIsStanding] = useState(false)
   const [isPending, setIsPending] = useState(false)
 
-  // Pre-filter coaches: only those with rates where at least one player can book
   const bookableCoaches = useMemo(() => {
     return coaches.filter(coach => {
       if (coach.rate_per_hour_cents <= 0) return false
@@ -265,15 +333,6 @@ export function AvailabilityCalendar({
 
   const selectedCoach = bookableCoaches.find(c => c.id === activeTab) ?? null
 
-  // Eligible players for the selected coach
-  const eligiblePlayers = useMemo(() => {
-    if (!selectedCoach) return players
-    return players.filter(player => {
-      const entries = allowedCoaches.filter(a => a.player_id === player.id)
-      return entries.length === 0 || entries.some(a => a.coach_id === selectedCoach.id)
-    })
-  }, [players, allowedCoaches, selectedCoach])
-
   // ── "Your Privates" events ──────────────────────────────────────────
 
   const yourEvents = useMemo((): CalendarEvent[] => {
@@ -281,7 +340,7 @@ export function AvailabilityCalendar({
       .filter(b => b.sessions?.date && b.sessions?.start_time && b.sessions?.end_time)
       .map(b => {
         const s = b.sessions!
-        const coachName = s.coaches?.name?.split(' ')[0] ?? ''
+        const coachName = s.coaches?.name?.split(' ')[0] ?? 'Coach'
         const playerName = playerMap[b.player_id]?.split(' ')[0] ?? ''
         const dateObj = new Date(s.date + 'T12:00:00')
         const dayOfWeek = dateObj.getDay()
@@ -291,15 +350,14 @@ export function AvailabilityCalendar({
 
         return {
           id: b.id,
-          title: `${playerName} - ${coachName}`,
-          subtitle: label,
+          title: `Private w/ ${coachName}`,
+          subtitle: `${playerName} · ${label}`,
           dayOfWeek,
           startTime: s.start_time!,
           endTime: s.end_time!,
           date: s.date,
           color: getBookingColor(b.status, b.approval_status, b.cancellation_type),
-          // Allow re-booking cancelled-by-parent slots
-          selectable: isCancelledByParent,
+          selectable: true, // All your privates are clickable for details
         }
       })
   }, [existingBookings, playerMap])
@@ -307,90 +365,47 @@ export function AvailabilityCalendar({
   // ── Coach availability events ───────────────────────────────────────
 
   const coachEvents = useMemo((): CalendarEvent[] => {
-    if (!selectedCoach) return []
+    if (activeTab === 'yours') return []
 
-    const windows = coachWindows.filter(w => w.coach_id === selectedCoach.id)
-    const exceptions = coachExceptions.filter(e => e.coach_id === selectedCoach.id)
-    const sessions = bookedSessions.filter(s => s.coach_id === selectedCoach.id)
-
-    const today = new Date()
-    const calEvents: CalendarEvent[] = []
-    let eventId = 0
-
-    for (let dayOffset = 0; dayOffset < 28; dayOffset++) {
-      const d = new Date(today)
-      d.setDate(d.getDate() + dayOffset)
-      const dateStr = d.toISOString().split('T')[0]
-      const dayOfWeek = new Date(dateStr + 'T12:00:00').getDay()
-
-      const dayWindows = windows.filter(w => w.day_of_week === dayOfWeek)
-      if (!dayWindows.length) continue
-
-      const dayExceptions = exceptions.filter(e => e.exception_date === dateStr)
-      const fullDayBlocked = dayExceptions.some(e => !e.start_time && !e.end_time)
-      if (fullDayBlocked) continue
-
-      for (const window of dayWindows) {
-        const windowStart = timeToMinutes(window.start_time)
-        const windowEnd = timeToMinutes(window.end_time)
-
-        for (let slotStart = windowStart; slotStart + duration <= windowEnd; slotStart += 30) {
-          const slotEnd = slotStart + duration
-          const startTime = minutesToTime(slotStart)
-          const endTime = minutesToTime(slotEnd)
-
-          // Check exceptions
-          let blocked = false
-          for (let sub = slotStart; sub < slotEnd; sub += 30) {
-            const subEnd = sub + 30
-            if (dayExceptions.some(e => {
-              if (!e.start_time || !e.end_time) return false
-              return sub < timeToMinutes(e.end_time) && subEnd > timeToMinutes(e.start_time)
-            })) { blocked = true; break }
-          }
-          if (blocked) continue
-
-          // Check booked sessions
-          let isBooked = false
-          for (let sub = slotStart; sub < slotEnd; sub += 30) {
-            const subEnd = sub + 30
-            if (sessions.some(s => {
-              if (s.date !== dateStr || !s.start_time || !s.end_time) return false
-              return sub < timeToMinutes(s.end_time) && subEnd > timeToMinutes(s.start_time)
-            })) { isBooked = true; break }
-          }
-
-          eventId++
-          if (isBooked) {
-            calEvents.push({
-              id: `booked-${eventId}`,
-              title: 'Booked',
-              dayOfWeek,
-              startTime, endTime,
-              date: dateStr,
-              color: 'bg-muted/60 border-border text-muted-foreground opacity-60',
-            })
-          } else {
-            calEvents.push({
-              id: `avail-${eventId}`,
-              title: formatTimeShort(startTime),
-              dayOfWeek,
-              startTime, endTime,
-              date: dateStr,
-              color: 'bg-primary/15 border-primary/30 text-primary hover:bg-primary/25',
-              selectable: true,
-            })
-          }
-
-          if (duration === 60) slotStart += 30
-        }
-      }
+    if (activeTab === 'all') {
+      // Combine all coaches' availabilities
+      return bookableCoaches.flatMap(coach =>
+        generateCoachAvailabilityEvents(
+          coach.id,
+          coach.name,
+          coachWindows.filter(w => w.coach_id === coach.id),
+          coachExceptions.filter(e => e.coach_id === coach.id),
+          bookedSessions.filter(s => s.coach_id === coach.id),
+          duration,
+          coach.id,
+        )
+      )
     }
 
-    return calEvents
-  }, [selectedCoach, coachWindows, coachExceptions, bookedSessions, duration])
+    if (!selectedCoach) return []
+    return generateCoachAvailabilityEvents(
+      selectedCoach.id,
+      selectedCoach.name,
+      coachWindows.filter(w => w.coach_id === selectedCoach.id),
+      coachExceptions.filter(e => e.coach_id === selectedCoach.id),
+      bookedSessions.filter(s => s.coach_id === selectedCoach.id),
+      duration,
+      selectedCoach.id,
+    )
+  }, [activeTab, selectedCoach, bookableCoaches, coachWindows, coachExceptions, bookedSessions, duration])
 
   const activeEvents = activeTab === 'yours' ? yourEvents : coachEvents
+
+  // Find the next upcoming private for "Next private" jump
+  const nextPrivateDate = useMemo(() => {
+    const now = new Date()
+    const upcoming = existingBookings
+      .filter(b => b.status !== 'cancelled' && b.sessions?.date)
+      .map(b => b.sessions!.date)
+      .filter(d => new Date(d + 'T23:59:59') >= now)
+      .sort()
+    return upcoming[0] ?? null
+  }, [existingBookings])
 
   // ── Event click handler ─────────────────────────────────────────────
 
@@ -398,27 +413,31 @@ export function AvailabilityCalendar({
     if (!event.selectable || !event.date) return
 
     if (activeTab === 'yours') {
-      // Re-booking a cancelled slot — find the original booking to get coach
+      // Show details popup for existing booking
       const booking = existingBookings.find(b => b.id === event.id)
-      if (booking?.sessions?.coach_id) {
-        setBookingPopup({
-          slot: { date: event.date, startTime: event.startTime, endTime: event.endTime },
-          coachId: booking.sessions.coach_id,
-        })
+      if (booking) {
+        setViewPopup(booking)
       }
-    } else if (selectedCoach) {
-      setBookingPopup({
-        slot: { date: event.date, startTime: event.startTime, endTime: event.endTime },
-        coachId: selectedCoach.id,
-      })
+      return
     }
 
+    // Available slot — determine which coach (from event subtitle or activeTab)
+    let coachId = activeTab
+    if (activeTab === 'all') {
+      // The event id prefix is the coach ID
+      const prefix = event.id.split('-avail-')[0].split('-booked-')[0]
+      coachId = prefix
+    }
+
+    setBookingPopup({
+      slot: { date: event.date, startTime: event.startTime, endTime: event.endTime },
+      coachId,
+    })
     setSelectedPlayerId(null)
     setIsStanding(false)
   }
 
-  // Monthly day click → switch to weekly view at that week
-  const handleMonthDayClick = (dateStr: string) => {
+  const handleMonthDayClick = () => {
     setViewMode('weekly')
   }
 
@@ -438,28 +457,38 @@ export function AvailabilityCalendar({
     })
   }, [players, allowedCoaches, popupCoach])
 
-  // Auto-select if only one eligible player
   const effectivePlayerId = popupEligiblePlayers.length === 1
     ? popupEligiblePlayers[0].id
     : selectedPlayerId
 
   const canSubmit = !!effectivePlayerId && !!bookingPopup
 
+  // Coach tabs show duration and pricing
+  const isCoachTab = activeTab !== 'yours'
+
   return (
     <div className="space-y-3">
-      {/* Tab bar: Your Privates + coach pills */}
+      {/* Tab bar */}
       <div className="flex flex-wrap items-center gap-1.5">
         <button
           type="button"
           onClick={() => { setActiveTab('yours'); setBookingPopup(null) }}
           className={cn(
             'rounded-full px-3 py-1 text-xs font-medium transition-all',
-            activeTab === 'yours'
-              ? 'bg-primary text-white shadow-sm'
-              : 'border border-border text-muted-foreground hover:text-foreground hover:bg-muted/50'
+            activeTab === 'yours' ? 'bg-primary text-white shadow-sm' : 'border border-border text-muted-foreground hover:text-foreground hover:bg-muted/50'
           )}
         >
           Your Privates
+        </button>
+        <button
+          type="button"
+          onClick={() => { setActiveTab('all'); setBookingPopup(null) }}
+          className={cn(
+            'rounded-full px-3 py-1 text-xs font-medium transition-all',
+            activeTab === 'all' ? 'bg-primary text-white shadow-sm' : 'border border-border text-muted-foreground hover:text-foreground hover:bg-muted/50'
+          )}
+        >
+          All Coaches
         </button>
         {bookableCoaches.map((coach) => (
           <button
@@ -468,42 +497,31 @@ export function AvailabilityCalendar({
             onClick={() => { setActiveTab(coach.id); setBookingPopup(null) }}
             className={cn(
               'rounded-full px-3 py-1 text-xs font-medium transition-all',
-              activeTab === coach.id
-                ? 'bg-primary text-white shadow-sm'
-                : 'border border-border text-muted-foreground hover:text-foreground hover:bg-muted/50'
+              activeTab === coach.id ? 'bg-primary text-white shadow-sm' : 'border border-border text-muted-foreground hover:text-foreground hover:bg-muted/50'
             )}
           >
             {coach.name}
           </button>
         ))}
 
-        {/* Spacer + controls */}
         <div className="ml-auto flex items-center gap-1.5">
-          {/* Duration toggle (only on coach tabs) */}
-          {activeTab !== 'yours' && (
+          {isCoachTab && (
             <DurationPills duration={duration} onChange={(d) => { setDuration(d); setBookingPopup(null) }} />
           )}
-          {/* View mode toggle */}
           <div className="flex gap-0.5 rounded-full border border-border p-0.5">
             <button
               type="button"
               onClick={() => setViewMode('weekly')}
-              className={cn(
-                'rounded-full p-1 transition-colors',
-                viewMode === 'weekly' ? 'bg-primary text-white' : 'text-muted-foreground hover:text-foreground'
-              )}
-              title="Weekly view"
+              className={cn('rounded-full p-1 transition-colors', viewMode === 'weekly' ? 'bg-primary text-white' : 'text-muted-foreground hover:text-foreground')}
+              title="Weekly"
             >
               <Calendar className="size-3.5" />
             </button>
             <button
               type="button"
               onClick={() => setViewMode('monthly')}
-              className={cn(
-                'rounded-full p-1 transition-colors',
-                viewMode === 'monthly' ? 'bg-primary text-white' : 'text-muted-foreground hover:text-foreground'
-              )}
-              title="Monthly view"
+              className={cn('rounded-full p-1 transition-colors', viewMode === 'monthly' ? 'bg-primary text-white' : 'text-muted-foreground hover:text-foreground')}
+              title="Monthly"
             >
               <CalendarDays className="size-3.5" />
             </button>
@@ -511,36 +529,131 @@ export function AvailabilityCalendar({
         </div>
       </div>
 
-      {/* Coach pricing info (when on a coach tab) */}
-      {selectedCoach && (
+      {/* Coach pricing subtitle */}
+      {selectedCoach && activeTab !== 'all' && (
         <p className="text-xs text-muted-foreground">
-          {selectedCoach.name} — ${(selectedCoach.rate_per_hour_cents / 200).toFixed(0)}/30min · ${(selectedCoach.rate_per_hour_cents / 100).toFixed(0)}/hr
+          {selectedCoach.name} — ${(selectedCoach.rate_per_hour_cents / 200).toFixed(0)}/½hr · ${(selectedCoach.rate_per_hour_cents / 100).toFixed(0)}/hr
         </p>
       )}
 
       {/* Calendar */}
       {viewMode === 'weekly' ? (
-        <WeeklyCalendar events={activeEvents} onEventClick={handleEventClick} />
+        <WeeklyCalendar
+          events={activeEvents}
+          onEventClick={handleEventClick}
+          nextJumpDate={activeTab === 'yours' ? nextPrivateDate ?? undefined : undefined}
+          nextJumpLabel="Next private"
+        />
       ) : (
         <MonthlyCalendar events={activeEvents} onDayClick={handleMonthDayClick} />
       )}
 
-      {/* Booking popup overlay */}
+      {/* ── View existing booking popup ──────────────────────────────── */}
+      {viewPopup && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 backdrop-blur-sm sm:items-center">
+          <div className="w-full max-w-md animate-slide-up rounded-t-2xl bg-popover p-5 shadow-elevated sm:rounded-2xl" style={{ maxHeight: '85vh', overflowY: 'auto' }}>
+            <div className="flex items-start justify-between">
+              <h3 className="text-sm font-semibold text-foreground">Private Lesson</h3>
+              <button type="button" onClick={() => setViewPopup(null)} className="rounded-lg p-1 text-muted-foreground hover:bg-muted/50 hover:text-foreground">
+                <X className="size-4" />
+              </button>
+            </div>
+
+            <div className="mt-3 space-y-1.5 rounded-lg border border-border bg-muted/30 p-3">
+              <div className="flex justify-between text-xs">
+                <span className="text-muted-foreground">Status</span>
+                <span className={cn('font-medium', {
+                  'text-emerald-700': viewPopup.approval_status === 'approved' && viewPopup.status !== 'cancelled',
+                  'text-amber-700': viewPopup.approval_status === 'pending',
+                  'text-red-600': viewPopup.status === 'cancelled' || viewPopup.approval_status === 'declined',
+                })}>
+                  {getBookingLabel(viewPopup.status, viewPopup.approval_status, viewPopup.cancellation_type)}
+                </span>
+              </div>
+              <div className="flex justify-between text-xs">
+                <span className="text-muted-foreground">Player</span>
+                <span className="font-medium">{playerMap[viewPopup.player_id] ?? 'Unknown'}</span>
+              </div>
+              <div className="flex justify-between text-xs">
+                <span className="text-muted-foreground">Coach</span>
+                <span className="font-medium">{viewPopup.sessions?.coaches?.name?.split(' ')[0] ?? 'Unknown'}</span>
+              </div>
+              {viewPopup.sessions && (
+                <>
+                  <div className="flex justify-between text-xs">
+                    <span className="text-muted-foreground">Date</span>
+                    <span className="font-medium">
+                      {new Date(viewPopup.sessions.date + 'T12:00:00').toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' })}
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-xs">
+                    <span className="text-muted-foreground">Time</span>
+                    <span className="font-medium">
+                      {viewPopup.sessions.start_time ? formatTime(viewPopup.sessions.start_time) : ''} – {viewPopup.sessions.end_time ? formatTime(viewPopup.sessions.end_time) : ''}
+                    </span>
+                  </div>
+                </>
+              )}
+              {viewPopup.price_cents != null && (
+                <div className="border-t border-border pt-1.5">
+                  <div className="flex justify-between text-xs font-semibold">
+                    <span>Price</span>
+                    <span>${(viewPopup.price_cents / 100).toFixed(2)}</span>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Cancel button for active bookings */}
+            {viewPopup.status !== 'cancelled' && viewPopup.approval_status !== 'declined' && (
+              <form action={cancelPrivateBooking} className="mt-3">
+                <input type="hidden" name="booking_id" value={viewPopup.id} />
+                <Button type="submit" variant="outline" size="sm" className="w-full text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700">
+                  Cancel this lesson
+                </Button>
+              </form>
+            )}
+
+            {/* Re-book option for parent-cancelled bookings */}
+            {viewPopup.status === 'cancelled' &&
+              (viewPopup.cancellation_type === 'parent_24h' || viewPopup.cancellation_type === 'parent_late') &&
+              viewPopup.sessions?.coach_id && (
+              <Button
+                type="button"
+                size="sm"
+                className="mt-3 w-full"
+                onClick={() => {
+                  setViewPopup(null)
+                  setBookingPopup({
+                    slot: {
+                      date: viewPopup.sessions!.date,
+                      startTime: viewPopup.sessions!.start_time!,
+                      endTime: viewPopup.sessions!.end_time!,
+                    },
+                    coachId: viewPopup.sessions!.coach_id!,
+                  })
+                  setSelectedPlayerId(null)
+                  setIsStanding(false)
+                }}
+              >
+                Re-book this slot
+              </Button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── Book new slot popup ──────────────────────────────────────── */}
       {bookingPopup && popupCoach && (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 backdrop-blur-sm sm:items-center">
           <div className="w-full max-w-md animate-slide-up rounded-t-2xl bg-popover p-5 shadow-elevated sm:rounded-2xl" style={{ maxHeight: '85vh', overflowY: 'auto' }}>
             <div className="flex items-start justify-between">
               <h3 className="text-sm font-semibold text-foreground">Book Private Lesson</h3>
-              <button
-                type="button"
-                onClick={() => setBookingPopup(null)}
-                className="rounded-lg p-1 text-muted-foreground hover:bg-muted/50 hover:text-foreground"
-              >
+              <button type="button" onClick={() => setBookingPopup(null)} className="rounded-lg p-1 text-muted-foreground hover:bg-muted/50 hover:text-foreground">
                 <X className="size-4" />
               </button>
             </div>
 
-            {/* Summary */}
             <div className="mt-3 space-y-1.5 rounded-lg border border-border bg-muted/30 p-3">
               <div className="flex justify-between text-xs">
                 <span className="text-muted-foreground">Coach</span>
@@ -570,7 +683,6 @@ export function AvailabilityCalendar({
               </div>
             </div>
 
-            {/* Player selection */}
             {popupEligiblePlayers.length > 1 && (
               <div className="mt-3">
                 <p className="text-xs font-medium text-muted-foreground">Who is this lesson for?</p>
@@ -594,21 +706,14 @@ export function AvailabilityCalendar({
               </div>
             )}
 
-            {/* Standing booking option */}
             <label className="mt-3 flex items-center gap-2 rounded-lg border border-border p-2.5 cursor-pointer hover:bg-muted/30">
-              <input
-                type="checkbox"
-                checked={isStanding}
-                onChange={(e) => setIsStanding(e.target.checked)}
-                className="size-3.5 rounded border-border"
-              />
+              <input type="checkbox" checked={isStanding} onChange={(e) => setIsStanding(e.target.checked)} className="size-3.5 rounded border-border" />
               <div>
                 <span className="text-xs font-medium">Make this a weekly booking</span>
                 <p className="text-[10px] text-muted-foreground">Books every week for the rest of the term</p>
               </div>
             </label>
 
-            {/* Submit */}
             <form action={isStanding ? requestStandingPrivate : requestPrivateBooking} className="mt-3">
               <input type="hidden" name="player_id" value={effectivePlayerId ?? ''} />
               <input type="hidden" name="coach_id" value={bookingPopup.coachId} />

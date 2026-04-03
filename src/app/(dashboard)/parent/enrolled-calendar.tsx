@@ -86,6 +86,7 @@ type PrivateBooking = {
   endTime: string | null
   date?: string | null
   sessionId?: string | null
+  approvalStatus?: string | null
 }
 
 type ColorMode = 'player' | 'type'
@@ -169,22 +170,27 @@ export function EnrolledCalendar({
   // Private booking events (still use dayOfWeek if no date)
   const privateEvents: CalendarEvent[] = (privateBookings ?? [])
     .filter(b => b.startTime && b.endTime && (b.dayOfWeek != null || b.date))
-    .map(b => ({
-      id: b.id,
-      title: b.programName,
-      subtitle: b.playerName,
-      dayOfWeek: b.dayOfWeek ?? 0,
-      startTime: b.startTime!,
-      endTime: b.endTime!,
-      color: colorMode === 'player'
-        ? (playerColorMap.get(b.playerName) ?? PLAYER_PALETTE[0])
-        : TYPE_COLORS.private,
-      programType: 'private',
-      playerNames: [b.playerName],
-      date: b.date ?? undefined,
-      bookingId: b.id,
-      sessionId: b.sessionId ?? undefined,
-    }))
+    .map(b => {
+      const statusLabel = b.approvalStatus === 'pending' ? ' · Pending'
+        : b.approvalStatus === 'approved' ? ' · Confirmed'
+        : ''
+      return {
+        id: b.id,
+        title: b.programName,
+        subtitle: `${b.playerName}${statusLabel}`,
+        dayOfWeek: b.dayOfWeek ?? 0,
+        startTime: b.startTime!,
+        endTime: b.endTime!,
+        color: colorMode === 'player'
+          ? (playerColorMap.get(b.playerName) ?? PLAYER_PALETTE[0])
+          : TYPE_COLORS.private,
+        programType: 'private',
+        playerNames: [b.playerName],
+        date: b.date ?? undefined,
+        bookingId: b.id,
+        sessionId: b.sessionId ?? undefined,
+      }
+    })
 
   const events = [...sessionEvents, ...privateEvents]
 
