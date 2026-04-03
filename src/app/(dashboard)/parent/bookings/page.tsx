@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation'
 import { createClient, getSessionUser } from '@/lib/supabase/server'
 import { PageHeader } from '@/components/page-header'
-import { BookingWizard } from './booking-wizard'
+import { AvailabilityCalendar } from './availability-calendar'
 import { MyBookings } from './my-bookings'
 import { LessonHistory } from './lesson-history'
 
@@ -101,7 +101,7 @@ export default async function ParentBookingsPage({
         .in('player_id', playerIds)
     : { data: [] as never[] }
 
-  // Build coach data for wizard
+  // Build coach data
   const coachData = (coaches ?? [])
     .map(c => ({
       id: c.id,
@@ -117,13 +117,31 @@ export default async function ParentBookingsPage({
   // Build player name map
   const playerMap = new Map((players ?? []).map(p => [p.id, `${p.first_name} ${p.last_name}`]))
 
-  // Split bookings into upcoming and past
+  // Split bookings
   const now = new Date()
-  const pastBookings = (bookings ?? []).filter(b => {
-    const s = b.sessions as { date: string; start_time: string | null } | null
-    if (!s) return false
+  const allBookings = (bookings ?? []).map(b => ({
+    id: b.id,
+    player_id: b.player_id,
+    session_id: b.session_id,
+    status: b.status,
+    approval_status: b.approval_status,
+    price_cents: b.price_cents,
+    duration_minutes: b.duration_minutes,
+    cancellation_type: b.cancellation_type,
+    sessions: b.sessions as {
+      date: string
+      start_time: string | null
+      end_time: string | null
+      coach_id: string | null
+      status: string
+      coaches: { name: string } | null
+    } | null,
+  }))
+
+  const pastBookings = allBookings.filter(b => {
+    if (!b.sessions) return false
     if (b.status === 'cancelled') return false
-    return new Date(`${s.date}T${s.start_time || '00:00'}`) <= now
+    return new Date(`${b.sessions.date}T${b.sessions.start_time || '00:00'}`) <= now
   })
 
   return (
@@ -144,14 +162,8 @@ export default async function ParentBookingsPage({
         </div>
       )}
 
-      {/* Upcoming lessons */}
-      <MyBookings
-        bookings={(bookings ?? []) as never[]}
-        playerMap={Object.fromEntries(playerMap)}
-      />
-
-      {/* Booking wizard */}
-      <BookingWizard
+      {/* Calendar — default "Your Privates", coach tabs for availability */}
+      <AvailabilityCalendar
         players={(players ?? []).map(p => ({ id: p.id, first_name: p.first_name, last_name: p.last_name, ball_color: p.ball_color }))}
         coaches={coachData}
         allowedCoaches={(allowedCoaches ?? []).map(a => ({
@@ -183,24 +195,19 @@ export default async function ParentBookingsPage({
             start_time: s.start_time,
             end_time: s.end_time,
           }))}
+        existingBookings={allBookings}
+        playerMap={Object.fromEntries(playerMap)}
+      />
+
+      {/* Upcoming lessons (cancellable) */}
+      <MyBookings
+        bookings={(bookings ?? []) as never[]}
+        playerMap={Object.fromEntries(playerMap)}
       />
 
       {/* Lesson history */}
       <LessonHistory
-        pastBookings={pastBookings.map(b => ({
-          id: b.id,
-          player_id: b.player_id,
-          session_id: b.session_id,
-          price_cents: b.price_cents,
-          duration_minutes: b.duration_minutes,
-          sessions: b.sessions as {
-            date: string
-            start_time: string | null
-            end_time: string | null
-            coach_id: string | null
-            coaches: { name: string } | null
-          } | null,
-        }))}
+        pastBookings={pastBookings}
         lessonNotes={(playerLessonNotes ?? []).map(n => ({
           id: n.id,
           session_id: n.session_id,
