@@ -51,7 +51,7 @@ export default async function ParentDashboard() {
   ] = await Promise.all([
     supabase.from('families').select('*').eq('id', familyId).single(),
     supabase.from('players').select('*').eq('family_id', familyId).order('first_name'),
-    supabase.from('family_balance').select('balance_cents').eq('family_id', familyId).single(),
+    supabase.from('family_balance').select('balance_cents, confirmed_balance_cents, projected_balance_cents').eq('family_id', familyId).single(),
     supabase
       .from('program_roster')
       .select('id, status, player_id, players!inner(id, first_name), programs:program_id(id, name, type, level, day_of_week, start_time, end_time, status)')
@@ -113,7 +113,7 @@ export default async function ParentDashboard() {
   })()
 
   const contact = family?.primary_contact as { name?: string; phone?: string; email?: string } | null
-  const balanceCents = balance?.balance_cents ?? 0
+  const balanceCents = balance?.projected_balance_cents ?? balance?.balance_cents ?? 0
   const firstName = contact?.name?.split(' ')[0] ?? 'Parent'
 
   return (
@@ -127,7 +127,7 @@ export default async function ParentDashboard() {
             <h1 className="text-2xl font-bold">{firstName}</h1>
           </div>
           <div className="text-right">
-            <p className="text-xs font-medium text-white/70">Balance</p>
+            <p className="text-xs font-medium text-white/70">Upcoming Balance</p>
             <p className={`text-2xl font-bold tabular-nums ${
               balanceCents < 0 ? 'text-red-200' :
               balanceCents > 0 ? 'text-emerald-200' :

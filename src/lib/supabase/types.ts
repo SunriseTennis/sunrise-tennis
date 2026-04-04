@@ -887,18 +887,24 @@ export type Database = {
       family_balance: {
         Row: {
           balance_cents: number
+          confirmed_balance_cents: number
           family_id: string
           last_updated: string | null
+          projected_balance_cents: number
         }
         Insert: {
           balance_cents?: number
+          confirmed_balance_cents?: number
           family_id: string
           last_updated?: string | null
+          projected_balance_cents?: number
         }
         Update: {
           balance_cents?: number
+          confirmed_balance_cents?: number
           family_id?: string
           last_updated?: string | null
+          projected_balance_cents?: number
         }
         Relationships: [
           {
@@ -1263,6 +1269,45 @@ export type Database = {
         }
         Relationships: []
       }
+      payment_allocations: {
+        Row: {
+          amount_cents: number
+          charge_id: string
+          created_at: string | null
+          id: string
+          payment_id: string
+        }
+        Insert: {
+          amount_cents: number
+          charge_id: string
+          created_at?: string | null
+          id?: string
+          payment_id: string
+        }
+        Update: {
+          amount_cents?: number
+          charge_id?: string
+          created_at?: string | null
+          id?: string
+          payment_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "payment_allocations_charge_id_fkey"
+            columns: ["charge_id"]
+            isOneToOne: false
+            referencedRelation: "charges"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "payment_allocations_payment_id_fkey"
+            columns: ["payment_id"]
+            isOneToOne: false
+            referencedRelation: "payments"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       payments: {
         Row: {
           amount_cents: number
@@ -1278,6 +1323,8 @@ export type Database = {
           recorded_by: string | null
           square_payment_id: string | null
           status: string
+          voided_at: string | null
+          voided_by: string | null
         }
         Insert: {
           amount_cents: number
@@ -1293,6 +1340,8 @@ export type Database = {
           recorded_by?: string | null
           square_payment_id?: string | null
           status?: string
+          voided_at?: string | null
+          voided_by?: string | null
         }
         Update: {
           amount_cents?: number
@@ -1308,6 +1357,8 @@ export type Database = {
           recorded_by?: string | null
           square_payment_id?: string | null
           status?: string
+          voided_at?: string | null
+          voided_by?: string | null
         }
         Relationships: [
           {
@@ -2087,6 +2138,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      allocate_payment_to_charges: {
+        Args: { target_payment_id: string }
+        Returns: undefined
+      }
       create_booking_notification: {
         Args: {
           p_body: string

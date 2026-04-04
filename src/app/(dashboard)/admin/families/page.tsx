@@ -11,12 +11,12 @@ export default async function FamiliesPage() {
 
   const { data: families } = await supabase
     .from('families')
-    .select('id, display_id, family_name, primary_contact, status, family_balance(balance_cents), players(first_name, last_name)')
+    .select('id, display_id, family_name, primary_contact, status, family_balance(balance_cents, confirmed_balance_cents, projected_balance_cents), players(first_name, last_name)')
     .order('display_id')
 
   const rows = (families ?? []).map((f) => {
     const contact = f.primary_contact as { name?: string; phone?: string; email?: string } | null
-    const balanceRow = f.family_balance as unknown as { balance_cents: number } | null
+    const balanceRow = f.family_balance as unknown as { balance_cents: number; confirmed_balance_cents: number; projected_balance_cents: number } | null
     const players = (f.players ?? []) as { first_name: string; last_name: string }[]
     return {
       id: f.id,
@@ -26,6 +26,8 @@ export default async function FamiliesPage() {
       contactPhone: contact?.phone ?? '',
       status: f.status ?? 'active',
       balanceCents: balanceRow?.balance_cents ?? 0,
+      confirmedBalanceCents: balanceRow?.confirmed_balance_cents ?? 0,
+      projectedBalanceCents: balanceRow?.projected_balance_cents ?? 0,
       playerNames: players.map(p => `${p.first_name} ${p.last_name}`),
     }
   })

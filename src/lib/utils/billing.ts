@@ -9,7 +9,7 @@ type Supabase = SupabaseClient<Database>
  * Recalculate a family's balance from the ground truth (payments + charges).
  * Calls the Postgres function which atomically computes:
  *   balance = SUM(received payments) - SUM(active charges)
- * Returns the new balance in cents.
+ * Returns the new projected balance in cents.
  */
 export async function recalculateBalance(
   supabase: Supabase,
@@ -25,6 +25,110 @@ export async function recalculateBalance(
   }
 
   return data as number
+}
+
+/**
+ * Get both confirmed and projected balances for a family.
+ * - confirmed: payments minus charges for completed sessions + non-session charges
+ * - projected: payments minus ALL active charges (includes future bookings)
+ */
+export async function getDualBalance(
+  supabase: Supabase,
+  familyId: string,
+): Promise<{ confirmed: number; projected: number }> {
+  const { data, error } = await supabase
+    .from('family_balance')
+    .select('confirmed_balance_cents, projected_balance_cents')
+    .eq('family_id', familyId)
+    .single()
+
+  if (error) {
+    console.error('Failed to get dual balance:', error.message)
+    return { confirmed: 0, projected: 0 }
+  }
+
+  return {
+    confirmed: data.confirmed_balance_cents,
+    projected: data.projected_balance_cents,
+  }
+}
+
+/**
+ * Allocate a payment to charges using FIFO (oldest charges first).
+ * Calls a Postgres function that atomically handles allocation.
+ */
+export async function allocatePayment(
+  supabase: Supabase,
+  paymentId: string,
+): Promise<void> {
+  const { error } = await supabase.rpc('allocate_payment_to_charges', {
+    target_payment_id: paymentId,
+  })
+
+  if (error) {
+    console.error('Failed to allocate payment:', error.message)
+    // Non-fatal: allocation is a convenience feature, not a blocker
+  }
+}
+
+/**
+ * Void (soft-delete) an erroneous payment. Sets status to 'voided',
+ * recalculates balance, and clears allocations.
+ */
+export async function voidPayment(
+  supabase: Supabase,
+  paymentId: string,
+  familyId: string,
+  userId: string,
+): Promise<number> {
+  const { error } = await supabase
+    .from('payments')
+    .update({
+      status: 'voided',
+      voided_at: new Date().toISOString(),
+      voided_by: userId,
+    })
+    .eq('id', paymentId)
+
+  if (error) {
+    console.error('Failed to void payment:', error.message)
+    throw new Error('Payment void failed')
+  }
+
+  // Clear allocations for this payment
+  await supabase
+    .from('payment_allocations')
+    .delete()
+    .eq('payment_id', paymentId)
+
+  return recalculateBalance(supabase, familyId)
+}
+
+/**
+ * Waive a charge (void it with a waiver note). Recalculates balance.
+ */
+export async function waiveCharge(
+  supabase: Supabase,
+  chargeId: string,
+  familyId: string,
+  reason?: string,
+): Promise<number> {
+  const { error } = await supabase
+    .from('charges')
+    .update({
+      status: 'voided',
+      description: reason
+        ? `[WAIVED] ${reason}`
+        : '[WAIVED]',
+    })
+    .eq('id', chargeId)
+
+  if (error) {
+    console.error('Failed to waive charge:', error.message)
+    throw new Error('Charge waive failed')
+  }
+
+  return recalculateBalance(supabase, familyId)
 }
 
 // ── Charges ─────────────────────────────────────────────────────────────

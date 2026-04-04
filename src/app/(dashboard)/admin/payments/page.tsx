@@ -4,6 +4,7 @@ import { formatCurrency } from '@/lib/utils/currency'
 import { formatDate } from '@/lib/utils/dates'
 import { RecordPaymentForm } from './record-payment-form'
 import { ConfirmPaymentButton } from './confirm-payment-button'
+import { VoidPaymentButton } from './void-payment-button'
 import { PageHeader } from '@/components/page-header'
 import { StatusBadge } from '@/components/status-badge'
 import { EmptyState } from '@/components/empty-state'
@@ -126,9 +127,14 @@ export default async function AdminPaymentsPage({
                       <StatusBadge status={payment.status} />
                     </TableCell>
                     <TableCell>
-                      {payment.status === 'pending' && (
-                        <ConfirmPaymentButton paymentId={payment.id} />
-                      )}
+                      <div className="flex items-center gap-1.5">
+                        {payment.status === 'pending' && (
+                          <ConfirmPaymentButton paymentId={payment.id} />
+                        )}
+                        {payment.status !== 'voided' && (
+                          <VoidPaymentButton paymentId={payment.id} />
+                        )}
+                      </div>
                     </TableCell>
                   </TableRow>
                 )

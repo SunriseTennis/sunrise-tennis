@@ -8,6 +8,7 @@ import { AddPlayerForm } from './add-player-form'
 import { InviteParentForm } from './invite-parent-form'
 import { PricingForm } from './pricing-form'
 import { PlayerCoachesForm } from './player-coaches-form'
+import { WaiveChargeSection } from './waive-charge-section'
 import { Suspense } from 'react'
 import { PageHeader } from '@/components/page-header'
 import { StatusBadge } from '@/components/status-badge'
@@ -17,14 +18,15 @@ export default async function FamilyDetailPage({ params }: { params: Promise<{ i
   const { id } = await params
   const supabase = await createClient()
 
-  const [{ data: family }, { data: players }, { data: balance }, { data: pricingOverrides }, { data: allPrograms }, { data: coaches }, { data: allowedCoaches }] = await Promise.all([
+  const [{ data: family }, { data: players }, { data: balance }, { data: pricingOverrides }, { data: allPrograms }, { data: coaches }, { data: allowedCoaches }, { data: outstandingCharges }] = await Promise.all([
     supabase.from('families').select('*').eq('id', id).single(),
     supabase.from('players').select('*').eq('family_id', id).order('first_name'),
-    supabase.from('family_balance').select('balance_cents').eq('family_id', id).single(),
+    supabase.from('family_balance').select('balance_cents, confirmed_balance_cents, projected_balance_cents').eq('family_id', id).single(),
     supabase.from('family_pricing').select('*').eq('family_id', id).order('created_at', { ascending: false }),
     supabase.from('programs').select('id, name, type').eq('status', 'active').order('name'),
     supabase.from('coaches').select('id, name').eq('status', 'active').order('name'),
     supabase.from('player_allowed_coaches').select('player_id, coach_id, auto_approve'),
+    supabase.from('charges').select('id, description, amount_cents, status, type, created_at').eq('family_id', id).in('status', ['pending', 'confirmed']).gt('amount_cents', 0).order('created_at', { ascending: false }).limit(50),
   ])
 
   if (!family) notFound()
@@ -42,10 +44,19 @@ export default async function FamilyDetailPage({ params }: { params: Promise<{ i
       />
 
       {balance && (
-        <div className="mt-2 flex items-center gap-3">
-          <p className={`text-sm font-medium ${balance.balance_cents < 0 ? 'text-danger' : balance.balance_cents > 0 ? 'text-success' : 'text-muted-foreground'}`}>
-            Balance: {formatCurrency(balance.balance_cents)}
-          </p>
+        <div className="mt-2 flex flex-wrap items-center gap-4">
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-muted-foreground">Current:</span>
+            <span className={`text-sm font-medium tabular-nums ${balance.confirmed_balance_cents < 0 ? 'text-danger' : balance.confirmed_balance_cents > 0 ? 'text-success' : 'text-muted-foreground'}`}>
+              {formatCurrency(balance.confirmed_balance_cents)}
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-muted-foreground">Upcoming:</span>
+            <span className={`text-sm font-medium tabular-nums ${balance.projected_balance_cents < 0 ? 'text-danger' : balance.projected_balance_cents > 0 ? 'text-success' : 'text-muted-foreground'}`}>
+              {formatCurrency(balance.projected_balance_cents)}
+            </span>
+          </div>
           <Link
             href={`/admin/families/${id}/statement`}
             className="text-xs text-primary hover:underline"
@@ -200,6 +211,11 @@ export default async function FamilyDetailPage({ params }: { params: Promise<{ i
           overrides={pricingOverrides ?? []}
           programs={(allPrograms ?? []).map(p => ({ id: p.id, name: p.name, type: p.type }))}
         />
+
+        {/* Outstanding Charges / Waive */}
+        {outstandingCharges && outstandingCharges.length > 0 && (
+          <WaiveChargeSection charges={outstandingCharges} />
+        )}
 
         {/* Private Lesson Coaches */}
         {players && players.length > 0 && (

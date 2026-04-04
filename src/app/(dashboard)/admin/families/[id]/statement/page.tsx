@@ -12,8 +12,8 @@ export default async function FamilyStatementPage({ params }: { params: Promise<
 
   const [{ data: family }, { data: balance }, { data: charges }, { data: payments }] = await Promise.all([
     supabase.from('families').select('display_id, family_name').eq('id', id).single(),
-    supabase.from('family_balance').select('balance_cents').eq('family_id', id).single(),
-    supabase.from('charges').select('*').eq('family_id', id).in('status', ['pending', 'confirmed']).order('created_at', { ascending: true }),
+    supabase.from('family_balance').select('balance_cents, confirmed_balance_cents, projected_balance_cents').eq('family_id', id).single(),
+    supabase.from('charges').select('*, sessions:session_id(date, status)').eq('family_id', id).in('status', ['pending', 'confirmed']).order('created_at', { ascending: true }),
     supabase.from('payments').select('*').eq('family_id', id).eq('status', 'received').order('created_at', { ascending: true }),
   ])
 
@@ -26,11 +26,13 @@ export default async function FamilyStatementPage({ params }: { params: Promise<
     debit: number // charge (positive amount)
     credit: number // payment or credit charge
     type: 'charge' | 'payment'
+    sessionStatus?: string | null
   }
 
   const entries: LedgerEntry[] = []
 
   for (const c of charges ?? []) {
+    const session = c.sessions as unknown as { date: string; status: string } | null
     if (c.amount_cents >= 0) {
       entries.push({
         date: c.created_at ?? '',
@@ -38,6 +40,7 @@ export default async function FamilyStatementPage({ params }: { params: Promise<
         debit: c.amount_cents,
         credit: 0,
         type: 'charge',
+        sessionStatus: session?.status ?? null,
       })
     } else {
       entries.push({
@@ -46,6 +49,7 @@ export default async function FamilyStatementPage({ params }: { params: Promise<
         debit: 0,
         credit: Math.abs(c.amount_cents),
         type: 'charge',
+        sessionStatus: session?.status ?? null,
       })
     }
   }
@@ -84,7 +88,7 @@ export default async function FamilyStatementPage({ params }: { params: Promise<
 
       <div className="mt-6 space-y-6">
         {/* Summary */}
-        <div className="grid gap-4 sm:grid-cols-3">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <Card>
             <CardContent className="pt-6 text-center">
               <p className="text-xs font-medium text-muted-foreground">Total Charges</p>
@@ -101,11 +105,24 @@ export default async function FamilyStatementPage({ params }: { params: Promise<
             <CardContent className="pt-6 text-center">
               <p className="text-xs font-medium text-muted-foreground">Current Balance</p>
               <p className={`mt-1 text-2xl font-bold tabular-nums ${
-                (balance?.balance_cents ?? 0) < 0 ? 'text-danger' :
-                (balance?.balance_cents ?? 0) > 0 ? 'text-success' : 'text-foreground'
+                (balance?.confirmed_balance_cents ?? 0) < 0 ? 'text-danger' :
+                (balance?.confirmed_balance_cents ?? 0) > 0 ? 'text-success' : 'text-foreground'
               }`}>
-                {formatCurrency(balance?.balance_cents ?? 0)}
+                {formatCurrency(balance?.confirmed_balance_cents ?? 0)}
               </p>
+              <p className="mt-0.5 text-[10px] text-muted-foreground">Completed sessions</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="pt-6 text-center">
+              <p className="text-xs font-medium text-muted-foreground">Upcoming Balance</p>
+              <p className={`mt-1 text-2xl font-bold tabular-nums ${
+                (balance?.projected_balance_cents ?? 0) < 0 ? 'text-danger' :
+                (balance?.projected_balance_cents ?? 0) > 0 ? 'text-success' : 'text-foreground'
+              }`}>
+                {formatCurrency(balance?.projected_balance_cents ?? 0)}
+              </p>
+              <p className="mt-0.5 text-[10px] text-muted-foreground">Including future bookings</p>
             </CardContent>
           </Card>
         </div>
@@ -121,6 +138,7 @@ export default async function FamilyStatementPage({ params }: { params: Promise<
                   <tr className="border-b border-border text-left">
                     <th className="pb-2 pr-4 font-medium text-muted-foreground">Date</th>
                     <th className="pb-2 pr-4 font-medium text-muted-foreground">Description</th>
+                    <th className="pb-2 pr-4 font-medium text-muted-foreground">Session</th>
                     <th className="pb-2 pr-4 text-right font-medium text-muted-foreground">Charge</th>
                     <th className="pb-2 pr-4 text-right font-medium text-muted-foreground">Credit</th>
                     <th className="pb-2 text-right font-medium text-muted-foreground">Balance</th>
@@ -133,6 +151,13 @@ export default async function FamilyStatementPage({ params }: { params: Promise<
                         {formatDate(entry.date)}
                       </td>
                       <td className="py-2 pr-4 text-foreground">{entry.description}</td>
+                      <td className="py-2 pr-4 text-xs text-muted-foreground">
+                        {entry.sessionStatus === 'completed' && <span className="text-success">Completed</span>}
+                        {entry.sessionStatus === 'scheduled' && <span className="text-primary">Scheduled</span>}
+                        {entry.sessionStatus === 'rained_out' && <span className="text-warning">Rained out</span>}
+                        {entry.sessionStatus === 'cancelled' && <span className="text-danger">Cancelled</span>}
+                        {entry.type === 'payment' && <span className="text-success">Payment</span>}
+                      </td>
                       <td className="py-2 pr-4 text-right tabular-nums text-foreground">
                         {entry.debit > 0 ? formatCurrency(entry.debit) : ''}
                       </td>
@@ -148,7 +173,7 @@ export default async function FamilyStatementPage({ params }: { params: Promise<
                   ))}
                   {ledger.length === 0 && (
                     <tr>
-                      <td colSpan={5} className="py-4 text-center text-muted-foreground">
+                      <td colSpan={6} className="py-4 text-center text-muted-foreground">
                         No transactions recorded.
                       </td>
                     </tr>

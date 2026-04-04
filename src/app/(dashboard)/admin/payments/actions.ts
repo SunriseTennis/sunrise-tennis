@@ -4,8 +4,9 @@ import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { createClient, requireAdmin } from '@/lib/supabase/server'
 import { validateFormData, recordPaymentFormSchema, createInvoiceFormSchema } from '@/lib/utils/validation'
-import { recalculateBalance, createCharge } from '@/lib/utils/billing'
+import { recalculateBalance, createCharge, allocatePayment, voidPayment as voidPaymentUtil, waiveCharge as waiveChargeUtil } from '@/lib/utils/billing'
 import { sendNotificationToTarget } from '@/lib/push/send'
+import { formatCurrency } from '@/lib/utils/currency'
 
 // ── Record Payment ──────────────────────────────────────────────────────
 
@@ -45,6 +46,33 @@ export async function recordPayment(formData: FormData) {
 
   // Recalculate family balance (single source of truth)
   await recalculateBalance(supabase, familyId)
+
+  // Allocate payment to charges (FIFO)
+  if ((status || 'received') === 'received') {
+    const { data: newPayment } = await supabase
+      .from('payments')
+      .select('id')
+      .eq('family_id', familyId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .single()
+    if (newPayment) {
+      await allocatePayment(supabase, newPayment.id)
+    }
+
+    // Send payment receipt notification to parent
+    try {
+      await sendNotificationToTarget({
+        title: 'Payment Received',
+        body: `Payment of ${formatCurrency(amountCents)} received - thank you!`,
+        url: '/parent/payments',
+        targetType: 'family',
+        targetId: familyId,
+      })
+    } catch (e) {
+      console.error('Failed to send payment receipt notification:', e)
+    }
+  }
 
   revalidatePath('/admin/payments')
   revalidatePath('/admin')
@@ -86,6 +114,22 @@ export async function confirmPayment(paymentId: string) {
 
   // Recalculate balance (single source of truth)
   await recalculateBalance(supabase, payment.family_id)
+
+  // Allocate payment to charges (FIFO)
+  await allocatePayment(supabase, paymentId)
+
+  // Send payment receipt notification to parent
+  try {
+    await sendNotificationToTarget({
+      title: 'Payment Received',
+      body: `Payment of ${formatCurrency(payment.amount_cents)} received - thank you!`,
+      url: '/parent/payments',
+      targetType: 'family',
+      targetId: payment.family_id,
+    })
+  } catch (e) {
+    console.error('Failed to send payment receipt notification:', e)
+  }
 
   revalidatePath('/admin/payments')
   revalidatePath('/admin')
@@ -277,4 +321,59 @@ export async function sendOverdueReminders() {
   }
 
   redirect('/admin/payments?success=' + encodeURIComponent(`Sent ${sentCount} overdue reminder(s)`))
+}
+
+// ── Void (Soft-Delete) a Payment ──────────────────────────────────────
+
+export async function voidPaymentAction(paymentId: string) {
+  const user = await requireAdmin()
+  const supabase = await createClient()
+
+  const { data: payment, error: fetchError } = await supabase
+    .from('payments')
+    .select('family_id, amount_cents, status')
+    .eq('id', paymentId)
+    .single()
+
+  if (fetchError || !payment) {
+    redirect('/admin/payments?error=' + encodeURIComponent('Payment not found'))
+  }
+
+  if (payment.status === 'voided') {
+    redirect('/admin/payments?error=' + encodeURIComponent('Payment already voided'))
+  }
+
+  await voidPaymentUtil(supabase, paymentId, payment.family_id, user.id)
+
+  revalidatePath('/admin/payments')
+  revalidatePath('/admin')
+  revalidatePath(`/admin/families/${payment.family_id}`)
+  redirect('/admin/payments?success=' + encodeURIComponent('Payment voided'))
+}
+
+// ── Waive a Charge ────────────────────────────────────────────────────
+
+export async function waiveChargeAction(chargeId: string, reason?: string) {
+  await requireAdmin()
+  const supabase = await createClient()
+
+  const { data: charge, error: fetchError } = await supabase
+    .from('charges')
+    .select('family_id, description, amount_cents, status')
+    .eq('id', chargeId)
+    .single()
+
+  if (fetchError || !charge) {
+    redirect('/admin/payments?error=' + encodeURIComponent('Charge not found'))
+  }
+
+  if (charge.status === 'voided') {
+    redirect('/admin/payments?error=' + encodeURIComponent('Charge already voided'))
+  }
+
+  await waiveChargeUtil(supabase, chargeId, charge.family_id, reason)
+
+  revalidatePath('/admin/payments')
+  revalidatePath('/admin')
+  revalidatePath(`/admin/families/${charge.family_id}`)
 }

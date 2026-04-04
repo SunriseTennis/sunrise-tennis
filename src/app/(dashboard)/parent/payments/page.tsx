@@ -16,6 +16,8 @@ import { CreditCard, FileText, ChevronRight, Ticket } from 'lucide-react'
 import { PaymentOptions } from './payment-options'
 import { ChargesList } from './charges-list'
 import { VoucherForm } from './voucher-form'
+import { BalanceHero } from './balance-hero'
+import { PaymentDetailRow } from './payment-detail-row'
 
 export default async function ParentPaymentsPage() {
   const supabase = await createClient()
@@ -44,10 +46,10 @@ export default async function ParentPaymentsPage() {
   }
 
   const [balanceRes, paymentsRes, invoicesRes, chargesRes, vouchersRes] = await Promise.all([
-    supabase.from('family_balance').select('balance_cents').eq('family_id', familyId).single(),
-    supabase.from('payments').select('*').eq('family_id', familyId).order('created_at', { ascending: false }).limit(20),
+    supabase.from('family_balance').select('balance_cents, confirmed_balance_cents, projected_balance_cents').eq('family_id', familyId).single(),
+    supabase.from('payments').select('*, payment_allocations(amount_cents, charge_id, charges:charge_id(description, session_id, sessions:session_id(date, status)))').eq('family_id', familyId).neq('status', 'voided').order('created_at', { ascending: false }).limit(20),
     supabase.from('invoices').select('*').eq('family_id', familyId).order('created_at', { ascending: false }).limit(20),
-    supabase.from('charges').select('id, type, source_type, description, amount_cents, status, program_id, session_id, created_at').eq('family_id', familyId).in('status', ['pending', 'confirmed']).order('created_at', { ascending: false }).limit(100),
+    supabase.from('charges').select('id, type, source_type, description, amount_cents, status, program_id, session_id, player_id, created_at, sessions:session_id(date, status), players:player_id(first_name)').eq('family_id', familyId).in('status', ['pending', 'confirmed']).order('created_at', { ascending: false }).limit(100),
     supabase.from('vouchers').select('id, voucher_code, voucher_type, amount_cents, status, submitted_at').eq('family_id', familyId).order('submitted_at', { ascending: false }).limit(10),
   ])
 
@@ -57,49 +59,53 @@ export default async function ParentPaymentsPage() {
   const charges = chargesRes.data
   const vouchers = vouchersRes.data
 
-  // Enrich charges with program names
+  // Enrich charges with program names + types
   const programIds = [...new Set((charges ?? []).filter(c => c.program_id).map(c => c.program_id!))]
-  let programNames: Record<string, string> = {}
+  let programInfo: Record<string, { name: string; type: string }> = {}
   if (programIds.length > 0) {
     const { data: programs } = await supabase
       .from('programs')
-      .select('id, name')
+      .select('id, name, type')
       .in('id', programIds)
     if (programs) {
-      programNames = Object.fromEntries(programs.map(p => [p.id, p.name]))
+      programInfo = Object.fromEntries(programs.map(p => [p.id, { name: p.name, type: p.type }]))
     }
   }
-  const enrichedCharges = (charges ?? []).map(c => ({
-    ...c,
-    program_name: c.program_id ? programNames[c.program_id] ?? null : null,
-  }))
+  const enrichedCharges = (charges ?? []).map(c => {
+    const session = c.sessions as unknown as { date: string; status: string } | null
+    const player = c.players as unknown as { first_name: string } | null
+    const info = c.program_id ? programInfo[c.program_id] : null
+    return {
+      id: c.id,
+      type: c.type,
+      source_type: c.source_type,
+      description: c.description,
+      amount_cents: c.amount_cents,
+      status: c.status,
+      program_id: c.program_id,
+      session_id: c.session_id,
+      player_id: c.player_id,
+      created_at: c.created_at,
+      program_name: info?.name ?? null,
+      program_type: info?.type ?? null,
+      player_name: player?.first_name ?? null,
+      session_date: session?.date ?? null,
+      session_status: session?.status ?? null,
+    }
+  })
 
-  const balanceCents = balance?.balance_cents ?? 0
+  const confirmedBalanceCents = balance?.confirmed_balance_cents ?? 0
+  const projectedBalanceCents = balance?.projected_balance_cents ?? 0
   const outstandingInvoices = invoices?.filter(i => i.status !== 'paid' && i.status !== 'void') ?? []
-  const hasOutstandingBalance = balanceCents < 0
+  const hasOutstandingBalance = projectedBalanceCents < 0
 
   return (
     <div className="space-y-6">
       {/* ── Balance Hero ── */}
-      <div className="animate-fade-up relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#2B5EA7] via-[#6480A4] to-[#E87450] p-5 text-white shadow-elevated">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.15),transparent_60%)]" />
-        <div className="relative">
-          <div className="flex items-center gap-2">
-            <CreditCard className="size-5 text-white/80" />
-            <p className="text-sm font-medium text-white/80">Payments & Invoices</p>
-          </div>
-          <p className={`mt-2 text-3xl font-bold tabular-nums ${
-            balanceCents < 0 ? 'text-red-200' :
-            balanceCents > 0 ? 'text-emerald-200' :
-            'text-white'
-          }`}>
-            {formatCurrency(balanceCents)}
-          </p>
-          <p className="mt-0.5 text-xs text-white/60">
-            {balanceCents < 0 ? 'Outstanding balance' : balanceCents > 0 ? 'Credit on account' : 'Account balance'}
-          </p>
-        </div>
-      </div>
+      <BalanceHero
+        confirmedBalanceCents={confirmedBalanceCents}
+        projectedBalanceCents={projectedBalanceCents}
+      />
 
       {/* ── Itemised Charges ── */}
       {enrichedCharges.length > 0 && (
@@ -171,7 +177,7 @@ export default async function ParentPaymentsPage() {
         <section className="animate-fade-up" style={{ animationDelay: '160ms' }}>
           <PaymentOptions
             familyId={familyId}
-            balanceCents={balanceCents}
+            balanceCents={projectedBalanceCents}
             outstandingInvoices={outstandingInvoices.map(i => ({
               id: i.id,
               display_id: i.display_id,
@@ -210,68 +216,34 @@ export default async function ParentPaymentsPage() {
       <section className="animate-fade-up" style={{ animationDelay: '300ms' }}>
         <h2 className="text-lg font-semibold text-foreground">Payment History</h2>
         {payments && payments.length > 0 ? (
-          <>
-            {/* Mobile cards */}
-            <div className="mt-3 space-y-3 md:hidden">
-              {payments.map((payment) => (
-                <div key={payment.id} className="rounded-xl border border-border bg-card p-4 shadow-card">
-                  <div className="flex items-center justify-between">
-                    <p className="text-sm text-muted-foreground">
-                      {payment.created_at ? formatDate(payment.created_at) : '-'}
-                    </p>
-                    <StatusBadge status={payment.status} />
-                  </div>
-                  <p className="mt-1 text-sm text-foreground">
-                    {payment.description || payment.category || '-'}
-                  </p>
-                  <div className="mt-2 flex items-center justify-between text-sm">
-                    <span className="capitalize text-muted-foreground">
-                      {payment.payment_method.replace('_', ' ')}
-                    </span>
-                    <span className="font-bold tabular-nums text-success">
-                      {formatCurrency(payment.amount_cents)}
-                    </span>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            {/* Desktop table */}
-            <div className="mt-3 hidden overflow-hidden rounded-xl border border-border bg-card shadow-card md:block">
-              <Table>
-                <TableHeader>
-                  <TableRow className="bg-muted/50 hover:bg-muted/50">
-                    <TableHead>Date</TableHead>
-                    <TableHead>Description</TableHead>
-                    <TableHead>Method</TableHead>
-                    <TableHead className="text-right">Amount</TableHead>
-                    <TableHead>Status</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {payments.map((payment) => (
-                    <TableRow key={payment.id}>
-                      <TableCell>
-                        {payment.created_at ? formatDate(payment.created_at) : '-'}
-                      </TableCell>
-                      <TableCell className="text-muted-foreground">
-                        {payment.description || payment.category || '-'}
-                      </TableCell>
-                      <TableCell className="capitalize text-muted-foreground">
-                        {payment.payment_method.replace('_', ' ')}
-                      </TableCell>
-                      <TableCell className="text-right font-medium tabular-nums text-success">
-                        {formatCurrency(payment.amount_cents)}
-                      </TableCell>
-                      <TableCell>
-                        <StatusBadge status={payment.status} />
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          </>
+          <div className="mt-3 space-y-2">
+            {payments.map((payment) => {
+              const allocations = (payment.payment_allocations ?? []) as unknown as {
+                amount_cents: number
+                charge_id: string
+                charges: { description: string; session_id: string | null; sessions: { date: string; status: string } | null } | null
+              }[]
+              return (
+                <PaymentDetailRow
+                  key={payment.id}
+                  payment={{
+                    id: payment.id,
+                    date: payment.created_at ?? '',
+                    description: payment.description || payment.category || '-',
+                    method: payment.payment_method,
+                    amountCents: payment.amount_cents,
+                    status: payment.status,
+                  }}
+                  allocations={allocations.map(a => ({
+                    amountCents: a.amount_cents,
+                    chargeDescription: a.charges?.description ?? 'Unknown charge',
+                    sessionDate: a.charges?.sessions?.date ?? null,
+                    sessionStatus: a.charges?.sessions?.status ?? null,
+                  }))}
+                />
+              )
+            })}
+          </div>
         ) : (
           <div className="mt-3">
             <EmptyState

@@ -23,10 +23,12 @@ interface FamilyRow {
   contactPhone: string
   status: string
   balanceCents: number
+  confirmedBalanceCents: number
+  projectedBalanceCents: number
   playerNames: string[]
 }
 
-type SortKey = 'familyName' | 'contactName' | 'status' | 'balance'
+type SortKey = 'familyName' | 'contactName' | 'status' | 'currentBalance' | 'upcomingBalance'
 
 export function FamiliesTable({ families }: { families: FamilyRow[] }) {
   const [search, setSearch] = useState('')
@@ -64,8 +66,10 @@ export function FamiliesTable({ families }: { families: FamilyRow[] }) {
           return dir * a.contactName.localeCompare(b.contactName)
         case 'status':
           return dir * a.status.localeCompare(b.status)
-        case 'balance':
-          return dir * (a.balanceCents - b.balanceCents)
+        case 'currentBalance':
+          return dir * (a.confirmedBalanceCents - b.confirmedBalanceCents)
+        case 'upcomingBalance':
+          return dir * (a.projectedBalanceCents - b.projectedBalanceCents)
         default:
           return 0
       }
@@ -117,11 +121,18 @@ export function FamiliesTable({ families }: { families: FamilyRow[] }) {
             <div className="mt-2 space-y-1 text-sm text-muted-foreground">
               <div className="flex items-center justify-between">
                 <span>{f.contactName}</span>
-                {f.balanceCents !== 0 && (
-                  <span className={`font-medium tabular-nums ${f.balanceCents < 0 ? 'text-danger' : 'text-foreground'}`}>
-                    {formatCurrency(f.balanceCents)}
-                  </span>
-                )}
+                <div className="flex items-center gap-3">
+                  {f.confirmedBalanceCents !== 0 && (
+                    <span className={`text-xs tabular-nums ${f.confirmedBalanceCents < 0 ? 'text-danger' : 'text-muted-foreground'}`}>
+                      Current: {formatCurrency(f.confirmedBalanceCents)}
+                    </span>
+                  )}
+                  {f.projectedBalanceCents !== 0 && (
+                    <span className={`font-medium tabular-nums ${f.projectedBalanceCents < 0 ? 'text-danger' : 'text-foreground'}`}>
+                      {formatCurrency(f.projectedBalanceCents)}
+                    </span>
+                  )}
+                </div>
               </div>
               {f.contactPhone && (
                 <p className="text-xs">{f.contactPhone}</p>
@@ -141,7 +152,8 @@ export function FamiliesTable({ families }: { families: FamilyRow[] }) {
               <TableHead><SortHeader label="Primary Contact" sortId="contactName" /></TableHead>
               <TableHead>Mobile</TableHead>
               <TableHead><SortHeader label="Status" sortId="status" /></TableHead>
-              <TableHead className="text-right"><SortHeader label="Balance" sortId="balance" /></TableHead>
+              <TableHead className="text-right"><SortHeader label="Current" sortId="currentBalance" /></TableHead>
+              <TableHead className="text-right"><SortHeader label="Upcoming" sortId="upcomingBalance" /></TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -166,8 +178,11 @@ export function FamiliesTable({ families }: { families: FamilyRow[] }) {
                 <TableCell>
                   <StatusBadge status={f.status} />
                 </TableCell>
-                <TableCell className={`text-right font-medium tabular-nums ${f.balanceCents < 0 ? 'text-danger' : 'text-foreground'}`}>
-                  {f.balanceCents !== 0 ? formatCurrency(f.balanceCents) : '-'}
+                <TableCell className={`text-right tabular-nums ${f.confirmedBalanceCents < 0 ? 'text-danger' : 'text-muted-foreground'}`}>
+                  {f.confirmedBalanceCents !== 0 ? formatCurrency(f.confirmedBalanceCents) : '-'}
+                </TableCell>
+                <TableCell className={`text-right font-medium tabular-nums ${f.projectedBalanceCents < 0 ? 'text-danger' : 'text-foreground'}`}>
+                  {f.projectedBalanceCents !== 0 ? formatCurrency(f.projectedBalanceCents) : '-'}
                 </TableCell>
               </TableRow>
             ))}
