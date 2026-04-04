@@ -270,7 +270,9 @@ function AdminSessionPopup({ event, onClose }: { event: CalendarEvent; onClose: 
   )
 }
 
-export function ProgramViews({ programs, sessions }: { programs: Program[]; sessions?: SessionData[] }) {
+export type SessionTally = { completed: number; cancelled: number; planned: number }
+
+export function ProgramViews({ programs, sessions, sessionTallies }: { programs: Program[]; sessions?: SessionData[]; sessionTallies?: Record<string, SessionTally> }) {
   const [tab, setTab] = useState<Tab>('calendar')
   const [levelFilter, setLevelFilter] = useState('')
   const [typeFilter, setTypeFilter] = useState('')
@@ -366,6 +368,7 @@ export function ProgramViews({ programs, sessions }: { programs: Program[]; sess
                     <TableHead>Level</TableHead>
                     <TableHead>Day / Time</TableHead>
                     <TableHead>Enrolled</TableHead>
+                    <TableHead>Sessions</TableHead>
                     <TableHead className="text-right">Per Session</TableHead>
                     <TableHead>Status</TableHead>
                   </TableRow>
@@ -387,6 +390,21 @@ export function ProgramViews({ programs, sessions }: { programs: Program[]; sess
                         </TableCell>
                         <TableCell className="text-muted-foreground">
                           {enrolled}{p.max_capacity ? `/${p.max_capacity}` : ''}
+                        </TableCell>
+                        <TableCell className="text-muted-foreground tabular-nums text-xs">
+                          {(() => {
+                            const t = sessionTallies?.[p.id]
+                            if (!t) return '-'
+                            return (
+                              <span title={`${t.completed} completed / ${t.cancelled} cancelled / ${t.planned} planned`}>
+                                <span className="text-success">{t.completed}</span>
+                                {'/'}
+                                <span className="text-danger">{t.cancelled}</span>
+                                {'/'}
+                                <span>{t.planned}</span>
+                              </span>
+                            )
+                          })()}
                         </TableCell>
                         <TableCell className="text-right text-muted-foreground tabular-nums">
                           {p.per_session_cents ? formatCurrency(p.per_session_cents) : '-'}

@@ -4,6 +4,9 @@ import Link from 'next/link'
 import { WeeklyCalendar, type CalendarEvent } from '@/components/weekly-calendar'
 import { StatusBadge } from '@/components/status-badge'
 import { Users, MapPin, X, Eye } from 'lucide-react'
+import { InlineAttendance } from './inline-attendance'
+
+type Player = { id: string; first_name: string; last_name: string; ball_color: string | null }
 
 function CoachSessionPopup({ event, onClose }: { event: CalendarEvent; onClose: () => void }) {
   return (
@@ -62,13 +65,32 @@ function CoachSessionPopup({ event, onClose }: { event: CalendarEvent; onClose: 
   )
 }
 
-export function CoachCalendar({ sessions }: { sessions: CalendarEvent[] }) {
+export function CoachCalendar({
+  sessions,
+  programRosters,
+  sessionAttendances,
+}: {
+  sessions: CalendarEvent[]
+  programRosters?: Record<string, Player[]>
+  sessionAttendances?: Record<string, Record<string, string>>
+}) {
   return (
     <WeeklyCalendar
       events={sessions}
       renderPopup={(event, onClose) => (
         <CoachSessionPopup event={event} onClose={onClose} />
       )}
+      renderDayEvent={programRosters ? (event) => {
+        const roster = event.programId ? (programRosters[event.programId] ?? []) : []
+        const attMap = event.sessionId ? (sessionAttendances?.[event.sessionId] ?? {}) : {}
+        return (
+          <InlineAttendance
+            event={event}
+            roster={roster}
+            attendanceMap={attMap}
+          />
+        )
+      } : undefined}
     />
   )
 }

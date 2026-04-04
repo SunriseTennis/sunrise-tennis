@@ -6,6 +6,7 @@ import { formatTime, formatDate } from '@/lib/utils/dates'
 import { calculateGroupCoachPay } from '@/lib/utils/billing'
 import { ProgramEditForm } from './program-edit-form'
 import { AdminEnrolForm } from './admin-enrol-form'
+import { RosterTable } from './roster-table'
 import { PageHeader } from '@/components/page-header'
 import { StatusBadge } from '@/components/status-badge'
 import { Card, CardContent } from '@/components/ui/card'
@@ -27,7 +28,7 @@ export default async function ProgramDetailPage({ params }: { params: Promise<{ 
   const [{ data: program }, { data: roster }, { data: allFamilies }, { data: sessions }, { data: programCoaches }] = await Promise.all([
     supabase.from('programs').select('*').eq('id', id).single(),
     supabase.from('program_roster')
-      .select('id, status, enrolled_at, players(id, first_name, last_name, ball_color, families(display_id, family_name))')
+      .select('id, status, enrolled_at, players(id, first_name, last_name, ball_color, current_focus, families(display_id, family_name))')
       .eq('program_id', id)
       .order('enrolled_at'),
     supabase.from('families')
@@ -77,7 +78,7 @@ export default async function ProgramDetailPage({ params }: { params: Promise<{ 
   // ── Attendance per session (for the sessions table) ──
   const attendancePerSession: Record<string, number> = {}
   for (const a of allAttendances) {
-    if (a.status === 'present' || a.status === 'late') {
+    if (a.status === 'present') {
       attendancePerSession[a.session_id] = (attendancePerSession[a.session_id] ?? 0) + 1
     }
   }
@@ -86,15 +87,33 @@ export default async function ProgramDetailPage({ params }: { params: Promise<{ 
   const rosterPlayerIds = new Set(
     (roster ?? []).map(r => (r.players as unknown as { id: string })?.id).filter(Boolean)
   )
-  const playerAttendanceTotals: Record<string, { present: number; absent: number; excused: number; noshow: number }> = {}
+  const playerAttendanceTotals: Record<string, { present: number; absent: number; noshow: number }> = {}
   for (const playerId of rosterPlayerIds) {
-    playerAttendanceTotals[playerId] = { present: 0, absent: 0, excused: 0, noshow: 0 }
+    playerAttendanceTotals[playerId] = { present: 0, absent: 0, noshow: 0 }
   }
   for (const a of allAttendances) {
     if (playerAttendanceTotals[a.player_id]) {
-      if (a.status === 'present' || a.status === 'late') playerAttendanceTotals[a.player_id].present++
+      if (a.status === 'present') playerAttendanceTotals[a.player_id].present++
       else if (a.status === 'absent') playerAttendanceTotals[a.player_id].absent++
-      else if (a.status === 'excused') playerAttendanceTotals[a.player_id].excused++
+      else if (a.status === 'noshow') playerAttendanceTotals[a.player_id].noshow++
+    }
+  }
+
+  // ── Latest lesson notes per player (from most recent completed session) ──
+  let latestPlayerNotes: Record<string, { focus: string | null; progress: string | null }> = {}
+  const sortedCompleted = (sessions ?? [])
+    .filter(s => s.status === 'completed')
+    .sort((a, b) => b.date.localeCompare(a.date))
+  if (sortedCompleted.length > 0) {
+    const { data: recentNotes } = await supabase
+      .from('lesson_notes')
+      .select('player_id, focus, progress')
+      .eq('session_id', sortedCompleted[0].id)
+      .not('player_id', 'is', null)
+    for (const n of recentNotes ?? []) {
+      if (n.player_id) {
+        latestPlayerNotes[n.player_id] = { focus: n.focus, progress: n.progress }
+      }
     }
   }
 
@@ -273,7 +292,7 @@ export default async function ProgramDetailPage({ params }: { params: Promise<{ 
                       <TableHead>Player</TableHead>
                       <TableHead className="text-center">Attended</TableHead>
                       <TableHead className="text-center">Absent</TableHead>
-                      <TableHead className="text-center">Excused</TableHead>
+                      <TableHead className="text-center">No Show</TableHead>
                       <TableHead className="text-right">Rate</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -281,15 +300,15 @@ export default async function ProgramDetailPage({ params }: { params: Promise<{ 
                     {roster.map((r) => {
                       const player = r.players as unknown as { id: string; first_name: string; last_name: string } | null
                       if (!player) return null
-                      const totals = playerAttendanceTotals[player.id] ?? { present: 0, absent: 0, excused: 0, noshow: 0 }
-                      const totalMarked = totals.present + totals.absent + totals.excused
+                      const totals = playerAttendanceTotals[player.id] ?? { present: 0, absent: 0, noshow: 0 }
+                      const totalMarked = totals.present + totals.absent + totals.noshow
                       const rate = totalMarked > 0 ? Math.round((totals.present / totalMarked) * 100) : 0
                       return (
                         <TableRow key={r.id}>
                           <TableCell className="font-medium">{player.first_name} {player.last_name}</TableCell>
                           <TableCell className="text-center tabular-nums text-success">{totals.present}</TableCell>
                           <TableCell className="text-center tabular-nums text-danger">{totals.absent}</TableCell>
-                          <TableCell className="text-center tabular-nums text-muted-foreground">{totals.excused}</TableCell>
+                          <TableCell className="text-center tabular-nums text-muted-foreground">{totals.noshow}</TableCell>
                           <TableCell className="text-right tabular-nums font-medium">
                             {totalMarked > 0 ? `${rate}%` : '-'}
                           </TableCell>
@@ -341,35 +360,26 @@ export default async function ProgramDetailPage({ params }: { params: Promise<{ 
               Roster ({enrolledCount}{program.max_capacity ? `/${program.max_capacity}` : ''})
             </h2>
             {roster && roster.length > 0 ? (
-              <div className="mt-4 overflow-hidden rounded-lg border border-border">
-                <Table>
-                  <TableHeader>
-                    <TableRow className="bg-muted/50 hover:bg-muted/50">
-                      <TableHead>Player</TableHead>
-                      <TableHead>Family</TableHead>
-                      <TableHead>Level</TableHead>
-                      <TableHead>Status</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {roster.map((r) => {
-                      const player = r.players as unknown as { id: string; first_name: string; last_name: string; ball_color: string | null; families: { display_id: string; family_name: string } | null } | null
-                      return (
-                        <TableRow key={r.id}>
-                          <TableCell>{player?.first_name} {player?.last_name}</TableCell>
-                          <TableCell className="text-muted-foreground">
-                            {player?.families?.display_id} ({player?.families?.family_name})
-                          </TableCell>
-                          <TableCell className="capitalize text-muted-foreground">{player?.ball_color ?? '-'}</TableCell>
-                          <TableCell>
-                            <StatusBadge status={r.status} />
-                          </TableCell>
-                        </TableRow>
-                      )
-                    })}
-                  </TableBody>
-                </Table>
-              </div>
+              <RosterTable
+                roster={roster.map((r) => {
+                  const player = r.players as unknown as { id: string; first_name: string; last_name: string; ball_color: string | null; current_focus: string[] | null; families: { display_id: string; family_name: string } | null } | null
+                  return {
+                    rosterId: r.id,
+                    rosterStatus: r.status,
+                    playerId: player?.id ?? '',
+                    firstName: player?.first_name ?? '',
+                    lastName: player?.last_name ?? '',
+                    ballColor: player?.ball_color ?? null,
+                    currentFocus: player?.current_focus ?? null,
+                    familyDisplayId: player?.families?.display_id ?? null,
+                    familyName: player?.families?.family_name ?? null,
+                  }
+                })}
+                maxCapacity={program.max_capacity}
+                attendanceTotals={playerAttendanceTotals}
+                completedCount={sortedCompleted.length}
+                latestNotes={latestPlayerNotes}
+              />
             ) : (
               <p className="mt-4 text-sm text-muted-foreground">No players enrolled yet.</p>
             )}

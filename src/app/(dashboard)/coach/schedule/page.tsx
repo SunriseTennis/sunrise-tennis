@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation'
 import { createClient, getSessionUser } from '@/lib/supabase/server'
 import { PageHeader } from '@/components/page-header'
-import { getCurrentTermRange } from '@/lib/utils/school-terms'
+import { getCurrentTermRange, getCurrentOrNextTermEnd } from '@/lib/utils/school-terms'
 import { CoachCalendar } from './coach-calendar'
 
 export default async function CoachSchedulePage() {
@@ -26,8 +26,10 @@ export default async function CoachSchedulePage() {
     )
   }
 
-  // Get date range — current term or next term
-  const { start: termStart, end: termEnd } = getCurrentTermRange(new Date())
+  // Get date range — current + next term so upcoming sessions are visible
+  const { start: termStart } = getCurrentTermRange(new Date())
+  const nextTermEnd = getCurrentOrNextTermEnd(new Date())
+  const termEnd = nextTermEnd ? nextTermEnd.toISOString().split('T')[0] : new Date().getFullYear() + '-12-31'
 
   // Fetch sessions where coach is primary (direct assignment)
   const { data: primarySessions } = await supabase
@@ -89,18 +91,39 @@ export default async function CoachSchedulePage() {
     }
   }
 
-  // Get program roster counts
+  // Get program rosters (player details for inline attendance)
   const programIds = [...new Set(allSessions.map(s => s.program_id).filter((id): id is string => id != null))]
   let rosterCounts: Record<string, number> = {}
+  let programRosters: Record<string, { id: string; first_name: string; last_name: string; ball_color: string | null }[]> = {}
   if (programIds.length > 0) {
     const { data: roster } = await supabase
       .from('program_roster')
-      .select('program_id')
+      .select('program_id, players:player_id(id, first_name, last_name, ball_color)')
       .in('program_id', programIds)
       .eq('status', 'enrolled')
     if (roster) {
       for (const row of roster) {
         rosterCounts[row.program_id] = (rosterCounts[row.program_id] ?? 0) + 1
+        const player = row.players as unknown as { id: string; first_name: string; last_name: string; ball_color: string | null } | null
+        if (player) {
+          if (!programRosters[row.program_id]) programRosters[row.program_id] = []
+          programRosters[row.program_id].push(player)
+        }
+      }
+    }
+  }
+
+  // Get attendance records for inline attendance display
+  let sessionAttendances: Record<string, Record<string, string>> = {}
+  if (sessionIds.length > 0) {
+    const { data: attRecords } = await supabase
+      .from('attendances')
+      .select('session_id, player_id, status')
+      .in('session_id', sessionIds)
+    if (attRecords) {
+      for (const a of attRecords) {
+        if (!sessionAttendances[a.session_id]) sessionAttendances[a.session_id] = {}
+        sessionAttendances[a.session_id][a.player_id] = a.status
       }
     }
   }
@@ -144,7 +167,11 @@ export default async function CoachSchedulePage() {
         description="Your sessions this term."
       />
       <div className="mt-6">
-        <CoachCalendar sessions={calendarSessions} />
+        <CoachCalendar
+          sessions={calendarSessions}
+          programRosters={programRosters}
+          sessionAttendances={sessionAttendances}
+        />
       </div>
     </div>
   )

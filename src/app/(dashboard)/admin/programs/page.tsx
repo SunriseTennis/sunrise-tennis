@@ -8,7 +8,7 @@ import { GraduationCap, Plus } from 'lucide-react'
 import { ProgramViews } from './program-views'
 import { GenerateTermSessionsForm } from '../sessions/generate-term-sessions-form'
 import { CreateSessionForm } from '../sessions/create-session-form'
-import { getCurrentTermRange } from '@/lib/utils/school-terms'
+import { getCurrentTermRange, getCurrentOrNextTermEnd } from '@/lib/utils/school-terms'
 
 export default async function ProgramsPage({
   searchParams,
@@ -18,8 +18,10 @@ export default async function ProgramsPage({
   const { error, success } = await searchParams
   const supabase = await createClient()
 
-  // Determine current term date range for session fetching
-  const { start: termStart, end: termEnd } = getCurrentTermRange(new Date())
+  // Determine date range for session fetching — include current + next term
+  const { start: termStart } = getCurrentTermRange(new Date())
+  const nextTermEnd = getCurrentOrNextTermEnd(new Date())
+  const termEnd = nextTermEnd ? nextTermEnd.toISOString().split('T')[0] : new Date().getFullYear() + '-12-31'
 
   const [
     { data: programs },
@@ -76,6 +78,16 @@ export default async function ProgramsPage({
     }
   }
 
+  // Build per-program session tallies: completed/cancelled/planned
+  const sessionTallies: Record<string, { completed: number; cancelled: number; planned: number }> = {}
+  for (const s of sessions ?? []) {
+    if (!s.program_id) continue
+    if (!sessionTallies[s.program_id]) sessionTallies[s.program_id] = { completed: 0, cancelled: 0, planned: 0 }
+    if (s.status === 'completed') sessionTallies[s.program_id].completed++
+    else if (s.status === 'cancelled' || s.status === 'rained_out') sessionTallies[s.program_id].cancelled++
+    else sessionTallies[s.program_id].planned++
+  }
+
   // Serialize sessions for client component
   const serializedSessions = (sessions ?? []).map(s => {
     const coach = s.coaches as unknown as { name: string } | null
@@ -123,7 +135,7 @@ export default async function ProgramsPage({
 
       {programs && programs.length > 0 ? (
         <div className="mt-6">
-          <ProgramViews programs={programs as never} sessions={serializedSessions} />
+          <ProgramViews programs={programs as never} sessions={serializedSessions} sessionTallies={sessionTallies} />
         </div>
       ) : (
         <div className="mt-6">

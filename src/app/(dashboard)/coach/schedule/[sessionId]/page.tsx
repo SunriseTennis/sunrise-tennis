@@ -92,13 +92,33 @@ export default async function CoachSessionDetailPage({
       .eq('session_id', sessionId),
   ])
 
-  const roster = rosterData?.map(r => r.players as unknown as {
+  const enrolledRoster = rosterData?.map(r => r.players as unknown as {
     id: string; first_name: string; last_name: string; ball_color: string | null; current_focus: string[] | null
   }).filter(Boolean) ?? []
 
   const attendanceMap = new Map(
     attendances?.map(a => [a.player_id, a.status]) ?? []
   )
+
+  // Find walk-in players (have attendance but not in roster) and merge
+  const enrolledIds = new Set(enrolledRoster.map(r => r.id))
+  const walkInPlayerIds = (attendances ?? [])
+    .map(a => a.player_id)
+    .filter(pid => !enrolledIds.has(pid))
+
+  let walkInPlayers: typeof enrolledRoster = []
+  if (walkInPlayerIds.length > 0) {
+    const { data: walkIns } = await supabase
+      .from('players')
+      .select('id, first_name, last_name, ball_color, current_focus')
+      .in('id', walkInPlayerIds)
+    walkInPlayers = (walkIns ?? []).map(p => ({
+      ...p,
+      current_focus: p.current_focus as string[] | null,
+    }))
+  }
+
+  const roster = [...enrolledRoster, ...walkInPlayers]
 
   // Fetch previous session notes for prep view (only for scheduled sessions)
   let prevNotesMap: Record<string, { focus: string | null; progress: string | null; notes: string | null }> = {}

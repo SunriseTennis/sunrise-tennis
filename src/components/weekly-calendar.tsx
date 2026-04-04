@@ -48,7 +48,7 @@ export interface CalendarEvent {
   selectable?: boolean
   /** Booking ID for private lessons (used for cancel action) */
   bookingId?: string
-  /** Per-player attendance status for this session: playerId → 'present'|'excused'|'absent'|'noshow' */
+  /** Per-player attendance status for this session: playerId → 'present'|'absent'|'noshow' */
   playerAttendance?: Record<string, string>
   /** Coach name for display in day view / admin popup */
   coachName?: string
@@ -259,7 +259,6 @@ function PopupContainer({
 /** Attendance status display styles */
 const ATTENDANCE_STYLES: Record<string, { label: string; bg: string; text: string }> = {
   present:  { label: 'Attending',  bg: 'bg-success/5 border-success/20',  text: 'text-success' },
-  excused:  { label: 'Away',       bg: 'bg-muted/50 border-border',       text: 'text-muted-foreground' },
   absent:   { label: 'Absent',     bg: 'bg-amber-50 border-amber-200',    text: 'text-amber-600' },
   noshow:   { label: 'No show',    bg: 'bg-red-50 border-red-200',        text: 'text-red-600' },
 }
@@ -342,7 +341,7 @@ function PopupActions({
 
               // Term enrolled: attending/away toggle
               if (isTermEnrolled) {
-                const isAway = status === 'excused'
+                const isAway = status === 'absent'
                 return (
                   <div key={p.id} className={`flex items-center justify-between rounded-lg border px-3 py-1.5 ${isAway ? 'bg-muted/50 border-border' : 'bg-success/5 border-success/20'}`}>
                     <span className={`text-sm font-medium ${isAway ? 'text-muted-foreground' : 'text-success'}`}>{p.name}</span>

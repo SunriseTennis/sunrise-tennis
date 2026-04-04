@@ -495,7 +495,7 @@ export async function updateAttendance(sessionId: string, formData: FormData) {
   const user = await requireAdmin()
   const supabase = await createClient()
 
-  // Parse attendance entries from form: attendance_PLAYERID = present|absent|late|excused
+  // Parse attendance entries from form: attendance_PLAYERID = present|absent|noshow
   const entries: { playerId: string; status: string }[] = []
   formData.forEach((value, key) => {
     if (key.startsWith('attendance_')) {
@@ -558,7 +558,7 @@ export async function updateAttendance(sessionId: string, formData: FormData) {
 
       if (paymentOption === 'pay_later') {
         // ── Pay Later: charge per session as attended ──
-        if (entry.status === 'present' || entry.status === 'late') {
+        if (entry.status === 'present') {
           if (!existingCharge) {
             await createCharge(supabase, {
               familyId,
@@ -579,19 +579,19 @@ export async function updateAttendance(sessionId: string, formData: FormData) {
               sessions_charged: (booking.sessions_charged ?? 0) + 1,
             }).eq('id', booking.id)
           }
-        } else if (entry.status === 'absent') {
-          // Unexcused absence — first 2 per term get no charge, after that fully charged
+        } else if (entry.status === 'noshow') {
+          // No-show — first 2 per term get no charge, after that fully charged
           if (!existingCharge) {
-            // Count existing unexcused absence charges for this player/program
-            const { count: unexcusedCount } = await supabase
+            // Count existing no-show charges for this player/program
+            const { count: noshowCount } = await supabase
               .from('attendances')
               .select('*', { count: 'exact', head: true })
               .eq('player_id', entry.playerId)
-              .eq('status', 'absent')
+              .eq('status', 'noshow')
               .in('session_id', (await supabase.from('sessions').select('id').eq('program_id', programId)).data?.map(s => s.id) ?? [])
 
-            if ((unexcusedCount ?? 0) > 2) {
-              // 3rd+ unexcused: fully charged
+            if ((noshowCount ?? 0) > 2) {
+              // 3rd+ no-show: fully charged
               await createCharge(supabase, {
                 familyId,
                 playerId: entry.playerId,
@@ -601,24 +601,24 @@ export async function updateAttendance(sessionId: string, formData: FormData) {
                 sessionId,
                 programId,
                 bookingId: booking.id,
-                description: `${program?.name ?? 'Session'} - Absent (unexcused)`,
+                description: `${program?.name ?? 'Session'} - No Show`,
                 amountCents: sessionPrice,
                 status: 'confirmed',
                 createdBy: user.id,
               })
             }
-            // First 2 unexcused: no charge (credit)
+            // First 2 no-shows: no charge (credit)
           }
-        } else if (entry.status === 'excused') {
-          // Excused: no charge. Void existing charge if one was already created.
+        } else if (entry.status === 'absent') {
+          // Absent (notified): no charge. Void existing charge if one was already created.
           if (existingCharge) {
             await voidCharge(supabase, existingCharge.id, familyId)
           }
         }
       } else if (paymentOption === 'pay_now') {
         // ── Pay Now: already paid for term, only create credits ──
-        if (entry.status === 'excused') {
-          // Create a credit for the missed session
+        if (entry.status === 'absent') {
+          // Create a credit for the missed session (notified absence)
           if (!existingCharge) {
             await createCharge(supabase, {
               familyId,
@@ -629,13 +629,13 @@ export async function updateAttendance(sessionId: string, formData: FormData) {
               sessionId,
               programId,
               bookingId: booking.id,
-              description: `${program?.name ?? 'Session'} - Excused absence credit`,
+              description: `${program?.name ?? 'Session'} - Absence credit`,
               amountCents: -sessionPrice,
               status: 'confirmed',
               createdBy: user.id,
             })
           }
-        } else if (session.session_type === 'makeup' && (entry.status === 'present' || entry.status === 'late')) {
+        } else if (session.session_type === 'makeup' && entry.status === 'present') {
           // Makeup session: charge at session rate (they used their credit)
           if (!existingCharge) {
             await createCharge(supabase, {
@@ -656,7 +656,7 @@ export async function updateAttendance(sessionId: string, formData: FormData) {
         }
       } else if (isPrivate) {
         // ── Private lessons (may not have payment_option set) ──
-        if (entry.status === 'present' || entry.status === 'late') {
+        if (entry.status === 'present') {
           if (!existingCharge) {
             await createCharge(supabase, {
               familyId,
@@ -673,24 +673,24 @@ export async function updateAttendance(sessionId: string, formData: FormData) {
               createdBy: user.id,
             })
           }
-        } else if (entry.status === 'excused') {
-          // Full credit for excused (24hrs+ notice or admin-approved)
+        } else if (entry.status === 'absent') {
+          // Absent (notified): full credit, void existing charge
           if (existingCharge) {
             await voidCharge(supabase, existingCharge.id, familyId)
           }
-        } else if (entry.status === 'absent') {
-          // Unexcused private absence: 1st = 50% charge, 2nd+ = full charge
+        } else if (entry.status === 'noshow') {
+          // No-show private: 1st = 50% charge, 2nd+ = full charge
           if (!existingCharge) {
-            const { count: priorUnexcused } = await supabase
+            const { count: priorNoShows } = await supabase
               .from('attendances')
               .select('*', { count: 'exact', head: true })
               .eq('player_id', entry.playerId)
-              .eq('status', 'absent')
+              .eq('status', 'noshow')
               .neq('session_id', sessionId)
               .in('session_id', (await supabase.from('sessions').select('id').eq('program_id', programId).eq('session_type', 'private')).data?.map(s => s.id) ?? [])
 
-            const chargeAmount = (priorUnexcused ?? 0) === 0
-              ? Math.round(sessionPrice * 0.5) // 1st unexcused: 50%
+            const chargeAmount = (priorNoShows ?? 0) === 0
+              ? Math.round(sessionPrice * 0.5) // 1st no-show: 50%
               : sessionPrice // 2nd+: full
 
             await createCharge(supabase, {
@@ -702,7 +702,7 @@ export async function updateAttendance(sessionId: string, formData: FormData) {
               sessionId,
               programId,
               bookingId: booking.id,
-              description: `Private lesson - No-show (${(priorUnexcused ?? 0) === 0 ? '50%' : 'full'} charge)`,
+              description: `Private lesson - No Show (${(priorNoShows ?? 0) === 0 ? '50%' : 'full'} charge)`,
               amountCents: chargeAmount,
               status: 'confirmed',
               createdBy: user.id,

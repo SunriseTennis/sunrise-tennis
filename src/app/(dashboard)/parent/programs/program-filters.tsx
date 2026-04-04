@@ -313,9 +313,9 @@ export function ParentProgramFilters({
     }
     for (const [sessionId, records] of bySession) {
       const bookedPlayerIds = new Set(records.filter(r => r.status === 'present').map(r => r.player_id))
-      const awayPlayerIds = new Set(records.filter(r => r.status === 'excused').map(r => r.player_id))
+      const awayPlayerIds = new Set(records.filter(r => r.status === 'absent').map(r => r.player_id))
       const hasPresent = bookedPlayerIds.size > 0
-      const allExcused = records.length > 0 && records.every(r => r.status === 'excused')
+      const allExcused = records.length > 0 && records.every(r => r.status === 'absent')
       const playerStatus: Record<string, string> = {}
       for (const r of records) playerStatus[r.player_id] = r.status
       map.set(sessionId, { booked: hasPresent, allAway: allExcused, bookedPlayerIds, awayPlayerIds, playerStatus })

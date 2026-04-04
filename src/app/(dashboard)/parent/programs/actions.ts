@@ -349,11 +349,11 @@ export async function markSessionAway(
 
   if (!player) return { error: 'Player not found' }
 
-  // Update or create attendance as excused
+  // Update or create attendance as absent (notified absence)
   await supabase
     .from('attendances')
     .upsert(
-      { session_id: sessionId, player_id: playerId, status: 'excused' },
+      { session_id: sessionId, player_id: playerId, status: 'absent' },
       { onConflict: 'session_id,player_id' }
     )
 
