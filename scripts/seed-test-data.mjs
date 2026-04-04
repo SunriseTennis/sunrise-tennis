@@ -55,6 +55,20 @@ async function restSelect(table, query) {
   return res.json();
 }
 
+async function rpcCall(fnName, params) {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${fnName}`, {
+    method: "POST",
+    headers: restHeaders,
+    body: JSON.stringify(params),
+  });
+  if (res.status >= 400) {
+    const body = await res.text();
+    console.error(`  FAILED rpc/${fnName}: ${res.status} ${body}`);
+    return null;
+  }
+  return res.json();
+}
+
 async function createAuthUser(email) {
   // Check if user already exists
   const checkRes = await fetch(
@@ -448,12 +462,76 @@ async function run() {
     await restInsert("bookings", bookingRows);
   }
 
-  // ── Summary ──────────────────────────────────────────────────────────
+  // 12. Create per-session charges for each enrollment
+  console.log("\nCreating per-session charges...");
+  const chargeRows = [];
+  const programSessions = {}; // cache: programId -> sessions[]
+  const programPricing = {}; // cache: programId -> per_session_cents
+
+  for (const pi of playerIndex) {
+    const key = `${pi.familyNum}-${pi.playerIdx}`;
+    const programName = ENROLLMENT_MAP[key];
+    if (!programName) continue;
+
+    const programId = programByName[programName];
+    if (!programId) continue;
+
+    // Fetch sessions for this program (cached)
+    if (!programSessions[programId]) {
+      const today = new Date().toISOString().split("T")[0];
+      programSessions[programId] = await restSelect(
+        "sessions",
+        `program_id=eq.${programId}&status=eq.scheduled&date=gte.${today}&order=date.asc&select=id,date`
+      );
+    }
+
+    // Fetch pricing (cached)
+    if (!programPricing[programId]) {
+      const details = await restSelect("programs", `id=eq.${programId}&select=per_session_cents`);
+      programPricing[programId] = details?.[0]?.per_session_cents ?? 2000;
+    }
+
+    const sessions = programSessions[programId];
+    const perSessionCents = programPricing[programId];
+
+    for (const session of sessions) {
+      chargeRows.push({
+        family_id: pi.familyId,
+        player_id: pi.playerId,
+        type: "session",
+        source_type: "enrollment",
+        session_id: session.id,
+        program_id: programId,
+        description: `${programName} - ${session.date}`,
+        amount_cents: perSessionCents,
+        status: "pending",
+      });
+    }
+  }
+
+  if (chargeRows.length > 0) {
+    // Insert in batches of 100 (REST API payload limit)
+    for (let i = 0; i < chargeRows.length; i += 100) {
+      const batch = chargeRows.slice(i, i + 100);
+      await restInsert("charges", batch);
+    }
+    console.log(`  Created ${chargeRows.length} charges across ${rosterRows.length} enrollments`);
+  }
+
+  // 13. Recalculate balances for all test families
+  console.log("\nRecalculating family balances...");
+  for (const f of TEST_FAMILIES) {
+    await rpcCall("recalculate_family_balance", { target_family_id: familyUUID(f.num) });
+  }
+  console.log("  OK recalculated 10 family balances");
+
+  // ── Summary ───────────────────────────���──────────────────────────────
   console.log("\n=== Test Data Seeded Successfully ===\n");
   console.log("Families: 10 (T001-T010)");
   console.log(`Players:  ${playerRows.length}`);
   console.log("Coaches:  2 (Test-Alice, Test-Ben)");
   console.log(`Enrollments: ${rosterRows.length}`);
+  console.log(`Charges:  ${chargeRows.length}`);
   console.log("");
   console.log("\nLogin credentials (password for all: " + PASSWORD + "):\n");
   for (const f of TEST_FAMILIES) {
