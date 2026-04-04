@@ -48,8 +48,7 @@ export default async function ParentProgramDetailPage({
       .eq('program_id', programId)
       .gte('date', new Date().toISOString().split('T')[0])
       .eq('status', 'scheduled')
-      .order('date')
-      .limit(8),
+      .order('date'),
   ])
 
   if (!program) notFound()

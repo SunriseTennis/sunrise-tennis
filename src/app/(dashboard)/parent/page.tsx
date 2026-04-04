@@ -126,7 +126,7 @@ export default async function ParentDashboard() {
             <p className="text-sm font-medium text-white/80">Welcome back</p>
             <h1 className="text-2xl font-bold">{firstName}</h1>
           </div>
-          <div className="text-right">
+          <Link href="/parent/payments" className="text-right group">
             <p className="text-xs font-medium text-white/70">Current Balance</p>
             <p className={`text-2xl font-bold tabular-nums ${
               balanceCents < 0 ? 'text-red-200' :
@@ -135,12 +135,10 @@ export default async function ParentDashboard() {
             }`}>
               {formatCurrency(balanceCents)}
             </p>
-            {balanceCents < 0 && (
-              <Link href="/parent/payments" className="mt-1 inline-flex items-center gap-1 rounded-full bg-white/20 px-2.5 py-0.5 text-xs font-medium text-white backdrop-blur-sm transition-colors hover:bg-white/30">
-                Pay now <ChevronRight className="size-3" />
-              </Link>
-            )}
-          </div>
+            <span className="mt-1 inline-flex items-center gap-1 rounded-full bg-white/20 px-2.5 py-0.5 text-xs font-medium text-white backdrop-blur-sm transition-colors group-hover:bg-white/30">
+              {balanceCents < 0 ? 'Pay now' : 'View payments'} <ChevronRight className="size-3" />
+            </span>
+          </Link>
         </div>
       </div>
 
