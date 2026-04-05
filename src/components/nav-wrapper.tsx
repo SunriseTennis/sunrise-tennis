@@ -2,12 +2,12 @@
 
 import { NavTabs } from '@/components/nav-tabs'
 import { MobileBottomNav } from '@/components/mobile-bottom-nav'
-import type { LucideIcon } from 'lucide-react'
+import type { NavIconName } from '@/components/nav-icon-map'
 
-interface NavItem {
+export interface NavItem {
   href: string
   label: string
-  icon: LucideIcon
+  icon: NavIconName
   badge?: number | boolean
 }
 

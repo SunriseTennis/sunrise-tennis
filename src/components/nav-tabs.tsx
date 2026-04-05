@@ -2,13 +2,14 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import type { LucideIcon } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
+import { NAV_ICONS } from '@/components/nav-icon-map'
+import type { NavIconName } from '@/components/nav-icon-map'
 
 interface NavItem {
   href: string
   label: string
-  icon?: LucideIcon
+  icon?: NavIconName
   badge?: number | boolean
 }
 
@@ -36,7 +37,7 @@ export function NavTabs({ items }: NavTabsProps) {
                 : 'text-deep-navy/70 hover:bg-white/60 hover:text-foreground'
             )}
           >
-            {item.icon && <item.icon className="size-4" />}
+            {item.icon && (() => { const Icon = NAV_ICONS[item.icon]; return Icon ? <Icon className="size-4" /> : null })()}
             {item.label}
             {item.badge && (
               <span className={cn(

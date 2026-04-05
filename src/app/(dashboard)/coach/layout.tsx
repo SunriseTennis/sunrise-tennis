@@ -1,12 +1,6 @@
 import { createClient, getSessionUser } from '@/lib/supabase/server'
 import { NavWrapper } from '@/components/nav-wrapper'
-import {
-  LayoutDashboard,
-  Calendar,
-  Clock,
-  Users,
-  DollarSign,
-} from 'lucide-react'
+import type { NavItem } from '@/components/nav-wrapper'
 
 export default async function CoachLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createClient()
@@ -35,12 +29,12 @@ export default async function CoachLayout({ children }: { children: React.ReactN
     }
   }
 
-  const navItems = [
-    { href: '/coach', label: 'Overview', icon: LayoutDashboard },
-    { href: '/coach/schedule', label: 'Schedule', icon: Calendar },
-    { href: '/coach/availability', label: 'Availability', icon: Clock },
-    { href: '/coach/privates', label: 'Privates', icon: Users, badge: privatesBadge },
-    { href: '/coach/earnings', label: 'Earnings', icon: DollarSign },
+  const navItems: NavItem[] = [
+    { href: '/coach', label: 'Overview', icon: 'LayoutDashboard' },
+    { href: '/coach/schedule', label: 'Schedule', icon: 'Calendar' },
+    { href: '/coach/availability', label: 'Availability', icon: 'Clock' },
+    { href: '/coach/privates', label: 'Privates', icon: 'Users', badge: privatesBadge },
+    { href: '/coach/earnings', label: 'Earnings', icon: 'DollarSign' },
   ]
 
   return (

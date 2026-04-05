@@ -1,14 +1,6 @@
 import { createClient, getSessionUser } from '@/lib/supabase/server'
 import { NavWrapper } from '@/components/nav-wrapper'
-import {
-  LayoutDashboard,
-  GraduationCap,
-  CreditCard,
-  Trophy,
-  Settings,
-  CalendarDays,
-  UserPlus,
-} from 'lucide-react'
+import type { NavItem } from '@/components/nav-wrapper'
 
 export default async function ParentLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createClient()
@@ -50,14 +42,14 @@ export default async function ParentLayout({ children }: { children: React.React
     }
   }
 
-  const navItems = [
-    { href: '/parent', label: 'Overview', icon: LayoutDashboard },
-    { href: '/parent/programs', label: 'Programs', icon: GraduationCap },
-    { href: '/parent/bookings', label: 'Privates', icon: UserPlus, badge: privatesBadge },
-    { href: '/parent/payments', label: 'Payments', icon: CreditCard, badge: paymentBadge },
-    { href: '/parent/teams', label: 'Comp', icon: Trophy },
-    { href: '/parent/events', label: 'Events', icon: CalendarDays },
-    { href: '/parent/settings', label: 'Settings', icon: Settings },
+  const navItems: NavItem[] = [
+    { href: '/parent', label: 'Overview', icon: 'LayoutDashboard' },
+    { href: '/parent/programs', label: 'Programs', icon: 'GraduationCap' },
+    { href: '/parent/bookings', label: 'Privates', icon: 'UserPlus', badge: privatesBadge },
+    { href: '/parent/payments', label: 'Payments', icon: 'CreditCard', badge: paymentBadge },
+    { href: '/parent/teams', label: 'Comp', icon: 'Trophy' },
+    { href: '/parent/events', label: 'Events', icon: 'CalendarDays' },
+    { href: '/parent/settings', label: 'Settings', icon: 'Settings' },
   ]
 
   return (

@@ -3,14 +3,15 @@
 import { useState, useRef, useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import type { LucideIcon } from 'lucide-react'
 import { MoreHorizontal } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
+import { NAV_ICONS } from '@/components/nav-icon-map'
+import type { NavIconName } from '@/components/nav-icon-map'
 
 interface NavItem {
   href: string
   label: string
-  icon: LucideIcon
+  icon: NavIconName
   badge?: number | boolean
 }
 
@@ -75,10 +76,7 @@ export function MobileBottomNav({ items, overflowItems }: MobileBottomNavProps) 
                     ? 'bg-primary/12 shadow-sm'
                     : ''
                 )}>
-                  <item.icon className={cn(
-                    'size-[18px] transition-all',
-                    isActive ? 'text-primary' : ''
-                  )} />
+                  {(() => { const Icon = NAV_ICONS[item.icon]; return Icon ? <Icon className={cn('size-[18px] transition-all', isActive ? 'text-primary' : '')} /> : null })()}
                   {item.badge && (
                     <span className="absolute -right-1 -top-1 flex size-4 items-center justify-center rounded-full bg-danger text-[9px] font-bold text-white">
                       {typeof item.badge === 'number' ? (item.badge > 9 ? '9+' : item.badge) : ''}
@@ -134,7 +132,7 @@ export function MobileBottomNav({ items, overflowItems }: MobileBottomNavProps) 
                             : 'text-foreground hover:bg-muted/50'
                         )}
                       >
-                        <item.icon className="size-4" />
+                        {(() => { const Icon = NAV_ICONS[item.icon]; return Icon ? <Icon className="size-4" /> : null })()}
                         {item.label}
                         {item.badge && (
                           <span className="ml-auto flex size-5 items-center justify-center rounded-full bg-danger text-[10px] font-bold text-white">
