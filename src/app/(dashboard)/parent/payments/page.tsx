@@ -1,14 +1,12 @@
 import { redirect } from 'next/navigation'
 import { createClient, getSessionUser } from '@/lib/supabase/server'
-import { formatCurrency } from '@/lib/utils/currency'
 import { EmptyState } from '@/components/empty-state'
-import { CreditCard, Ticket } from 'lucide-react'
+import { CreditCard } from 'lucide-react'
 import { PaymentOptions } from './payment-options'
 import { ChargesList } from './charges-list'
-import { VoucherForm } from './voucher-form'
+import { VoucherForm, VoucherHistory } from './voucher-form'
 import { BalanceHero } from './balance-hero'
 import { PaymentHistory } from './payment-history'
-import { StatusBadge } from '@/components/status-badge'
 
 export default async function ParentPaymentsPage() {
   const supabase = await createClient()
@@ -36,17 +34,23 @@ export default async function ParentPaymentsPage() {
     )
   }
 
-  const [balanceRes, paymentsRes, chargesRes, vouchersRes] = await Promise.all([
+  const [balanceRes, paymentsRes, chargesRes, vouchersRes, playersRes, familyRes] = await Promise.all([
     supabase.from('family_balance').select('balance_cents, confirmed_balance_cents, projected_balance_cents').eq('family_id', familyId).single(),
     supabase.from('payments').select('*, payment_allocations(amount_cents, charge_id, charges:charge_id(description, session_id, sessions:session_id(date, status)))').eq('family_id', familyId).neq('status', 'voided').order('created_at', { ascending: false }).limit(100),
     supabase.from('charges').select('id, type, source_type, description, amount_cents, status, program_id, session_id, player_id, created_at, sessions:session_id(date, status), players:player_id(first_name)').eq('family_id', familyId).in('status', ['pending', 'confirmed']).order('created_at', { ascending: false }).limit(100),
-    supabase.from('vouchers').select('id, voucher_code, voucher_type, amount_cents, status, submitted_at').eq('family_id', familyId).order('submitted_at', { ascending: false }).limit(10),
+    supabase.from('vouchers').select('id, child_first_name, child_surname, amount_cents, status, submitted_at, rejection_reason, voucher_number, submission_method').eq('family_id', familyId).order('submitted_at', { ascending: false }).limit(20),
+    supabase.from('players').select('id, first_name, last_name, dob').eq('family_id', familyId).eq('status', 'active').order('first_name'),
+    supabase.from('families').select('primary_contact, address').eq('id', familyId).single(),
   ])
 
   const balance = balanceRes.data
   const payments = paymentsRes.data
   const charges = chargesRes.data
   const vouchers = vouchersRes.data
+  const players = playersRes.data ?? []
+  const familyData = familyRes.data
+  const familyContact = familyData?.primary_contact as { name?: string; phone?: string; email?: string } | null
+  const familyAddress = familyData?.address as string | null
 
   // Enrich charges with program names + types
   const programIds = [...new Set((charges ?? []).filter(c => c.program_id).map(c => c.program_id!))]
@@ -138,27 +142,12 @@ export default async function ParentPaymentsPage() {
 
       {/* ── Sports Voucher ── */}
       <section className="animate-fade-up" style={{ animationDelay: '220ms' }}>
-        <VoucherForm />
-        {vouchers && vouchers.length > 0 && (
-          <div className="mt-3 space-y-2">
-            <h3 className="text-sm font-semibold text-foreground">Submitted Vouchers</h3>
-            {vouchers.map((v) => (
-              <div key={v.id} className="flex items-center justify-between rounded-lg border border-border bg-card px-4 py-2.5 text-sm">
-                <div className="flex items-center gap-2">
-                  <Ticket className="size-4 text-muted-foreground" />
-                  <div>
-                    <p className="font-medium text-foreground">{v.voucher_code}</p>
-                    <p className="text-xs capitalize text-muted-foreground">{v.voucher_type.replace('_', ' ')}</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="tabular-nums text-foreground">{formatCurrency(v.amount_cents)}</span>
-                  <StatusBadge status={v.status} />
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
+        <VoucherForm
+          players={players}
+          familyContact={familyContact}
+          familyAddress={familyAddress}
+        />
+        {vouchers && <VoucherHistory vouchers={vouchers} />}
       </section>
 
       {/* ── Payment History ── */}

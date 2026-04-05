@@ -2109,53 +2109,174 @@ export type Database = {
         }
         Relationships: []
       }
-      vouchers: {
+      voucher_batches: {
         Row: {
-          amount_cents: number
-          charge_id: string | null
+          batch_number: number
           created_at: string | null
-          family_id: string
           id: string
           notes: string | null
-          reviewed_at: string | null
-          reviewed_by: string | null
+          processed_at: string | null
           status: string
           submitted_at: string | null
           submitted_by: string | null
-          voucher_code: string
-          voucher_type: string
         }
         Insert: {
-          amount_cents?: number
-          charge_id?: string | null
+          batch_number?: number
           created_at?: string | null
-          family_id: string
           id?: string
           notes?: string | null
-          reviewed_at?: string | null
-          reviewed_by?: string | null
+          processed_at?: string | null
           status?: string
           submitted_at?: string | null
           submitted_by?: string | null
-          voucher_code: string
-          voucher_type?: string
         }
         Update: {
-          amount_cents?: number
-          charge_id?: string | null
+          batch_number?: number
           created_at?: string | null
-          family_id?: string
           id?: string
           notes?: string | null
-          reviewed_at?: string | null
-          reviewed_by?: string | null
+          processed_at?: string | null
           status?: string
           submitted_at?: string | null
           submitted_by?: string | null
-          voucher_code?: string
-          voucher_type?: string
+        }
+        Relationships: []
+      }
+      vouchers: {
+        Row: {
+          activity_cost: string | null
+          amount_cents: number
+          batch_id: string | null
+          charge_id: string | null
+          child_dob: string | null
+          child_first_name: string | null
+          child_gender: string | null
+          child_surname: string | null
+          completed_at: string | null
+          created_at: string | null
+          english_main_language: boolean | null
+          family_id: string
+          file_path: string | null
+          first_time: boolean | null
+          has_disability: boolean | null
+          id: string
+          is_indigenous: boolean | null
+          linked_voucher_id: string | null
+          medicare_number: string | null
+          notes: string | null
+          other_language: string | null
+          parent_contact_number: string | null
+          parent_email: string | null
+          parent_first_name: string | null
+          parent_surname: string | null
+          player_id: string | null
+          portal_submitted_at: string | null
+          portal_submitted_by: string | null
+          postcode: string | null
+          rejection_reason: string | null
+          reviewed_at: string | null
+          reviewed_by: string | null
+          status: string
+          street_address: string | null
+          submission_method: string
+          submitted_at: string | null
+          submitted_by: string | null
+          suburb: string | null
+          visa_number: string | null
+          voucher_number: number
+        }
+        Insert: {
+          activity_cost?: string | null
+          amount_cents?: number
+          batch_id?: string | null
+          charge_id?: string | null
+          child_dob?: string | null
+          child_first_name?: string | null
+          child_gender?: string | null
+          child_surname?: string | null
+          completed_at?: string | null
+          created_at?: string | null
+          english_main_language?: boolean | null
+          family_id: string
+          file_path?: string | null
+          first_time?: boolean | null
+          has_disability?: boolean | null
+          id?: string
+          is_indigenous?: boolean | null
+          linked_voucher_id?: string | null
+          medicare_number?: string | null
+          notes?: string | null
+          other_language?: string | null
+          parent_contact_number?: string | null
+          parent_email?: string | null
+          parent_first_name?: string | null
+          parent_surname?: string | null
+          player_id?: string | null
+          portal_submitted_at?: string | null
+          portal_submitted_by?: string | null
+          postcode?: string | null
+          rejection_reason?: string | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          status?: string
+          street_address?: string | null
+          submission_method?: string
+          submitted_at?: string | null
+          submitted_by?: string | null
+          suburb?: string | null
+          visa_number?: string | null
+          voucher_number?: number
+        }
+        Update: {
+          activity_cost?: string | null
+          amount_cents?: number
+          batch_id?: string | null
+          charge_id?: string | null
+          child_dob?: string | null
+          child_first_name?: string | null
+          child_gender?: string | null
+          child_surname?: string | null
+          completed_at?: string | null
+          created_at?: string | null
+          english_main_language?: boolean | null
+          family_id?: string
+          file_path?: string | null
+          first_time?: boolean | null
+          has_disability?: boolean | null
+          id?: string
+          is_indigenous?: boolean | null
+          linked_voucher_id?: string | null
+          medicare_number?: string | null
+          notes?: string | null
+          other_language?: string | null
+          parent_contact_number?: string | null
+          parent_email?: string | null
+          parent_first_name?: string | null
+          parent_surname?: string | null
+          player_id?: string | null
+          portal_submitted_at?: string | null
+          portal_submitted_by?: string | null
+          postcode?: string | null
+          rejection_reason?: string | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          status?: string
+          street_address?: string | null
+          submission_method?: string
+          submitted_at?: string | null
+          submitted_by?: string | null
+          suburb?: string | null
+          visa_number?: string | null
+          voucher_number?: number
         }
         Relationships: [
+          {
+            foreignKeyName: "vouchers_batch_id_fkey"
+            columns: ["batch_id"]
+            isOneToOne: false
+            referencedRelation: "voucher_batches"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "vouchers_charge_id_fkey"
             columns: ["charge_id"]
@@ -2168,6 +2289,20 @@ export type Database = {
             columns: ["family_id"]
             isOneToOne: false
             referencedRelation: "families"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "vouchers_linked_voucher_id_fkey"
+            columns: ["linked_voucher_id"]
+            isOneToOne: false
+            referencedRelation: "vouchers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "vouchers_player_id_fkey"
+            columns: ["player_id"]
+            isOneToOne: false
+            referencedRelation: "players"
             referencedColumns: ["id"]
           },
         ]

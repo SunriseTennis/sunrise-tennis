@@ -280,12 +280,44 @@ export const enrolFormSchema = z.object({
   notes: optionalString(1000),
 })
 
-// Parent - Vouchers
-export const voucherTypeSchema = z.enum(['active_kids', 'get_active'])
+// Parent - Vouchers (SA Sports Vouchers Plus)
+export const voucherGenderSchema = z.enum(['Male', 'Female', 'Gender Diverse'])
+export const voucherAmountSchema = z.enum(['100', '200'])
 
 export const submitVoucherFormSchema = z.object({
-  voucher_code: requiredString('Voucher code is required', 100),
-  voucher_type: voucherTypeSchema,
+  player_id: uuidString('Select a player'),
+  amount: voucherAmountSchema,
+  // Child's information
+  child_first_name: requiredString('Child first name is required', 100),
+  child_surname: requiredString('Child surname is required', 100),
+  child_gender: voucherGenderSchema,
+  child_dob: z.string().regex(/^\d{2}\/\d{2}\/\d{4}$/, 'Date must be DD/MM/YYYY'),
+  // Medicare information (either medicare or visa required)
+  medicare_number: optionalString(11),
+  visa_number: optionalString(50),
+  // Parent/Guardian information
+  parent_first_name: requiredString('Parent first name is required', 100),
+  parent_surname: requiredString('Parent surname is required', 100),
+  street_address: requiredString('Street address is required', 200),
+  suburb: requiredString('Suburb is required', 100),
+  postcode: z.string().regex(/^\d{4}$/, 'Postcode must be 4 digits'),
+  parent_contact_number: requiredString('Contact number is required', 20),
+  parent_email: z.string().email('Invalid email address').max(200),
+  // Eligibility questions
+  first_time: z.enum(['Yes', 'No']),
+  has_disability: z.enum(['Yes', 'No']),
+  is_indigenous: z.enum(['Yes', 'No']),
+  english_main_language: z.enum(['Yes', 'No']),
+  other_language: optionalString(100),
+  activity_cost: z.string().regex(/^\d+$/, 'Enter cost as a whole number (e.g. 260)'),
+}).refine(
+  (data) => (data.medicare_number && data.medicare_number.length === 11) || (data.visa_number && data.visa_number.length > 0),
+  { message: 'Either Medicare number (11 digits) or Australian visa number is required', path: ['medicare_number'] },
+)
+
+export const submitVoucherImageSchema = z.object({
+  player_id: uuidString('Select a player'),
+  amount: voucherAmountSchema,
 })
 
 // Admin - Family Pricing
