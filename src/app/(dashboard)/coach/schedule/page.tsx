@@ -1,6 +1,5 @@
 import { redirect } from 'next/navigation'
 import { createClient, getSessionUser } from '@/lib/supabase/server'
-import { PageHeader } from '@/components/page-header'
 import { getCurrentTermRange, getCurrentOrNextTermEnd } from '@/lib/utils/school-terms'
 import { CoachCalendar } from './coach-calendar'
 
@@ -19,9 +18,15 @@ export default async function CoachSchedulePage() {
   const coachId = coach?.id
   if (!coachId) {
     return (
-      <div>
-        <PageHeader title="Schedule" />
-        <p className="mt-4 text-sm text-muted-foreground">Coach profile not linked.</p>
+      <div className="space-y-6">
+        <div className="animate-fade-up relative overflow-hidden rounded-2xl bg-gradient-to-r from-[#2B5EA7] via-[#6480A4] to-[#E87450] p-5 text-white shadow-elevated">
+          <div className="absolute inset-0 rounded-2xl bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.15),transparent_60%)]" />
+          <div className="relative">
+            <p className="text-sm font-medium text-white/80">Coach</p>
+            <h1 className="text-2xl font-bold">Schedule</h1>
+          </div>
+        </div>
+        <p className="text-sm text-slate-blue">Coach profile not linked.</p>
       </div>
     )
   }
@@ -163,12 +168,18 @@ export default async function CoachSchedulePage() {
   })
 
   return (
-    <div>
-      <PageHeader
-        title="Schedule"
-        description="Your sessions this term."
-      />
-      <div className="mt-6">
+    <div className="space-y-6">
+      {/* ── Hero Banner ── */}
+      <div className="animate-fade-up relative overflow-hidden rounded-2xl bg-gradient-to-r from-[#2B5EA7] via-[#6480A4] to-[#E87450] p-5 text-white shadow-elevated">
+        <div className="absolute inset-0 rounded-2xl bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.15),transparent_60%)]" />
+        <div className="relative">
+          <p className="text-sm font-medium text-white/80">Coach</p>
+          <h1 className="text-2xl font-bold">Schedule</h1>
+          <p className="mt-0.5 text-sm text-white/70">Your sessions this term</p>
+        </div>
+      </div>
+
+      <div className="animate-fade-up" style={{ animationDelay: '80ms' }}>
         <CoachCalendar
           sessions={calendarSessions}
           programRosters={programRosters}
