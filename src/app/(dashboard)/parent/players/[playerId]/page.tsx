@@ -107,8 +107,6 @@ export default async function ParentPlayerDetailPage({ params }: { params: Promi
 
   const age = calculateAge(player.dob)
   const levelText = formatLevel(player.ball_color, player.level)
-  const initial = player.first_name?.[0]?.toUpperCase() ?? '?'
-
   // Extract latest content for preview cards
   const latestNote = lessonNotes?.[0] ?? null
   const latestNoteDate = latestNote
@@ -135,10 +133,6 @@ export default async function ParentPlayerDetailPage({ params }: { params: Promi
         </Link>
 
         <div className="relative flex items-center gap-4">
-          {/* Avatar */}
-          <div className="flex size-14 shrink-0 items-center justify-center rounded-full bg-white/20 text-xl font-bold text-white shadow-sm backdrop-blur-sm">
-            {initial}
-          </div>
           <div className="min-w-0 flex-1">
             <h1 className="text-xl font-bold truncate">{player.first_name} {player.last_name}</h1>
             <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-white/80">

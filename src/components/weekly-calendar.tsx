@@ -62,6 +62,8 @@ export interface CalendarEvent {
   capacityColor?: 'green' | 'amber' | 'red' | 'blue'
   /** Assistant coach names */
   assistantCoaches?: string[]
+  /** Inline style override (e.g. for gradient backgrounds) */
+  colorStyle?: React.CSSProperties
 }
 
 function parseTime(time: string): number {
@@ -110,6 +112,10 @@ function formatWeekRange(monday: Date): string {
     return `${mDay} - ${sDay} ${mMonth} ${monday.getFullYear()}`
   }
   return `${mDay} ${mMonth} - ${sDay} ${sMonth} ${sunday.getFullYear()}`
+}
+
+function toLocalDateStr(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
 function formatDateShort(dateStr: string): string {
@@ -664,7 +670,7 @@ export function WeeklyCalendar({
           <div className="flex flex-col items-center gap-0.5">
             <span className="text-sm font-semibold text-foreground">
               {viewMode === 'day'
-                ? formatDayDate(addDays(monday, selectedDayIndex).toISOString().split('T')[0])
+                ? formatDayDate(toLocalDateStr(addDays(monday, selectedDayIndex)))
                 : formatWeekRange(monday)
               }
             </span>
@@ -691,16 +697,6 @@ export function WeeklyCalendar({
           {!hideViewToggle && (
             <div className="flex rounded-lg border border-border bg-white/60 p-0.5">
               <button
-                onClick={() => setViewMode('week')}
-                className={cn(
-                  'flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium transition-colors',
-                  viewMode === 'week' ? 'bg-primary text-white' : 'text-muted-foreground hover:text-foreground'
-                )}
-              >
-                <CalendarDays className="size-3" />
-                Week
-              </button>
-              <button
                 onClick={() => setViewMode('day')}
                 className={cn(
                   'flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium transition-colors',
@@ -709,6 +705,16 @@ export function WeeklyCalendar({
               >
                 <List className="size-3" />
                 Day
+              </button>
+              <button
+                onClick={() => setViewMode('week')}
+                className={cn(
+                  'flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium transition-colors',
+                  viewMode === 'week' ? 'bg-primary text-white' : 'text-muted-foreground hover:text-foreground'
+                )}
+              >
+                <CalendarDays className="size-3" />
+                Week
               </button>
             </div>
           )}
@@ -828,10 +834,12 @@ export function WeeklyCalendar({
                       className={cn(
                         'w-full rounded-lg border text-left transition-all hover:shadow-md',
                         event.color ?? 'border-primary/30 bg-primary/5',
+                        event.isEnrolled && 'ring-2 ring-white/70 shadow-md border-l-4',
                         popupEvent?.id === event.id && 'ring-2 ring-primary',
                         event.sessionStatus === 'cancelled' && 'opacity-30 grayscale',
                         event.sessionStatus === 'rained_out' && 'opacity-50 grayscale',
                       )}
+                      style={event.colorStyle}
                     >
                       <div className="flex items-start justify-between p-3">
                         <div className="min-w-0 flex-1">
@@ -865,14 +873,24 @@ export function WeeklyCalendar({
                             )}
                           </div>
                         </div>
-                        {event.capacityLabel && !hideCapacity && (
-                          <span className={cn(
-                            'shrink-0 ml-2 rounded-full px-2 py-0.5 text-xs font-bold tabular-nums',
-                            CAPACITY_COLORS[event.capacityColor ?? 'green']
-                          )}>
-                            {event.capacityLabel}
-                          </span>
-                        )}
+                        <div className="flex shrink-0 flex-col items-end gap-1 ml-2">
+                          {event.isEnrolled && (
+                            <span className="rounded-full bg-white/80 px-2 py-0.5 text-[10px] font-semibold text-success">
+                              <CheckCircle className="mr-0.5 inline size-3" />Enrolled
+                            </span>
+                          )}
+                          {event.playerNames && event.playerNames.length > 0 && (
+                            <span className="text-xs font-medium opacity-80">{event.playerNames.join(', ')}</span>
+                          )}
+                          {event.capacityLabel && !hideCapacity && (
+                            <span className={cn(
+                              'rounded-full px-2 py-0.5 text-xs font-bold tabular-nums',
+                              CAPACITY_COLORS[event.capacityColor ?? 'green']
+                            )}>
+                              {event.capacityLabel}
+                            </span>
+                          )}
+                        </div>
                       </div>
                     </button>
                   )
@@ -970,6 +988,7 @@ export function WeeklyCalendar({
                             'absolute overflow-hidden rounded-md border px-1 py-0.5 text-left transition-all',
                             isSelected ? 'ring-2 ring-white ring-offset-2 ring-offset-background brightness-110 z-10' : 'hover:brightness-110',
                             event.color ?? 'bg-primary border-primary/80 text-white',
+                            event.isEnrolled && 'ring-2 ring-white/70 shadow-md',
                             event.sessionStatus === 'cancelled' && 'opacity-25 grayscale line-through',
                             event.sessionStatus === 'rained_out' && 'opacity-40 grayscale',
                           )}
@@ -978,6 +997,7 @@ export function WeeklyCalendar({
                             height,
                             left: `calc(${leftPct}% + 1px)`,
                             width: `calc(${widthPct}% - 2px)`,
+                            ...event.colorStyle,
                           }}
                         >
                           {/* Enrolled indicator */}
@@ -989,12 +1009,12 @@ export function WeeklyCalendar({
                           <p className="truncate text-[11px] font-medium leading-tight pr-3">
                             {event.title}
                           </p>
-                          {height >= 36 && (
+                          {height >= 24 && (
                             <p className="truncate text-[10px] opacity-90 leading-tight">
                               {formatTimeShort(event.startTime)} - {formatTimeShort(event.endTime)}
                             </p>
                           )}
-                          {event.subtitle && height >= 48 && (
+                          {event.subtitle && height >= 36 && (
                             <p className="truncate text-[10px] font-semibold opacity-90 leading-tight">
                               {event.subtitle}
                             </p>
@@ -1082,7 +1102,7 @@ export function WeeklyCalendar({
             </div>
 
             {/* Early bird banner */}
-            {earlyBirdActive && popupEvent.earlyBirdPct && popupEvent.programType === 'group' && (
+            {earlyBirdActive && popupEvent.earlyBirdPct && (popupEvent.programType === 'group' || popupEvent.programType === 'squad') && (
               <div className="mt-3 rounded-lg bg-success/5 border border-success/20 px-3 py-2 text-xs text-success font-medium">
                 {popupEvent.earlyBirdPct}% off if you book the term before {formatDateShort(popupEvent.earlyBirdDeadline!)}
               </div>

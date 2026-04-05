@@ -45,6 +45,11 @@ const DEFAULT_CAL_COLORS = {
   available: 'bg-primary/15 border-primary/30 text-foreground',
 }
 
+/** Raw hex values for gradient generation (composite levels like red-orange) */
+const LEVEL_HEX: Record<string, string> = {
+  red: '#C53030', orange: '#E86A20', green: '#2D8A4E', yellow: '#EAB308', blue: '#4A90D9',
+}
+
 /** Button colors for level filter pills */
 const LEVEL_PILL_STYLES: Record<string, { active: string; inactive: string }> = {
   red:    { active: 'bg-ball-red text-white shadow-sm',    inactive: 'bg-ball-red/15 text-ball-red hover:bg-ball-red/25' },
@@ -222,7 +227,7 @@ export function ParentProgramFilters({
   const [typeFilter, setTypeFilter] = useState('group')
   const [calendarFilter, setCalendarFilter] = useState<'all' | 'mine'>('mine')
   // Type toggles for calendar: default groups+squads+comps on, schools off
-  const [calendarTypes, setCalendarTypes] = useState<Set<string>>(() => new Set(['group', 'squad', 'competition']))
+  const [calendarTypes, setCalendarTypes] = useState<Set<string>>(() => new Set(['group', 'squad', 'competition', 'school']))
   const playerIds = useMemo(() => new Set(familyPlayerIds), [familyPlayerIds])
   const playerLevelSet = useMemo(() => new Set(playerLevels), [playerLevels])
 
@@ -372,12 +377,26 @@ export function ParentProgramFilters({
         const isEnrolled = enrolledProgramIds.has(prog.id)
 
         // Color logic: enrolled/booked = solid, away = faded, not enrolled = faded
-        const levelKey = prog.level?.split('-')[0] ?? ''
+        const levelParts = prog.level?.split('-') ?? []
+        const levelKey = levelParts[0] ?? ''
         const colors = LEVEL_CAL_COLORS[levelKey] ?? DEFAULT_CAL_COLORS
         const att = sessionAttendanceMap.get(s.id)
         const hasBooking = isEnrolled || att?.booked === true
         const isAway = hasBooking && att?.allAway === true
         const color = (hasBooking && !isAway) ? colors.enrolled : colors.available
+
+        // Composite levels (e.g. red-orange): use a diagonal gradient
+        let colorStyle: React.CSSProperties | undefined
+        if (levelParts.length >= 2 && LEVEL_HEX[levelParts[0]] && LEVEL_HEX[levelParts[1]]) {
+          const hex1 = LEVEL_HEX[levelParts[0]]
+          const hex2 = LEVEL_HEX[levelParts[1]]
+          const opacity = (hasBooking && !isAway) ? 1 : 0.35
+          colorStyle = {
+            background: `linear-gradient(135deg, ${hex1} 50%, ${hex2} 50%)`,
+            opacity,
+            borderColor: hex1,
+          }
+        }
 
         const eventDate = new Date(s.date + 'T12:00:00')
         const dayOfWeek = eventDate.getDay()
@@ -385,11 +404,12 @@ export function ParentProgramFilters({
         return {
           id: s.id,
           title: formatCalendarTitle(prog.name),
-          subtitle: prog.type,
+          subtitle: undefined,
           dayOfWeek,
           startTime: s.start_time!,
           endTime: s.end_time!,
-          color,
+          color: colorStyle ? 'border-white/40 text-white' : color,
+          colorStyle,
           href: `/parent/programs/${prog.id}`,
           programType: prog.type,
           date: s.date,
@@ -521,8 +541,10 @@ export function ParentProgramFilters({
                     return next
                   })
                 }}
-                  className={cn('rounded-full px-2.5 py-1 text-[11px] font-medium capitalize transition-all',
-                    isOn ? 'bg-primary/10 text-primary border border-primary/30' : 'border border-border text-muted-foreground/50 line-through'
+                  className={cn('rounded-full px-2.5 py-1 text-[11px] font-medium capitalize transition-all border',
+                    isOn
+                      ? (TYPE_PILL_STYLES[t]?.active ?? 'bg-primary text-white shadow-sm')
+                      : (TYPE_PILL_STYLES[t]?.inactive ?? 'bg-muted text-muted-foreground') + ' line-through opacity-60'
                   )}
                 >
                   {label}

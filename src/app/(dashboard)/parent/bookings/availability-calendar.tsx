@@ -593,12 +593,12 @@ export function AvailabilityCalendar({
           </div>
 
           {/* Pricing table */}
-          <table className="w-full text-xs">
+          <table className="mx-auto w-fit text-xs">
             <thead>
               <tr className="text-muted-foreground">
-                <th className="text-left font-medium py-0.5">Coach</th>
-                <th className="text-right font-medium py-0.5">30min</th>
-                <th className="text-right font-medium py-0.5">1hr</th>
+                <th className="text-left font-medium py-0.5 pr-6">Coach</th>
+                <th className="text-right font-medium py-0.5 px-3">30min</th>
+                <th className="text-right font-medium py-0.5 pl-3">1hr</th>
               </tr>
             </thead>
             <tbody>
@@ -618,9 +618,9 @@ export function AvailabilityCalendar({
                 }
                 return rows.map(r => (
                   <tr key={r.label} className="border-t border-border/30">
-                    <td className="py-1 text-foreground font-medium">{r.label}</td>
-                    <td className="py-1 text-right font-semibold text-foreground">${(r.rate / 200).toFixed(0)}</td>
-                    <td className="py-1 text-right font-semibold text-foreground">${(r.rate / 100).toFixed(0)}</td>
+                    <td className="py-1 pr-6 text-foreground font-medium">{r.label}</td>
+                    <td className="py-1 px-3 text-right font-semibold text-foreground">${(r.rate / 200).toFixed(0)}</td>
+                    <td className="py-1 pl-3 text-right font-semibold text-foreground">${(r.rate / 100).toFixed(0)}</td>
                   </tr>
                 ))
               })()}
@@ -629,13 +629,16 @@ export function AvailabilityCalendar({
         </div>
       )}
 
-      {/* View toggle + Calendar */}
-      <div className="flex items-center gap-2 mb-1">
-        <ViewToggle viewMode={viewMode} setViewMode={setViewMode} />
-      </div>
-
+      {/* Calendar */}
       {viewMode === 'month' ? (
-        <MonthlyCalendar events={activeEvents} onDayClick={(dateStr) => setDayPopup(dateStr)} />
+        <div className="rounded-xl border border-border bg-card shadow-card overflow-hidden">
+          <div className="border-b border-border bg-gradient-to-r from-dawn-cream to-peach-mist/40 px-3 py-2">
+            <div className="flex items-center justify-center">
+              <ViewToggle viewMode={viewMode} setViewMode={setViewMode} />
+            </div>
+          </div>
+          <MonthlyCalendar events={activeEvents} onDayClick={(dateStr) => setDayPopup(dateStr)} />
+        </div>
       ) : (
         <WeeklyCalendar
           events={activeEvents}
@@ -644,6 +647,7 @@ export function AvailabilityCalendar({
           nextJumpLabel="Next private"
           defaultView={viewMode}
           hideViewToggle
+          headerLeft={<ViewToggle viewMode={viewMode} setViewMode={setViewMode} />}
         />
       )}
 

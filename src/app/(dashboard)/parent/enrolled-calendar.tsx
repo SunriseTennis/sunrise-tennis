@@ -16,6 +16,9 @@ const PLAYER_PALETTE = [
   'bg-[#8B78B0] border-[#7B68A0] text-white',         // purple
 ]
 
+// Raw hex values for gradient generation (must match PLAYER_PALETTE order)
+const PLAYER_HEX = ['#2B5EA7', '#E87450', '#F5B041', '#6480A4', '#8B78B0']
+
 // Gradient versions for player cards (richer look at larger size)
 export const PLAYER_CARD_STYLES = [
   'bg-gradient-to-br from-[#2B5EA7] to-[#4A7EC7] border-[#1F4E97] text-white',
@@ -162,19 +165,39 @@ export function EnrolledCalendar({
     if (enrolled.size > 0) sessionEnrolledMapData[s.id] = [...enrolled]
   }
 
-  // Build session-based events
+  // Map player names to hex values for gradient generation
+  const playerHexMap = new Map<string, string>()
+  playerOrder.forEach((name, i) => {
+    playerHexMap.set(name, PLAYER_HEX[i % PLAYER_HEX.length])
+  })
+
+  // Build session-based events (filter out sessions with no family enrollment)
   const sessionEvents: CalendarEvent[] = sessions
     .filter(s => s.start_time && s.end_time && s.program_id)
     .map(s => {
       const enrolmentGroup = programEnrollments.get(s.program_id!) ?? []
       const playerNames = enrolmentGroup.map(e => e.playerName).filter(Boolean)
+      // Skip sessions where no family player is enrolled
+      if (playerNames.length === 0) return null
       const first = enrolmentGroup[0]
       const eventDate = new Date(s.date + 'T12:00:00')
       const dayOfWeek = eventDate.getDay()
 
-      const color = colorMode === 'player'
-        ? (playerColorMap.get(playerNames[0] ?? '') ?? PLAYER_PALETTE[0])
-        : (TYPE_COLORS[first?.programType ?? 'group'] ?? TYPE_COLORS.group)
+      let color: string
+      let colorStyle: React.CSSProperties | undefined
+      if (colorMode === 'player') {
+        if (playerNames.length >= 2) {
+          // Multi-player: diagonal gradient of both player colors
+          const hex1 = playerHexMap.get(playerNames[0]) ?? PLAYER_HEX[0]
+          const hex2 = playerHexMap.get(playerNames[1]) ?? PLAYER_HEX[1]
+          color = 'border-white/40 text-white'
+          colorStyle = { background: `linear-gradient(135deg, ${hex1} 50%, ${hex2} 50%)` }
+        } else {
+          color = playerColorMap.get(playerNames[0] ?? '') ?? PLAYER_PALETTE[0]
+        }
+      } else {
+        color = TYPE_COLORS[first?.programType ?? 'group'] ?? TYPE_COLORS.group
+      }
 
       return {
         id: s.id,
@@ -184,6 +207,7 @@ export function EnrolledCalendar({
         startTime: s.start_time!,
         endTime: s.end_time!,
         color,
+        colorStyle,
         href: first?.programId ? `/parent/programs/${first.programId}` : undefined,
         programType: first?.programType,
         programId: first?.programId,
@@ -194,6 +218,7 @@ export function EnrolledCalendar({
         playerAttendance: sessionAttendanceMap.get(s.id),
       }
     })
+    .filter((e): e is NonNullable<typeof e> => e !== null)
 
   // Private booking events (still use dayOfWeek if no date)
   const privateEvents: CalendarEvent[] = (privateBookings ?? [])
