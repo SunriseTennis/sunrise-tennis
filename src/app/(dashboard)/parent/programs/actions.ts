@@ -292,13 +292,18 @@ export async function bookSession(
     if (existingAttendance) continue // skip if already booked
 
     // Create attendance record
-    await supabase
+    const { error: attError } = await supabase
       .from('attendances')
       .insert({
         session_id: sessionId,
         player_id: playerId,
         status: 'present',
       })
+
+    if (attError) {
+      console.error('Failed to create attendance:', attError.message)
+      return { error: 'Failed to book session. Please try again.' }
+    }
 
     // Create charge
     if (sessionPrice > 0) {
@@ -350,12 +355,17 @@ export async function markSessionAway(
   if (!player) return { error: 'Player not found' }
 
   // Update or create attendance as absent (notified absence)
-  await supabase
+  const { error: attError } = await supabase
     .from('attendances')
     .upsert(
       { session_id: sessionId, player_id: playerId, status: 'absent' },
       { onConflict: 'session_id,player_id' }
     )
+
+  if (attError) {
+    console.error('Failed to mark away:', attError.message)
+    return { error: 'Failed to mark away. Please try again.' }
+  }
 
   // Void the charge if one exists for this session+player
   const existingCharge = await getExistingSessionCharge(supabase, sessionId, playerId)
@@ -394,11 +404,16 @@ export async function cancelSessionBooking(
   if (!player) return { error: 'Player not found' }
 
   // Delete attendance record
-  await supabase
+  const { error: attError } = await supabase
     .from('attendances')
     .delete()
     .eq('session_id', sessionId)
     .eq('player_id', playerId)
+
+  if (attError) {
+    console.error('Failed to cancel attendance:', attError.message)
+    return { error: 'Failed to cancel booking. Please try again.' }
+  }
 
   // Void charge
   const existingCharge2 = await getExistingSessionCharge(supabase, sessionId, playerId)

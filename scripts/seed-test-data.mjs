@@ -305,7 +305,7 @@ async function run() {
       email: c.email,
       status: "active",
       is_owner: false,
-      hourly_rate: { group_rate_cents: 2500, private_rate_cents: 3500 },
+      hourly_rate: { group_rate_cents: 2500, private_rate_cents: 3500, client_private_rate_cents: 6000 },
     }))
   );
 

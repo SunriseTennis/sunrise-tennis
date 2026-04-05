@@ -1,10 +1,10 @@
 import type { CalendarEvent } from '@/components/weekly-calendar'
 
 export const LEVEL_COLORS: Record<string, string> = {
-  red: 'bg-ball-red/20 border-ball-red/30',
-  orange: 'bg-ball-orange/20 border-ball-orange/30',
-  green: 'bg-ball-green/20 border-ball-green/30',
-  yellow: 'bg-ball-yellow/20 border-ball-yellow/30',
+  red: 'bg-ball-red/30 border-ball-red/50',
+  orange: 'bg-ball-orange/30 border-ball-orange/50',
+  green: 'bg-ball-green/30 border-ball-green/50',
+  yellow: 'bg-ball-yellow/30 border-ball-yellow/50',
   competitive: 'bg-primary/15 border-primary/30',
 }
 

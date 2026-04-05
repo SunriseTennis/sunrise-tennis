@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { WeeklyCalendar, type CalendarEvent, type CalendarPlayer, type EnrolledPlayersMap } from '@/components/weekly-calendar'
-import { markSessionAway, cancelSessionBooking } from './programs/actions'
+import { markSessionAway, cancelSessionBooking, bookSession } from './programs/actions'
 import { cancelPrivateFromOverview } from './overview-actions'
 import { Users, Layers } from 'lucide-react'
 
@@ -37,7 +37,7 @@ const TYPE_COLORS: Record<string, string> = {
 
 const DAY_PREFIXES = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
 
-function formatCalendarTitle(name: string, type: string): string {
+function formatCalendarTitle(name: string): string {
   let result = name
   const lower = result.toLowerCase()
 
@@ -49,13 +49,6 @@ function formatCalendarTitle(name: string, type: string): string {
   }
 
   result = result.replace(/\s+Ball\b/gi, '')
-
-  const resultLower = result.toLowerCase()
-  if (type === 'group' && !resultLower.includes('group')) {
-    result = result + ' Group'
-  } else if (type === 'squad' && !resultLower.includes('squad')) {
-    result = result + ' Squad'
-  }
 
   return result
 }
@@ -153,7 +146,7 @@ export function EnrolledCalendar({
 
       return {
         id: s.id,
-        title: formatCalendarTitle(first?.programName ?? '', first?.programType ?? 'group'),
+        title: formatCalendarTitle(first?.programName ?? ''),
         subtitle: playerNames.join(', '),
         dayOfWeek,
         startTime: s.start_time!,
@@ -270,6 +263,11 @@ export function EnrolledCalendar({
         players={familyPlayers}
         enrolledPlayersMap={enrolledPlayersMapData}
         hideCapacity
+        onBookSession={async (sid, pid, pids) => {
+          const r = await bookSession(sid, pid, pids)
+          router.refresh()
+          return r
+        }}
         onMarkAway={async (sid, pid) => {
           const fn = onMarkAway ?? markSessionAway
           const r = await fn(sid, pid)

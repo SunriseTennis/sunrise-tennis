@@ -1,12 +1,12 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useFormStatus } from 'react-dom'
 import { WeeklyCalendar, type CalendarEvent } from '@/components/weekly-calendar'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils/cn'
 import { formatTime } from '@/lib/utils/dates'
-import { Calendar, CalendarDays, X, Loader2 } from 'lucide-react'
+import { Calendar, CalendarDays, List, X, Loader2 } from 'lucide-react'
 import { DurationPills } from './duration-pills'
 import { requestPrivateBooking, requestStandingPrivate, cancelPrivateBooking } from './actions'
 import { getStandingDates } from '@/lib/utils/private-booking'
@@ -70,8 +70,8 @@ interface Props {
   rangeEndDate: string // YYYY-MM-DD — end of term or fallback
 }
 
-type ActiveTab = 'yours' | 'all' | string
-type ViewMode = 'weekly' | 'monthly'
+type ActiveTab = 'yours' | 'availabilities'
+type ViewMode = 'week' | 'day' | 'month'
 
 // ── Coach color palette ───────────────────────────────────────────────
 
@@ -364,14 +364,21 @@ function MonthlyCalendar({ events, onDayClick }: { events: CalendarEvent[]; onDa
 // ── View mode toggle (rendered inside WeeklyCalendar header via headerLeft) ──
 
 function ViewToggle({ viewMode, setViewMode }: { viewMode: ViewMode; setViewMode: (v: ViewMode) => void }) {
+  const options: { key: ViewMode; label: string; icon: typeof Calendar }[] = [
+    { key: 'week', label: 'Week', icon: Calendar },
+    { key: 'day', label: 'Day', icon: List },
+    { key: 'month', label: 'Month', icon: CalendarDays },
+  ]
   return (
-    <div className="flex gap-0.5 rounded-full border border-border/50 bg-white/40 p-0.5">
-      <button type="button" onClick={() => setViewMode('weekly')} className={cn('rounded-full p-1 transition-colors', viewMode === 'weekly' ? 'bg-primary text-white' : 'text-muted-foreground hover:text-foreground')} title="Weekly">
-        <Calendar className="size-3.5" />
-      </button>
-      <button type="button" onClick={() => setViewMode('monthly')} className={cn('rounded-full p-1 transition-colors', viewMode === 'monthly' ? 'bg-primary text-white' : 'text-muted-foreground hover:text-foreground')} title="Monthly">
-        <CalendarDays className="size-3.5" />
-      </button>
+    <div className="flex rounded-lg border border-border bg-white/60 p-0.5">
+      {options.map(({ key, label, icon: Icon }) => (
+        <button key={key} type="button" onClick={() => setViewMode(key)}
+          className={cn('flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium transition-colors',
+            viewMode === key ? 'bg-primary text-white' : 'text-muted-foreground hover:text-foreground')}>
+          <Icon className="size-3" />
+          {label}
+        </button>
+      ))}
     </div>
   )
 }
@@ -390,13 +397,15 @@ export function AvailabilityCalendar({
   rangeEndDate,
 }: Props) {
   const [activeTab, setActiveTab] = useState<ActiveTab>('yours')
-  const [viewMode, setViewMode] = useState<ViewMode>('weekly')
+  const [viewMode, setViewMode] = useState<ViewMode>('week')
   const [duration, setDuration] = useState<30 | 60>(30)
   const [bookingPopup, setBookingPopup] = useState<{ slot: TimeSlot; coachId: string } | null>(null)
   const [viewPopup, setViewPopup] = useState<ExistingBooking | null>(null)
   const [dayPopup, setDayPopup] = useState<string | null>(null) // YYYY-MM-DD for monthly day click
   const [selectedPlayerId, setSelectedPlayerId] = useState<string | null>(null)
   const [isStanding, setIsStanding] = useState(false)
+  // Coach filter: which coaches to show (default: all)
+  const [selectedCoachIds, setSelectedCoachIds] = useState<Set<string>>(() => new Set())
 
   const bookableCoaches = useMemo(() => {
     return coaches.filter(coach => {
@@ -415,7 +424,18 @@ export function AvailabilityCalendar({
     return map
   }, [bookableCoaches])
 
-  const selectedCoach = bookableCoaches.find(c => c.id === activeTab) ?? null
+  // Initialize selectedCoachIds with all coaches when first available
+  useEffect(() => {
+    if (selectedCoachIds.size === 0 && bookableCoaches.length > 0) {
+      setSelectedCoachIds(new Set(bookableCoaches.map(c => c.id)))
+    }
+  }, [bookableCoaches]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Effective coach IDs to show (all if none explicitly selected after toggle-off-all)
+  const visibleCoachIds = useMemo(() => {
+    if (selectedCoachIds.size === 0) return new Set(bookableCoaches.map(c => c.id))
+    return selectedCoachIds
+  }, [selectedCoachIds, bookableCoaches])
 
   // ── "Your Privates" events ──────────────────────────────────────────
 
@@ -449,28 +469,19 @@ export function AvailabilityCalendar({
   const coachEvents = useMemo((): CalendarEvent[] => {
     if (activeTab === 'yours') return []
 
-    if (activeTab === 'all') {
-      return bookableCoaches.flatMap((coach, idx) =>
-        generateCoachAvailabilityEvents(
+    return bookableCoaches
+      .filter(c => visibleCoachIds.has(c.id))
+      .flatMap((coach) => {
+        const idx = coachColorMap.get(coach.id) ?? 0
+        return generateCoachAvailabilityEvents(
           coach.id, coach.name,
           coachWindows.filter(w => w.coach_id === coach.id),
           coachExceptions.filter(e => e.coach_id === coach.id),
           bookedSessions.filter(s => s.coach_id === coach.id),
           duration, coach.id, idx, rangeEndDate, existingBookings,
         )
-      )
-    }
-
-    if (!selectedCoach) return []
-    const idx = coachColorMap.get(selectedCoach.id) ?? 0
-    return generateCoachAvailabilityEvents(
-      selectedCoach.id, selectedCoach.name,
-      coachWindows.filter(w => w.coach_id === selectedCoach.id),
-      coachExceptions.filter(e => e.coach_id === selectedCoach.id),
-      bookedSessions.filter(s => s.coach_id === selectedCoach.id),
-      duration, selectedCoach.id, idx, rangeEndDate, existingBookings,
-    )
-  }, [activeTab, selectedCoach, bookableCoaches, coachWindows, coachExceptions, bookedSessions, duration, rangeEndDate, coachColorMap])
+      })
+  }, [activeTab, visibleCoachIds, bookableCoaches, coachWindows, coachExceptions, bookedSessions, duration, rangeEndDate, coachColorMap, existingBookings])
 
   const activeEvents = activeTab === 'yours' ? yourEvents : coachEvents
 
@@ -509,11 +520,8 @@ export function AvailabilityCalendar({
       return
     }
 
-    let coachId = activeTab
-    if (activeTab === 'all') {
-      const prefix = event.id.split('-avail-')[0].split('-booked-')[0]
-      coachId = prefix
-    }
+    // Extract coach ID from event ID (format: coachId-avail-... or coachId-booked-...)
+    const coachId = event.id.split('-avail-')[0].split('-booked-')[0]
 
     setBookingPopup({
       slot: { date: event.date, startTime: event.startTime, endTime: event.endTime },
@@ -536,7 +544,7 @@ export function AvailabilityCalendar({
 
   const effectivePlayerId = popupEligiblePlayers.length === 1 ? popupEligiblePlayers[0].id : selectedPlayerId
   const canSubmit = !!effectivePlayerId && !!bookingPopup
-  const isCoachTab = activeTab !== 'yours'
+  const isCoachTab = activeTab === 'availabilities'
 
   return (
     <div className="space-y-3">
@@ -546,8 +554,8 @@ export function AvailabilityCalendar({
           className={cn('rounded-full px-3 py-1.5 text-xs font-medium transition-all', activeTab === 'yours' ? 'bg-primary text-white shadow-sm' : 'border border-border text-muted-foreground hover:text-foreground hover:bg-muted/50')}>
           Your Privates
         </button>
-        <button type="button" onClick={() => { if (activeTab === 'yours') { setActiveTab('all'); setBookingPopup(null) } }}
-          className={cn('rounded-full px-3 py-1.5 text-xs font-medium transition-all', activeTab !== 'yours' ? 'bg-primary text-white shadow-sm' : 'border border-border text-muted-foreground hover:text-foreground hover:bg-muted/50')}>
+        <button type="button" onClick={() => { setActiveTab('availabilities'); setBookingPopup(null) }}
+          className={cn('rounded-full px-3 py-1.5 text-xs font-medium transition-all', isCoachTab ? 'bg-primary text-white shadow-sm' : 'border border-border text-muted-foreground hover:text-foreground hover:bg-muted/50')}>
           Availabilities
         </button>
 
@@ -563,10 +571,18 @@ export function AvailabilityCalendar({
         <div className="space-y-2">
           <div className="flex flex-wrap items-center gap-1.5">
             {bookableCoaches.map((coach) => {
-              const isActive = activeTab === 'all' || activeTab === coach.id
+              const isActive = visibleCoachIds.has(coach.id)
               return (
                 <button key={coach.id} type="button" onClick={() => {
-                  setActiveTab(activeTab === coach.id ? 'all' : coach.id)
+                  setSelectedCoachIds(prev => {
+                    const next = new Set(prev)
+                    if (next.has(coach.id)) {
+                      next.delete(coach.id)
+                    } else {
+                      next.add(coach.id)
+                    }
+                    return next
+                  })
                   setBookingPopup(null)
                 }}
                   className={cn('rounded-full px-2.5 py-1 text-[11px] font-medium transition-all', isActive ? 'bg-primary/10 text-primary border border-primary/30' : 'border border-border text-muted-foreground/50 line-through')}>
@@ -581,8 +597,8 @@ export function AvailabilityCalendar({
             {(() => {
               // Group coaches by rate for cleaner display
               const rateGroups = new Map<number, string[]>()
-              const visibleCoaches = activeTab === 'all' ? bookableCoaches : bookableCoaches.filter(c => c.id === activeTab)
-              for (const c of visibleCoaches) {
+              const filteredCoaches = bookableCoaches.filter(c => visibleCoachIds.has(c.id))
+              for (const c of filteredCoaches) {
                 const names = rateGroups.get(c.rate_per_hour_cents) ?? []
                 names.push(c.name)
                 rateGroups.set(c.rate_per_hour_cents, names)
@@ -609,16 +625,17 @@ export function AvailabilityCalendar({
         <ViewToggle viewMode={viewMode} setViewMode={setViewMode} />
       </div>
 
-      {viewMode === 'weekly' ? (
+      {viewMode === 'month' ? (
+        <MonthlyCalendar events={activeEvents} onDayClick={(dateStr) => setDayPopup(dateStr)} />
+      ) : (
         <WeeklyCalendar
           events={activeEvents}
           onEventClick={handleEventClick}
           nextJumpDate={activeTab === 'yours' ? nextPrivateDate ?? undefined : undefined}
           nextJumpLabel="Next private"
-          defaultView="day"
+          defaultView={viewMode}
+          hideViewToggle
         />
-      ) : (
-        <MonthlyCalendar events={activeEvents} onDayClick={(dateStr) => setDayPopup(dateStr)} />
       )}
 
       {/* ── View existing booking popup ──────────────────────────────── */}

@@ -23,20 +23,20 @@ const LEVEL_ACCENTS: Record<string, { bar: string; bg: string; badge: string }> 
 }
 
 const LEVEL_COLORS: Record<string, string> = {
-  red: 'bg-ball-red/20 border-ball-red/30',
-  orange: 'bg-ball-orange/20 border-ball-orange/30',
-  green: 'bg-ball-green/20 border-ball-green/30',
-  yellow: 'bg-ball-yellow/20 border-ball-yellow/30',
+  red: 'bg-ball-red/30 border-ball-red/50',
+  orange: 'bg-ball-orange/30 border-ball-orange/50',
+  green: 'bg-ball-green/30 border-ball-green/50',
+  yellow: 'bg-ball-yellow/30 border-ball-yellow/50',
   competitive: 'bg-primary/15 border-primary/30',
 }
 
 /** Calendar event colors — solid for enrolled, lighter for not */
 const LEVEL_CAL_COLORS: Record<string, { enrolled: string; available: string }> = {
-  red:    { enrolled: 'bg-ball-red border-ball-red/80 text-white',       available: 'bg-ball-red/20 border-ball-red/40 text-foreground' },
-  orange: { enrolled: 'bg-ball-orange border-ball-orange/80 text-white', available: 'bg-ball-orange/20 border-ball-orange/40 text-foreground' },
-  green:  { enrolled: 'bg-ball-green border-ball-green/80 text-white',   available: 'bg-ball-green/20 border-ball-green/40 text-foreground' },
-  yellow: { enrolled: 'bg-ball-yellow border-ball-yellow/80 text-black', available: 'bg-ball-yellow/20 border-ball-yellow/40 text-foreground' },
-  blue:   { enrolled: 'bg-ball-blue border-ball-blue/80 text-white',     available: 'bg-ball-blue/20 border-ball-blue/40 text-foreground' },
+  red:    { enrolled: 'bg-ball-red border-ball-red/80 text-white',       available: 'bg-ball-red/30 border-ball-red/50 text-foreground' },
+  orange: { enrolled: 'bg-ball-orange border-ball-orange/80 text-white', available: 'bg-ball-orange/30 border-ball-orange/50 text-foreground' },
+  green:  { enrolled: 'bg-ball-green border-ball-green/80 text-white',   available: 'bg-ball-green/30 border-ball-green/50 text-foreground' },
+  yellow: { enrolled: 'bg-ball-yellow border-ball-yellow/80 text-black', available: 'bg-ball-yellow/30 border-ball-yellow/50 text-foreground' },
+  blue:   { enrolled: 'bg-ball-blue border-ball-blue/80 text-white',     available: 'bg-ball-blue/30 border-ball-blue/50 text-foreground' },
 }
 
 const DEFAULT_CAL_COLORS = {
@@ -90,7 +90,7 @@ type Session = {
 type Tab = 'calendar' | 'level' | 'type'
 
 /** Strip day prefix from program name for calendar display, clean up "Ball" and avoid double suffix */
-function formatCalendarTitle(name: string, type: string): string {
+function formatCalendarTitle(name: string): string {
   let result = name
   const lower = result.toLowerCase()
 
@@ -104,14 +104,6 @@ function formatCalendarTitle(name: string, type: string): string {
 
   // Remove "Ball" (e.g. "Orange Ball" → "Orange")
   result = result.replace(/\s+Ball\b/gi, '')
-
-  // Add type suffix if not already present
-  const resultLower = result.toLowerCase()
-  if (type === 'group' && !resultLower.includes('group')) {
-    result = result + ' Group'
-  } else if (type === 'squad' && !resultLower.includes('squad')) {
-    result = result + ' Squad'
-  }
 
   return result
 }
@@ -340,6 +332,18 @@ export function ParentProgramFilters({
     return map
   }, [sessions, programMap, enrolledPlayersMap, sessionAttendanceMap])
 
+  // Count remaining scheduled sessions per program (from today onwards)
+  const remainingSessionsMap = useMemo(() => {
+    const today = new Date().toISOString().split('T')[0]
+    const map = new Map<string, number>()
+    for (const s of sessions) {
+      if (s.date >= today) {
+        map.set(s.program_id, (map.get(s.program_id) ?? 0) + 1)
+      }
+    }
+    return map
+  }, [sessions])
+
   // Build calendar events from sessions
   const calendarEvents: CalendarEvent[] = useMemo(() => {
     return sessions
@@ -374,7 +378,7 @@ export function ParentProgramFilters({
 
         return {
           id: s.id,
-          title: formatCalendarTitle(prog.name, prog.type),
+          title: formatCalendarTitle(prog.name),
           subtitle: prog.type,
           dayOfWeek,
           startTime: s.start_time!,
@@ -386,7 +390,7 @@ export function ParentProgramFilters({
           sessionId: s.id,
           programId: prog.id,
           priceCents: prog.per_session_cents,
-          termFeeCents: prog.term_fee_cents,
+          remainingSessions: remainingSessionsMap.get(prog.id) ?? null,
           earlyBirdPct: prog.early_pay_discount_pct,
           earlyBirdDeadline: prog.early_bird_deadline,
           isEnrolled,
@@ -394,7 +398,7 @@ export function ParentProgramFilters({
           playerAttendance: sessionAttendanceMap.get(s.id)?.playerStatus,
         }
       })
-  }, [sessions, programMap, calendarFilter, enrolledProgramIds, recommendedProgramIds, sessionAttendanceMap])
+  }, [sessions, programMap, calendarFilter, enrolledProgramIds, recommendedProgramIds, sessionAttendanceMap, remainingSessionsMap])
 
   // Apply "For you" filter globally — show only enrolled/recommended programs
   const relevantPrograms = useMemo(() => {

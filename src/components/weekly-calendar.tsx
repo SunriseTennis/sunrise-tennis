@@ -34,8 +34,8 @@ export interface CalendarEvent {
   programId?: string
   /** Per-session price in cents */
   priceCents?: number | null
-  /** Term fee in cents */
-  termFeeCents?: number | null
+  /** Number of remaining scheduled sessions (for calculated term price) */
+  remainingSessions?: number | null
   /** Early bird discount percentage */
   earlyBirdPct?: number | null
   /** Early bird deadline date string */
@@ -242,7 +242,7 @@ function PopupContainer({
   return (
     <div
       ref={popupRef}
-      className="absolute z-50 w-72 animate-fade-up rounded-xl border border-border bg-white shadow-elevated"
+      className="absolute z-50 w-72 max-h-[70vh] overflow-y-auto animate-fade-up rounded-xl border border-border bg-white shadow-elevated"
       style={{
         top: adjustedTop,
         ...(popupPos.preferRight
@@ -471,6 +471,7 @@ export function WeeklyCalendar({
   renderDayEvent,
   defaultView,
   hideCapacity,
+  hideViewToggle,
   onDayClick,
 }: {
   events: CalendarEvent[]
@@ -503,10 +504,18 @@ export function WeeklyCalendar({
   defaultView?: 'week' | 'day'
   /** Hide capacity labels (for parent views) */
   hideCapacity?: boolean
+  /** Hide the internal Week/Day view toggle (when controlled externally) */
+  hideViewToggle?: boolean
   /** Called when user clicks a day column header in week view */
   onDayClick?: (dayIndex: number) => void
 }) {
   const [viewMode, setViewMode] = useState<'week' | 'day'>(defaultView ?? 'week')
+
+  // Sync internal viewMode when controlled externally via defaultView
+  useEffect(() => {
+    if (defaultView && hideViewToggle) setViewMode(defaultView)
+  }, [defaultView, hideViewToggle])
+
   const [selectedDayIndex, setSelectedDayIndex] = useState(() => {
     // Default to today's index (0=Mon...6=Sun)
     const day = new Date().getDay()
@@ -679,28 +688,30 @@ export function WeeklyCalendar({
         {/* Row 2: View toggle + jump buttons */}
         <div className="mt-1.5 flex items-center justify-center gap-2 flex-wrap">
           {headerLeft}
-          <div className="flex rounded-lg border border-border bg-white/60 p-0.5">
-            <button
-              onClick={() => setViewMode('week')}
-              className={cn(
-                'flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium transition-colors',
-                viewMode === 'week' ? 'bg-primary text-white' : 'text-muted-foreground hover:text-foreground'
-              )}
-            >
-              <CalendarDays className="size-3" />
-              Week
-            </button>
-            <button
-              onClick={() => setViewMode('day')}
-              className={cn(
-                'flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium transition-colors',
-                viewMode === 'day' ? 'bg-primary text-white' : 'text-muted-foreground hover:text-foreground'
-              )}
-            >
-              <List className="size-3" />
-              Day
-            </button>
-          </div>
+          {!hideViewToggle && (
+            <div className="flex rounded-lg border border-border bg-white/60 p-0.5">
+              <button
+                onClick={() => setViewMode('week')}
+                className={cn(
+                  'flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium transition-colors',
+                  viewMode === 'week' ? 'bg-primary text-white' : 'text-muted-foreground hover:text-foreground'
+                )}
+              >
+                <CalendarDays className="size-3" />
+                Week
+              </button>
+              <button
+                onClick={() => setViewMode('day')}
+                className={cn(
+                  'flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium transition-colors',
+                  viewMode === 'day' ? 'bg-primary text-white' : 'text-muted-foreground hover:text-foreground'
+                )}
+              >
+                <List className="size-3" />
+                Day
+              </button>
+            </div>
+          )}
           {weekOffset !== 0 && (
             <button
               onClick={() => setWeekOffset(0)}
@@ -993,6 +1004,11 @@ export function WeeklyCalendar({
                               {event.capacityLabel}
                             </span>
                           )}
+                          {!event.capacityLabel && event.programType && height >= 36 && (
+                            <span className="absolute bottom-0.5 right-0.5 text-[9px] font-medium opacity-60">
+                              {event.programType === 'competition' ? 'comp' : event.programType}
+                            </span>
+                          )}
                         </button>
                       )
                     })
@@ -1055,8 +1071,8 @@ export function WeeklyCalendar({
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
                   <DollarSign className="size-3.5 shrink-0" />
                   <span>{formatCurrency(popupEvent.priceCents)}/session</span>
-                  {popupEvent.termFeeCents != null && popupEvent.termFeeCents > 0 && (
-                    <span className="text-xs">· {formatCurrency(popupEvent.termFeeCents)}/term</span>
+                  {popupEvent.remainingSessions != null && popupEvent.remainingSessions > 0 && popupEvent.priceCents != null && (
+                    <span className="text-xs">· {formatCurrency(popupEvent.priceCents * popupEvent.remainingSessions)}/term ({popupEvent.remainingSessions} sessions)</span>
                   )}
                 </div>
               )}
