@@ -12,31 +12,6 @@ export type Database = {
   __InternalSupabase: {
     PostgrestVersion: "14.4"
   }
-  graphql_public: {
-    Tables: {
-      [_ in never]: never
-    }
-    Views: {
-      [_ in never]: never
-    }
-    Functions: {
-      graphql: {
-        Args: {
-          extensions?: Json
-          operationName?: string
-          query?: string
-          variables?: Json
-        }
-        Returns: Json
-      }
-    }
-    Enums: {
-      [_ in never]: never
-    }
-    CompositeTypes: {
-      [_ in never]: never
-    }
-  }
   public: {
     Tables: {
       attendances: {
@@ -879,6 +854,7 @@ export type Database = {
         Row: {
           address: string | null
           billing_prefs: Json | null
+          completed_onboarding: boolean
           created_at: string | null
           display_id: string
           family_name: string
@@ -895,6 +871,7 @@ export type Database = {
         Insert: {
           address?: string | null
           billing_prefs?: Json | null
+          completed_onboarding?: boolean
           created_at?: string | null
           display_id: string
           family_name: string
@@ -911,6 +888,7 @@ export type Database = {
         Update: {
           address?: string | null
           billing_prefs?: Json | null
+          completed_onboarding?: boolean
           created_at?: string | null
           display_id?: string
           family_name?: string
@@ -2319,10 +2297,7 @@ export type Database = {
         Args: { target_payment_id: string }
         Returns: undefined
       }
-      claim_invitation: {
-        Args: { p_token: string }
-        Returns: Json
-      }
+      claim_invitation: { Args: { p_token: string }; Returns: Json }
       create_booking_notification: {
         Args: {
           p_body: string
@@ -2362,6 +2337,7 @@ export type Database = {
         Args: { p_family_id: string }
         Returns: string[]
       }
+      get_family_player_ids: { Args: { user_uuid: string }; Returns: string[] }
       get_parent_team_ids: { Args: { user_uuid: string }; Returns: string[] }
       get_player_medical_notes: {
         Args: { p_player_id: string }
@@ -2566,9 +2542,6 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
-  graphql_public: {
-    Enums: {},
-  },
   public: {
     Enums: {},
   },

@@ -40,7 +40,7 @@ export default async function DashboardPage() {
         data: { invite_token: null },
       })
 
-      redirect('/parent')
+      redirect('/parent/onboarding')
     }
   }
 
