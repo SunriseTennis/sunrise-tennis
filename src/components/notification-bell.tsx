@@ -146,7 +146,7 @@ export function NotificationBell() {
               </button>
             )}
           </div>
-          <div className="max-h-80 overflow-y-auto">
+          <div className="max-h-72 overflow-y-auto">
             {notifications.length === 0 ? (
               <p className="px-4 py-6 text-center text-sm text-muted-foreground">No notifications yet</p>
             ) : (
@@ -209,6 +209,12 @@ export function NotificationBell() {
               ))
             )}
           </div>
+          <a
+            href="/parent/notifications"
+            className="block border-t border-border px-4 py-2.5 text-center text-xs font-medium text-primary transition-colors hover:bg-muted/30"
+          >
+            View all notifications
+          </a>
         </div>
       )}
     </div>

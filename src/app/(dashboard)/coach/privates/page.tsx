@@ -1,7 +1,5 @@
 import { redirect } from 'next/navigation'
 import { createClient, requireCoach } from '@/lib/supabase/server'
-import { PageHeader } from '@/components/page-header'
-import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { StatusBadge } from '@/components/status-badge'
 import { EmptyState } from '@/components/empty-state'
@@ -55,10 +53,23 @@ export default async function CoachPrivatesPage({
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        title="Private Lessons"
-        description="Manage your private lesson requests and sessions"
-      />
+      {/* -- Hero Banner -- */}
+      <div className="animate-fade-up relative overflow-hidden rounded-2xl bg-gradient-to-r from-[#2B5EA7] via-[#6480A4] to-[#E87450] p-5 text-white shadow-elevated">
+        <div className="absolute inset-0 rounded-2xl bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.15),transparent_60%)]" />
+        <div className="relative flex items-center justify-between">
+          <div>
+            <p className="text-sm font-medium text-white/80">Coach</p>
+            <h1 className="text-2xl font-bold">Private Lessons</h1>
+            <p className="mt-0.5 text-sm text-white/70">Manage your private lesson requests</p>
+          </div>
+          {pending.length > 0 && (
+            <div className="text-right">
+              <p className="text-xs font-medium text-white/70">Pending</p>
+              <p className="text-2xl font-bold tabular-nums">{pending.length}</p>
+            </div>
+          )}
+        </div>
+      </div>
 
       {error && (
         <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
@@ -71,30 +82,30 @@ export default async function CoachPrivatesPage({
         </div>
       )}
 
-      {/* Pending Requests */}
+      {/* -- Pending Requests -- */}
       {pending.length > 0 && (
-        <div>
-          <h2 className="mb-2 text-sm font-semibold text-orange-700">
+        <section className="animate-fade-up" style={{ animationDelay: '80ms' }}>
+          <h2 className="mb-2 text-lg font-semibold text-orange-700">
             Pending Requests ({pending.length})
           </h2>
           <div className="space-y-2">
-            {pending.map((b) => {
+            {pending.map((b, i) => {
               const session = b.sessions as unknown as { date: string; start_time: string; end_time: string }
               const player = b.players as unknown as { first_name: string; last_name: string; ball_color: string }
               const family = b.families as unknown as { family_name: string; primary_contact: { name?: string; phone?: string } | null }
               return (
-                <Card key={b.id} className="border-orange-200 bg-orange-50/50">
-                  <CardContent className="flex items-center justify-between p-4">
+                <div key={b.id} className="animate-fade-up rounded-xl border border-orange-200 bg-orange-50/50 p-4 shadow-card" style={{ animationDelay: `${120 + i * 60}ms` }}>
+                  <div className="flex items-center justify-between">
                     <div>
-                      <p className="text-sm font-medium">
+                      <p className="text-sm font-medium text-deep-navy">
                         {player?.first_name} {player?.last_name}
-                        {player?.ball_color && <span className="ml-1 text-xs capitalize text-muted-foreground">({player.ball_color})</span>}
+                        {player?.ball_color && <span className="ml-1 text-xs capitalize text-slate-blue">({player.ball_color})</span>}
                       </p>
-                      <p className="text-xs text-muted-foreground">
-                        {formatDate(session.date)} · {formatTime(session.start_time)} – {formatTime(session.end_time)} · {b.duration_minutes}min
+                      <p className="text-xs text-slate-blue">
+                        {formatDate(session.date)} &middot; {formatTime(session.start_time)} &ndash; {formatTime(session.end_time)} &middot; {b.duration_minutes}min
                       </p>
-                      <p className="text-xs text-muted-foreground">
-                        {family?.family_name} — {family?.primary_contact?.phone ?? 'No phone'}
+                      <p className="text-xs text-slate-blue">
+                        {family?.family_name} &mdash; {family?.primary_contact?.phone ?? 'No phone'}
                       </p>
                     </div>
                     <div className="flex gap-2">
@@ -109,70 +120,66 @@ export default async function CoachPrivatesPage({
                         </Button>
                       </form>
                     </div>
-                  </CardContent>
-                </Card>
+                  </div>
+                </div>
               )
             })}
           </div>
-        </div>
+        </section>
       )}
 
-      {/* Upcoming */}
-      <div>
-        <h2 className="mb-2 text-sm font-semibold text-foreground">Upcoming</h2>
+      {/* -- Upcoming -- */}
+      <section className="animate-fade-up" style={{ animationDelay: '160ms' }}>
+        <h2 className="mb-2 text-lg font-semibold text-deep-navy">Upcoming</h2>
         {upcoming.length === 0 ? (
           <EmptyState icon={Users} title="No upcoming privates" description="Confirmed bookings will appear here" compact />
         ) : (
-          <div className="space-y-2">
-            {upcoming.map((b) => {
-              const session = b.sessions as unknown as { id: string; date: string; start_time: string; end_time: string }
-              const player = b.players as unknown as { first_name: string; last_name: string; ball_color: string }
-              return (
-                <Link key={b.id} href={`/coach/privates/${session.id}`}>
-                  <Card className="transition-colors hover:bg-accent/50">
-                    <CardContent className="flex items-center justify-between p-4">
-                      <div>
-                        <p className="text-sm font-medium">{player?.first_name} {player?.last_name}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {formatDate(session.date)} · {formatTime(session.start_time)} – {formatTime(session.end_time)}
-                        </p>
-                      </div>
-                      <StatusBadge status="confirmed" />
-                    </CardContent>
-                  </Card>
-                </Link>
-              )
-            })}
+          <div className="overflow-hidden rounded-xl border border-[#F0B8B0]/60 bg-[#FFFBF7] shadow-card">
+            <div className="divide-y divide-[#F0B8B0]/30">
+              {upcoming.map((b) => {
+                const session = b.sessions as unknown as { id: string; date: string; start_time: string; end_time: string }
+                const player = b.players as unknown as { first_name: string; last_name: string; ball_color: string }
+                return (
+                  <Link key={b.id} href={`/coach/privates/${session.id}`} className="flex items-center justify-between px-4 py-3 transition-colors hover:bg-[#FFF6ED]">
+                    <div>
+                      <p className="text-sm font-medium text-deep-navy">{player?.first_name} {player?.last_name}</p>
+                      <p className="text-xs text-slate-blue">
+                        {formatDate(session.date)} &middot; {formatTime(session.start_time)} &ndash; {formatTime(session.end_time)}
+                      </p>
+                    </div>
+                    <StatusBadge status="confirmed" />
+                  </Link>
+                )
+              })}
+            </div>
           </div>
         )}
-      </div>
+      </section>
 
-      {/* Recently Completed */}
+      {/* -- Recently Completed -- */}
       {completed.length > 0 && (
-        <div>
-          <h2 className="mb-2 text-sm font-semibold text-muted-foreground">Recently Completed</h2>
-          <div className="space-y-2">
-            {completed.map((b) => {
-              const session = b.sessions as unknown as { id: string; date: string; start_time: string; end_time: string }
-              const player = b.players as unknown as { first_name: string; last_name: string }
-              return (
-                <Link key={b.id} href={`/coach/privates/${session.id}`}>
-                  <Card className="opacity-70 transition-colors hover:opacity-100">
-                    <CardContent className="flex items-center justify-between p-4">
-                      <div>
-                        <p className="text-sm font-medium">{player?.first_name} {player?.last_name}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {formatDate(session.date)} · {b.duration_minutes}min
-                        </p>
-                      </div>
-                      <StatusBadge status="completed" />
-                    </CardContent>
-                  </Card>
-                </Link>
-              )
-            })}
+        <section className="animate-fade-up" style={{ animationDelay: '240ms' }}>
+          <h2 className="mb-2 text-lg font-semibold text-deep-navy">Recently Completed</h2>
+          <div className="overflow-hidden rounded-xl border border-[#F0B8B0]/60 bg-[#FFFBF7] shadow-card">
+            <div className="divide-y divide-[#F0B8B0]/30">
+              {completed.map((b) => {
+                const session = b.sessions as unknown as { id: string; date: string; start_time: string; end_time: string }
+                const player = b.players as unknown as { first_name: string; last_name: string }
+                return (
+                  <Link key={b.id} href={`/coach/privates/${session.id}`} className="flex items-center justify-between px-4 py-3 opacity-70 transition-all hover:bg-[#FFF6ED] hover:opacity-100">
+                    <div>
+                      <p className="text-sm font-medium text-deep-navy">{player?.first_name} {player?.last_name}</p>
+                      <p className="text-xs text-slate-blue">
+                        {formatDate(session.date)} &middot; {b.duration_minutes}min
+                      </p>
+                    </div>
+                    <StatusBadge status="completed" />
+                  </Link>
+                )
+              })}
+            </div>
           </div>
-        </div>
+        </section>
       )}
     </div>
   )

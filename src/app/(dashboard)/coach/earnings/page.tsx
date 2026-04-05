@@ -1,7 +1,5 @@
 import { redirect } from 'next/navigation'
 import { createClient, requireCoach } from '@/lib/supabase/server'
-import { PageHeader } from '@/components/page-header'
-import { Card, CardContent } from '@/components/ui/card'
 import { StatusBadge } from '@/components/status-badge'
 import { EmptyState } from '@/components/empty-state'
 import { DollarSign } from 'lucide-react'
@@ -61,43 +59,48 @@ export default async function CoachEarningsPage({
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        title="Earnings"
-        description={payPeriod === 'weekly' ? 'Weekly pay summary' : 'End of term pay summary'}
-      />
-
-      {/* Summary cards */}
-      <div className="grid gap-3 sm:grid-cols-3">
-        <Card>
-          <CardContent className="p-4">
-            <p className="text-xs text-muted-foreground">Owed this period</p>
-            <p className="mt-1 text-2xl font-bold text-orange-600">${(totalOwed / 100).toFixed(2)}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4">
-            <p className="text-xs text-muted-foreground">Paid this period</p>
-            <p className="mt-1 text-2xl font-bold text-green-600">${(totalPaid / 100).toFixed(2)}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4">
-            <p className="text-xs text-muted-foreground">All-time earned</p>
-            <p className="mt-1 text-2xl font-bold">${(totalAllTime / 100).toFixed(2)}</p>
-            <p className="text-xs text-muted-foreground">${(totalAllTimePaid / 100).toFixed(2)} paid</p>
-          </CardContent>
-        </Card>
+      {/* ── Hero Banner ── */}
+      <div className="animate-fade-up relative overflow-hidden rounded-2xl bg-gradient-to-r from-[#2B5EA7] via-[#6480A4] to-[#E87450] p-5 text-white shadow-elevated">
+        <div className="absolute inset-0 rounded-2xl bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.15),transparent_60%)]" />
+        <div className="relative flex items-center justify-between">
+          <div>
+            <p className="text-sm font-medium text-white/80">Earnings</p>
+            <h1 className="text-2xl font-bold">{payPeriod === 'weekly' ? 'Weekly Pay' : 'Term Pay'}</h1>
+            <p className="mt-0.5 text-sm text-white/70">Period: {displayPeriod}</p>
+          </div>
+          <div className="text-right">
+            <p className="text-xs font-medium text-white/70">Owed</p>
+            <p className="text-2xl font-bold tabular-nums">${(totalOwed / 100).toFixed(2)}</p>
+          </div>
+        </div>
       </div>
 
-      {/* Period toggle */}
+      {/* ── Stat Cards ── */}
+      <div className="animate-fade-up grid gap-3 sm:grid-cols-3" style={{ animationDelay: '80ms' }}>
+        <div className="rounded-xl border border-[#F0B8B0]/60 bg-[#FFFBF7] p-4 shadow-card">
+          <p className="text-xs text-slate-blue">Owed this period</p>
+          <p className="mt-1 text-2xl font-bold tabular-nums text-orange-600">${(totalOwed / 100).toFixed(2)}</p>
+        </div>
+        <div className="rounded-xl border border-[#F0B8B0]/60 bg-[#FFFBF7] p-4 shadow-card">
+          <p className="text-xs text-slate-blue">Paid this period</p>
+          <p className="mt-1 text-2xl font-bold tabular-nums text-green-600">${(totalPaid / 100).toFixed(2)}</p>
+        </div>
+        <div className="rounded-xl border border-[#F0B8B0]/60 bg-[#FFFBF7] p-4 shadow-card">
+          <p className="text-xs text-slate-blue">All-time earned</p>
+          <p className="mt-1 text-2xl font-bold tabular-nums text-deep-navy">${(totalAllTime / 100).toFixed(2)}</p>
+          <p className="text-xs text-slate-blue">${(totalAllTimePaid / 100).toFixed(2)} paid</p>
+        </div>
+      </div>
+
+      {/* ── Period Toggle ── */}
       {periods.length > 1 && (
-        <div className="flex flex-wrap gap-1.5">
+        <div className="animate-fade-up flex flex-wrap gap-1.5" style={{ animationDelay: '120ms' }}>
           {periods.map(p => (
             <a
               key={p}
               href={`/coach/earnings?period=${p}`}
               className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
-                p === displayPeriod ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-accent'
+                p === displayPeriod ? 'bg-primary text-primary-foreground' : 'bg-[#FFF6ED] text-slate-blue hover:bg-[#FFE8D6]'
               }`}
             >
               {p}
@@ -106,60 +109,61 @@ export default async function CoachEarningsPage({
         </div>
       )}
 
-      {/* Earnings table */}
-      {currentPeriodEarnings.length === 0 ? (
-        <EmptyState icon={DollarSign} title="No earnings" description={`No earnings recorded for ${displayPeriod}`} />
-      ) : (
-        <Card>
-          <CardContent className="p-0">
-            <div className="divide-y divide-border">
+      {/* ── Earnings List ── */}
+      <section className="animate-fade-up" style={{ animationDelay: '160ms' }}>
+        <h2 className="text-lg font-semibold text-deep-navy">Sessions</h2>
+        {currentPeriodEarnings.length === 0 ? (
+          <div className="mt-3">
+            <EmptyState icon={DollarSign} title="No earnings" description={`No earnings recorded for ${displayPeriod}`} />
+          </div>
+        ) : (
+          <div className="mt-3 overflow-hidden rounded-xl border border-[#F0B8B0]/60 bg-[#FFFBF7] shadow-card">
+            <div className="divide-y divide-[#F0B8B0]/30">
               {currentPeriodEarnings.map(e => {
                 const session = e.sessions as unknown as { date: string; start_time: string } | null
                 return (
-                  <div key={e.id} className="flex items-center justify-between px-4 py-3">
+                  <div key={e.id} className="flex items-center justify-between px-4 py-3 hover:bg-[#FFF6ED] transition-colors">
                     <div>
-                      <p className="text-sm font-medium">
+                      <p className="text-sm font-medium text-deep-navy">
                         {session ? formatDate(session.date) : 'Unknown date'}
                       </p>
-                      <p className="text-xs text-muted-foreground">
+                      <p className="text-xs text-slate-blue">
                         {e.session_type === 'private' ? 'Private' : 'Group'} · {e.duration_minutes}min
                       </p>
                     </div>
                     <div className="flex items-center gap-3">
-                      <span className="text-sm font-medium">${(e.amount_cents / 100).toFixed(2)}</span>
+                      <span className="text-sm font-bold tabular-nums text-deep-navy">${(e.amount_cents / 100).toFixed(2)}</span>
                       <StatusBadge status={e.status} />
                     </div>
                   </div>
                 )
               })}
             </div>
-          </CardContent>
-        </Card>
-      )}
+          </div>
+        )}
+      </section>
 
-      {/* Recent payments */}
+      {/* ── Payment History ── */}
       {(payments ?? []).length > 0 && (
-        <div>
-          <h2 className="mb-2 text-sm font-semibold text-muted-foreground">Payment History</h2>
-          <Card>
-            <CardContent className="p-0">
-              <div className="divide-y divide-border">
-                {(payments ?? []).map(p => (
-                  <div key={p.id} className="flex items-center justify-between px-4 py-3">
-                    <div>
-                      <p className="text-sm font-medium">${(p.amount_cents / 100).toFixed(2)}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {p.paid_at ? formatDate(p.paid_at) : ''} · {p.pay_period_key}
-                      </p>
-                      {p.notes && <p className="text-xs text-muted-foreground">{p.notes}</p>}
-                    </div>
-                    <StatusBadge status="paid" />
+        <section className="animate-fade-up" style={{ animationDelay: '240ms' }}>
+          <h2 className="text-lg font-semibold text-deep-navy">Payment History</h2>
+          <div className="mt-3 overflow-hidden rounded-xl border border-[#F0B8B0]/60 bg-[#FFFBF7] shadow-card">
+            <div className="divide-y divide-[#F0B8B0]/30">
+              {(payments ?? []).map(p => (
+                <div key={p.id} className="flex items-center justify-between px-4 py-3 hover:bg-[#FFF6ED] transition-colors">
+                  <div>
+                    <p className="text-sm font-bold tabular-nums text-deep-navy">${(p.amount_cents / 100).toFixed(2)}</p>
+                    <p className="text-xs text-slate-blue">
+                      {p.paid_at ? formatDate(p.paid_at) : ''} · {p.pay_period_key}
+                    </p>
+                    {p.notes && <p className="text-xs text-slate-blue">{p.notes}</p>}
                   </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        </div>
+                  <StatusBadge status="paid" />
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
       )}
     </div>
   )

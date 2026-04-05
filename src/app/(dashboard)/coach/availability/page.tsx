@@ -1,6 +1,5 @@
 import { redirect } from 'next/navigation'
 import { createClient, requireCoach } from '@/lib/supabase/server'
-import { PageHeader } from '@/components/page-header'
 import { AvailabilityEditor } from './availability-editor'
 import { ExceptionList } from './exception-list'
 
@@ -49,10 +48,15 @@ export default async function CoachAvailabilityPage({
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        title="Availability"
-        description="Set your weekly availability for private lessons"
-      />
+      {/* ── Hero Banner ── */}
+      <div className="animate-fade-up relative overflow-hidden rounded-2xl bg-gradient-to-r from-[#2B5EA7] via-[#6480A4] to-[#E87450] p-5 text-white shadow-elevated">
+        <div className="absolute inset-0 rounded-2xl bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.15),transparent_60%)]" />
+        <div className="relative">
+          <p className="text-sm font-medium text-white/80">Coach</p>
+          <h1 className="text-2xl font-bold">Availability</h1>
+          <p className="mt-0.5 text-sm text-white/70">Set your weekly availability for private lessons</p>
+        </div>
+      </div>
 
       {error && (
         <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
@@ -66,7 +70,7 @@ export default async function CoachAvailabilityPage({
         </div>
       )}
 
-      <div className="grid gap-6 lg:grid-cols-3">
+      <div className="animate-fade-up grid gap-6 lg:grid-cols-3" style={{ animationDelay: '80ms' }}>
         <div className="lg:col-span-2">
           <AvailabilityEditor
             windowsByDay={windowsByDay}
