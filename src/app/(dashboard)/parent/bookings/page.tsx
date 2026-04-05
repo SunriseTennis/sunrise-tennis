@@ -108,7 +108,8 @@ export default async function ParentBookingsPage({
       id: c.id,
       name: c.name.split(' ')[0],
       is_owner: c.is_owner ?? false,
-      rate_per_hour_cents: (c.hourly_rate as { private_rate_cents?: number } | null)?.private_rate_cents ?? 0,
+      rate_per_hour_cents: (c.hourly_rate as { client_private_rate_cents?: number; private_rate_cents?: number } | null)?.client_private_rate_cents
+        ?? (c.hourly_rate as { private_rate_cents?: number } | null)?.private_rate_cents ?? 0,
     }))
     .filter(c => c.rate_per_hour_cents > 0)
     .sort((a, b) => b.rate_per_hour_cents - a.rate_per_hour_cents || a.name.localeCompare(b.name))

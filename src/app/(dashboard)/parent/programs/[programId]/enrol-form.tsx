@@ -7,7 +7,8 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Card, CardContent } from '@/components/ui/card'
 import { formatCurrency } from '@/lib/utils/currency'
-import { CheckCircle, Clock } from 'lucide-react'
+import { CheckCircle, Clock, Check } from 'lucide-react'
+import { cn } from '@/lib/utils/cn'
 
 export function EnrolForm({
   programId,
@@ -30,6 +31,7 @@ export function EnrolForm({
   earlyBirdDeadline?: string | null
   remainingSessions?: number | null
 }) {
+  const [selectedPlayerIds, setSelectedPlayerIds] = useState<string[]>(players.length === 1 ? [players[0].id] : [])
   const [bookingType, setBookingType] = useState('term')
   const [paymentOption, setPaymentOption] = useState<'pay_now' | 'pay_later'>('pay_later')
 
@@ -40,8 +42,8 @@ export function EnrolForm({
   const deadlineActive = !earlyBirdDeadline || todayStr <= earlyBirdDeadline
   const hasDiscount = earlyPayDiscountPct && earlyPayDiscountPct > 0 && deadlineActive
 
-  // Calculate prices
-  const termPrice = termFeeCents ?? (perSessionCents && remainingSessions ? perSessionCents * remainingSessions : null)
+  // Calculate prices — always from per-session × remaining, never use fixed term fee
+  const termPrice = perSessionCents && remainingSessions ? perSessionCents * remainingSessions : null
   const discountedPrice = termPrice && hasDiscount
     ? Math.round(termPrice * (1 - earlyPayDiscountPct / 100))
     : termPrice
@@ -50,24 +52,46 @@ export function EnrolForm({
     <form action={enrolWithIds}>
       <Card>
         <CardContent className="pt-6">
-          <h2 className="text-lg font-semibold text-foreground">Enrol a Player</h2>
+          <h2 className="text-lg font-semibold text-foreground">Enrol Players</h2>
 
           <div className="mt-4">
-            <Label htmlFor="player_id">Select player</Label>
-            <select
-              id="player_id"
-              name="player_id"
-              required
-              className="mt-1 block w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-            >
-              <option value="">Choose a player...</option>
-              {players.map((player) => (
-                <option key={player.id} value={player.id}>
-                  {player.name}
-                  {player.level && player.level !== programLevel && ` (${player.level} ball)`}
-                </option>
-              ))}
-            </select>
+            <Label>Select players</Label>
+            <div className="mt-2 space-y-2">
+              {players.map((player) => {
+                const isSelected = selectedPlayerIds.includes(player.id)
+                return (
+                  <button
+                    key={player.id}
+                    type="button"
+                    onClick={() => setSelectedPlayerIds(prev =>
+                      prev.includes(player.id)
+                        ? prev.filter(id => id !== player.id)
+                        : [...prev, player.id]
+                    )}
+                    className={cn(
+                      'flex w-full items-center gap-3 rounded-xl border p-3 text-left transition-all',
+                      isSelected
+                        ? 'border-primary bg-primary/5 ring-1 ring-primary/20'
+                        : 'border-border hover:border-primary/30 hover:bg-muted/30'
+                    )}
+                  >
+                    <div className={cn(
+                      'flex size-5 items-center justify-center rounded-md border transition-colors',
+                      isSelected ? 'border-primary bg-primary text-white' : 'border-border'
+                    )}>
+                      {isSelected && <Check className="size-3" />}
+                    </div>
+                    <span className="text-sm font-medium text-foreground">{player.name}</span>
+                    {player.level && player.level !== programLevel && (
+                      <span className="text-xs text-muted-foreground">({player.level} ball)</span>
+                    )}
+                  </button>
+                )
+              })}
+            </div>
+            {selectedPlayerIds.map(id => (
+              <input key={id} type="hidden" name="player_id" value={id} />
+            ))}
           </div>
 
           <div className="mt-4">
@@ -119,11 +143,19 @@ export function EnrolForm({
                           <span className="ml-1.5 text-xs font-medium text-success">
                             {earlyPayDiscountPct}% off
                           </span>
+                          {remainingSessions && (
+                            <p className="text-xs text-muted-foreground">{remainingSessions} sessions remaining</p>
+                          )}
                         </div>
                       ) : (
-                        <p className="mt-0.5 text-sm font-bold text-primary tabular-nums">
-                          {formatCurrency(termPrice)}
-                        </p>
+                        <div className="mt-0.5">
+                          <p className="text-sm font-bold text-primary tabular-nums">
+                            {formatCurrency(termPrice)}
+                          </p>
+                          {remainingSessions && (
+                            <p className="text-xs text-muted-foreground">{remainingSessions} sessions remaining</p>
+                          )}
+                        </div>
                       )}
                     </div>
                   </div>
@@ -187,10 +219,12 @@ export function EnrolForm({
           </div>
 
           <div className="mt-4">
-            <Button type="submit">
+            <Button type="submit" disabled={selectedPlayerIds.length === 0}>
               {bookingType === 'term' && paymentOption === 'pay_now'
-                ? `Enrol & Pay ${formatCurrency(discountedPrice ?? termPrice ?? 0)}`
-                : 'Confirm Enrolment'}
+                ? `Enrol & Pay ${formatCurrency((discountedPrice ?? termPrice ?? 0) * selectedPlayerIds.length)}`
+                : selectedPlayerIds.length > 1
+                  ? `Enrol ${selectedPlayerIds.length} Players`
+                  : 'Confirm Enrolment'}
             </Button>
           </div>
         </CardContent>

@@ -1,7 +1,7 @@
 import { redirect, notFound } from 'next/navigation'
 import { createClient, getSessionUser } from '@/lib/supabase/server'
 import { formatCurrency } from '@/lib/utils/currency'
-import { formatDate, formatTime } from '@/lib/utils/dates'
+import { formatDateFriendly, formatTime } from '@/lib/utils/dates'
 import { EnrolForm } from './enrol-form'
 import { PageHeader } from '@/components/page-header'
 import { Badge } from '@/components/ui/badge'
@@ -9,6 +9,19 @@ import { Card, CardContent } from '@/components/ui/card'
 import { AlertCircle, CheckCircle } from 'lucide-react'
 
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+const DAY_PREFIXES = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
+
+function stripDayPrefix(name: string, type: string): string {
+  const lower = name.toLowerCase()
+  for (const prefix of DAY_PREFIXES) {
+    if (lower.startsWith(prefix + ' ')) {
+      const stripped = name.slice(prefix.length + 1)
+      const suffix = type === 'group' ? ' Group' : type === 'squad' ? ' Squad' : ''
+      return stripped + suffix
+    }
+  }
+  return name
+}
 
 export default async function ParentProgramDetailPage({
   params,
@@ -68,7 +81,7 @@ export default async function ParentProgramDetailPage({
   return (
     <div className="max-w-3xl">
       <PageHeader
-        title={program.name}
+        title={stripDayPrefix(program.name, program.type)}
         breadcrumbs={[{ label: 'Programs', href: '/parent/programs' }]}
       />
 
@@ -123,24 +136,15 @@ export default async function ParentProgramDetailPage({
                   <dd className="text-sm text-foreground">{formatCurrency(program.per_session_cents)}</dd>
                 </div>
               )}
-              {program.term_fee_cents && (
+              {program.per_session_cents && upcomingSessions && upcomingSessions.length > 0 && (
                 <div>
                   <dt className="text-xs font-medium text-muted-foreground">Term Fee</dt>
-                  <dd className="text-sm text-foreground">{formatCurrency(program.term_fee_cents)}</dd>
+                  <dd className="text-sm text-foreground">
+                    {formatCurrency(program.per_session_cents * upcomingSessions.length)}
+                    <span className="ml-1.5 text-xs text-muted-foreground">({upcomingSessions.length} sessions)</span>
+                  </dd>
                 </div>
               )}
-              <div>
-                <dt className="text-xs font-medium text-muted-foreground">Capacity</dt>
-                <dd className="text-sm text-foreground">
-                  {totalEnrolled}{program.max_capacity ? ` / ${program.max_capacity}` : ''} enrolled
-                  {spotsLeft !== null && spotsLeft <= 3 && spotsLeft > 0 && (
-                    <span className="ml-2 text-xs font-medium text-danger">({spotsLeft} spots left)</span>
-                  )}
-                  {spotsLeft === 0 && (
-                    <span className="ml-2 text-xs font-medium text-danger">(Full)</span>
-                  )}
-                </dd>
-              </div>
             </dl>
           </CardContent>
         </Card>
@@ -193,7 +197,7 @@ export default async function ParentProgramDetailPage({
               <div className="mt-3 space-y-2">
                 {upcomingSessions.map((session) => (
                   <div key={session.id} className="flex items-center justify-between rounded-lg border border-border px-4 py-2 text-sm">
-                    <span className="text-foreground">{formatDate(session.date)}</span>
+                    <span className="text-foreground">{formatDateFriendly(session.date)}</span>
                     <span className="text-muted-foreground">
                       {session.start_time ? formatTime(session.start_time) : '-'}
                       {session.end_time ? ` - ${formatTime(session.end_time)}` : ''}

@@ -32,16 +32,16 @@ const LEVEL_COLORS: Record<string, string> = {
 
 /** Calendar event colors — solid for enrolled, lighter for not */
 const LEVEL_CAL_COLORS: Record<string, { enrolled: string; available: string }> = {
-  red:    { enrolled: 'bg-ball-red border-ball-red/80 text-white',       available: 'bg-ball-red/20 border-ball-red/40 text-ball-red' },
-  orange: { enrolled: 'bg-ball-orange border-ball-orange/80 text-white', available: 'bg-ball-orange/20 border-ball-orange/40 text-ball-orange' },
-  green:  { enrolled: 'bg-ball-green border-ball-green/80 text-white',   available: 'bg-ball-green/20 border-ball-green/40 text-ball-green' },
-  yellow: { enrolled: 'bg-ball-yellow border-ball-yellow/80 text-black', available: 'bg-ball-yellow/20 border-ball-yellow/40 text-ball-yellow' },
-  blue:   { enrolled: 'bg-ball-blue border-ball-blue/80 text-white',     available: 'bg-ball-blue/20 border-ball-blue/40 text-ball-blue' },
+  red:    { enrolled: 'bg-ball-red border-ball-red/80 text-white',       available: 'bg-ball-red/20 border-ball-red/40 text-foreground' },
+  orange: { enrolled: 'bg-ball-orange border-ball-orange/80 text-white', available: 'bg-ball-orange/20 border-ball-orange/40 text-foreground' },
+  green:  { enrolled: 'bg-ball-green border-ball-green/80 text-white',   available: 'bg-ball-green/20 border-ball-green/40 text-foreground' },
+  yellow: { enrolled: 'bg-ball-yellow border-ball-yellow/80 text-black', available: 'bg-ball-yellow/20 border-ball-yellow/40 text-foreground' },
+  blue:   { enrolled: 'bg-ball-blue border-ball-blue/80 text-white',     available: 'bg-ball-blue/20 border-ball-blue/40 text-foreground' },
 }
 
 const DEFAULT_CAL_COLORS = {
   enrolled: 'bg-primary border-primary/80 text-white',
-  available: 'bg-primary/15 border-primary/30 text-primary',
+  available: 'bg-primary/15 border-primary/30 text-foreground',
 }
 
 /** Button colors for level filter pills */
@@ -503,6 +503,7 @@ export function ParentProgramFilters({
               players={familyPlayers}
               enrolledPlayersMap={enrolledPlayersMap}
               sessionEnrolledMap={sessionEnrolledMap}
+              hideCapacity
               onBookSession={async (sid, pid, pids) => {
                 const r = await bookSession(sid, pid, pids)
                 router.refresh()

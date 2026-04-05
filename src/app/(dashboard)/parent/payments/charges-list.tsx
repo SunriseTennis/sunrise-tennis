@@ -1,11 +1,15 @@
 'use client'
 
+import { useState } from 'react'
 import { formatCurrency } from '@/lib/utils/currency'
-import { formatDate } from '@/lib/utils/dates'
+import { formatDateFriendly } from '@/lib/utils/dates'
 import {
   Gift,
   MinusCircle,
+  ChevronDown,
+  ChevronRight,
 } from 'lucide-react'
+import { cn } from '@/lib/utils/cn'
 
 interface Charge {
   id: string
@@ -46,9 +50,35 @@ function categoriseCharge(c: Charge): Category {
   return 'other'
 }
 
-/** Strip trailing date pattern like " - 2026-04-06" from description for cleaner display */
+/** Strip trailing date pattern like " - 2026-04-06" from description */
 function cleanDescription(desc: string): string {
   return desc.replace(/\s*-\s*\d{4}-\d{2}-\d{2}\s*$/, '')
+}
+
+/** Group key for collapsing sessions under a program or coach */
+function getGroupKey(c: Charge): string {
+  if (c.program_id) return c.program_id
+  return cleanDescription(c.description)
+}
+
+function getGroupLabel(c: Charge): string {
+  if (c.program_name) return c.program_name
+  return cleanDescription(c.description)
+}
+
+function statusLabel(status: string | null | undefined): { text: string; className: string } {
+  switch (status) {
+    case 'completed':
+      return { text: 'Completed', className: 'text-success' }
+    case 'scheduled':
+      return { text: 'Scheduled', className: 'text-primary' }
+    case 'rained_out':
+      return { text: 'Rained out', className: 'text-warning' }
+    case 'cancelled':
+      return { text: 'Cancelled', className: 'text-danger' }
+    default:
+      return { text: '', className: '' }
+  }
 }
 
 export function ChargesList({ charges }: { charges: Charge[] }) {
@@ -56,12 +86,17 @@ export function ChargesList({ charges }: { charges: Charge[] }) {
   const positiveCharges = activeCharges.filter(c => c.amount_cents > 0)
   const credits = activeCharges.filter(c => c.amount_cents < 0)
 
-  // Group by category
-  const grouped = new Map<Category, Charge[]>()
+  // Group by category, then by program/coach within each category
+  const grouped = new Map<Category, Map<string, { label: string; charges: Charge[]; total: number }>>()
   for (const c of positiveCharges) {
     const cat = categoriseCharge(c)
-    if (!grouped.has(cat)) grouped.set(cat, [])
-    grouped.get(cat)!.push(c)
+    if (!grouped.has(cat)) grouped.set(cat, new Map())
+    const catGroups = grouped.get(cat)!
+    const key = getGroupKey(c)
+    if (!catGroups.has(key)) catGroups.set(key, { label: getGroupLabel(c), charges: [], total: 0 })
+    const group = catGroups.get(key)!
+    group.charges.push(c)
+    group.total += c.amount_cents
   }
 
   if (charges.length === 0) return null
@@ -73,45 +108,41 @@ export function ChargesList({ charges }: { charges: Charge[] }) {
       <h2 className="text-lg font-semibold text-foreground">Current Charges</h2>
 
       {positiveCharges.length > 0 ? (
-        <div className="overflow-hidden rounded-xl border border-border bg-card shadow-card">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-border bg-muted/50">
-                <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">Description</th>
-                <th className="hidden px-4 py-2.5 text-left font-medium text-muted-foreground sm:table-cell">Player</th>
-                <th className="hidden px-4 py-2.5 text-left font-medium text-muted-foreground sm:table-cell">Date</th>
-                <th className="px-4 py-2.5 text-left font-medium text-muted-foreground w-24">Status</th>
-                <th className="px-4 py-2.5 text-right font-medium text-muted-foreground w-28">Amount</th>
-              </tr>
-            </thead>
-            <tbody>
-              {CATEGORY_ORDER.map((cat) => {
-                const catCharges = grouped.get(cat)
-                if (!catCharges || catCharges.length === 0) return null
-                const catTotal = catCharges.reduce((sum, c) => sum + c.amount_cents, 0)
+        <div className="space-y-3">
+          {CATEGORY_ORDER.map((cat) => {
+            const catGroups = grouped.get(cat)
+            if (!catGroups || catGroups.size === 0) return null
+            const catTotal = Array.from(catGroups.values()).reduce((sum, g) => sum + g.total, 0)
 
-                return (
-                  <CatChargeRows
-                    key={cat}
-                    label={CATEGORY_LABELS[cat]}
-                    charges={catCharges}
-                    totalCents={catTotal}
-                  />
-                )
-              })}
-            </tbody>
-            <tfoot>
-              <tr className="border-t-2 border-border bg-muted/30">
-                <td colSpan={3} className="px-4 py-3 font-semibold text-foreground">
-                  Total
-                </td>
-                <td className="hidden sm:table-cell" />
-                <td className="px-4 py-3 text-right tabular-nums text-lg font-bold text-foreground">
-                  {formatCurrency(totalCents)}
-                </td>
-              </tr>
-            </tfoot>
-          </table>
+            return (
+              <div key={cat} className="overflow-hidden rounded-xl border border-border bg-card shadow-card">
+                {/* Category header */}
+                <div className="flex items-center justify-between bg-muted/30 px-4 py-2">
+                  <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    {CATEGORY_LABELS[cat]}
+                  </span>
+                  <span className="text-xs font-bold tabular-nums text-foreground">
+                    {formatCurrency(catTotal)}
+                  </span>
+                </div>
+
+                {/* Program/coach groups */}
+                <div className="divide-y divide-border/50">
+                  {Array.from(catGroups.values()).map((group) => (
+                    <ChargeGroup key={group.label} group={group} />
+                  ))}
+                </div>
+              </div>
+            )
+          })}
+
+          {/* Grand total */}
+          <div className="flex items-center justify-between rounded-xl border-2 border-border bg-muted/30 px-4 py-3">
+            <span className="font-semibold text-foreground">Total</span>
+            <span className="tabular-nums text-lg font-bold text-foreground">
+              {formatCurrency(totalCents)}
+            </span>
+          </div>
         </div>
       ) : (
         <p className="text-sm text-muted-foreground">No outstanding charges.</p>
@@ -136,9 +167,9 @@ export function ChargesList({ charges }: { charges: Charge[] }) {
                     <p className="text-foreground">{cleanDescription(credit.description)}</p>
                     <p className="text-xs text-muted-foreground">
                       {credit.session_date
-                        ? formatDate(credit.session_date)
+                        ? formatDateFriendly(credit.session_date)
                         : credit.created_at
-                          ? formatDate(credit.created_at)
+                          ? formatDateFriendly(credit.created_at)
                           : '-'}
                     </p>
                   </div>
@@ -155,77 +186,79 @@ export function ChargesList({ charges }: { charges: Charge[] }) {
   )
 }
 
-function statusLabel(status: string | null | undefined): { text: string; className: string } {
-  switch (status) {
-    case 'completed':
-      return { text: 'Completed', className: 'text-success' }
-    case 'scheduled':
-      return { text: 'Scheduled', className: 'text-primary' }
-    case 'rained_out':
-      return { text: 'Rained out', className: 'text-warning' }
-    case 'cancelled':
-      return { text: 'Cancelled', className: 'text-danger' }
-    default:
-      return { text: '', className: '' }
-  }
-}
+function ChargeGroup({ group }: { group: { label: string; charges: Charge[]; total: number } }) {
+  const [expanded, setExpanded] = useState(false)
+  const count = group.charges.length
 
-function CatChargeRows({
-  label,
-  charges,
-  totalCents,
-}: {
-  label: string
-  charges: Charge[]
-  totalCents: number
-}) {
   return (
-    <>
-      {/* Category header row */}
-      <tr className="bg-muted/30">
-        <td colSpan={3} className="px-4 py-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-          {label}
-        </td>
-        <td className="hidden sm:table-cell" />
-        <td className="px-4 py-2 text-right text-xs font-bold tabular-nums text-foreground">
-          {formatCurrency(totalCents)}
-        </td>
-      </tr>
-      {/* Charge rows */}
-      {charges.map((c) => {
-        const displayDate = c.session_date
-          ? formatDate(c.session_date)
-          : c.created_at
-            ? formatDate(c.created_at)
-            : '-'
-        const ss = statusLabel(c.session_status)
+    <div>
+      <button
+        type="button"
+        onClick={() => setExpanded(!expanded)}
+        className="flex w-full items-center gap-2 px-4 py-2.5 text-left hover:bg-muted/20 transition-colors"
+      >
+        {count > 1 ? (
+          expanded ? <ChevronDown className="size-3.5 text-muted-foreground shrink-0" /> : <ChevronRight className="size-3.5 text-muted-foreground shrink-0" />
+        ) : (
+          <span className="size-3.5 shrink-0" />
+        )}
+        <div className="min-w-0 flex-1">
+          <span className="text-sm font-medium text-foreground line-clamp-1">{group.label}</span>
+          <span className="ml-2 text-xs text-muted-foreground">
+            {count} session{count !== 1 ? 's' : ''}
+          </span>
+        </div>
+        <span className="tabular-nums text-sm font-semibold text-foreground shrink-0">
+          {formatCurrency(group.total)}
+        </span>
+      </button>
 
-        return (
-          <tr key={c.id} className="border-b border-border/50 last:border-b-0">
-            <td className="px-4 py-2.5 text-foreground">
-              <span className="line-clamp-1">{cleanDescription(c.description)}</span>
-              {/* Mobile: show player + date + status inline */}
-              <span className="block text-xs text-muted-foreground sm:hidden">
-                {c.player_name && <>{c.player_name} · </>}
-                {displayDate}
-                {ss.text && <> · <span className={ss.className}>{ss.text}</span></>}
-              </span>
-            </td>
-            <td className="hidden px-4 py-2.5 text-muted-foreground sm:table-cell">
-              {c.player_name ?? '-'}
-            </td>
-            <td className="hidden px-4 py-2.5 tabular-nums text-muted-foreground sm:table-cell">
+      {/* Expanded session rows */}
+      {expanded && count > 1 && (
+        <div className="border-t border-border/30 bg-muted/10 px-4 py-1">
+          {group.charges.map((c) => {
+            const displayDate = c.session_date
+              ? formatDateFriendly(c.session_date)
+              : c.created_at
+                ? formatDateFriendly(c.created_at)
+                : '-'
+            const ss = statusLabel(c.session_status)
+
+            return (
+              <div key={c.id} className="flex items-center justify-between py-1.5 text-xs">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="text-muted-foreground tabular-nums">{displayDate}</span>
+                  {c.player_name && <span className="text-muted-foreground">· {c.player_name}</span>}
+                  {ss.text && <span className={cn('font-medium', ss.className)}>{ss.text}</span>}
+                </div>
+                <span className="tabular-nums font-medium text-foreground shrink-0 ml-2">
+                  {formatCurrency(c.amount_cents)}
+                </span>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {/* Single charge — show date inline */}
+      {count === 1 && (() => {
+        const c = group.charges[0]
+        const displayDate = c.session_date
+          ? formatDateFriendly(c.session_date)
+          : c.created_at
+            ? formatDateFriendly(c.created_at)
+            : null
+        const ss = statusLabel(c.session_status)
+        return displayDate || ss.text ? (
+          <div className="px-4 pb-2 -mt-1">
+            <span className="text-[11px] text-muted-foreground">
               {displayDate}
-            </td>
-            <td className="px-4 py-2.5 text-xs">
-              <span className={`hidden sm:inline ${ss.className}`}>{ss.text}</span>
-            </td>
-            <td className="px-4 py-2.5 text-right tabular-nums font-semibold text-foreground">
-              {formatCurrency(c.amount_cents)}
-            </td>
-          </tr>
-        )
-      })}
-    </>
+              {c.player_name && <> · {c.player_name}</>}
+              {ss.text && <> · <span className={ss.className}>{ss.text}</span></>}
+            </span>
+          </div>
+        ) : null
+      })()}
+    </div>
   )
 }

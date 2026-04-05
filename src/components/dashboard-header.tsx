@@ -12,7 +12,6 @@ export function DashboardHeader() {
   const [displayName, setDisplayName] = useState<string>('')
   const [isAdmin, setIsAdmin] = useState(false)
   const [homeHref, setHomeHref] = useState('/dashboard')
-  const [singleRole, setSingleRole] = useState<string | null>(null)
   const loaded = useRef(false)
 
   useEffect(() => {
@@ -38,9 +37,6 @@ export function DashboardHeader() {
       const admin = roles.includes('admin')
       setIsAdmin(admin)
       setHomeHref(admin ? '/admin' : `/${roles[0] ?? 'dashboard'}`)
-      if (!admin && roles.length === 1) {
-        setSingleRole(roles[0])
-      }
     }
 
     loadUser()
@@ -58,11 +54,6 @@ export function DashboardHeader() {
             <span>Sunrise Tennis</span>
           </Link>
           {isAdmin && <RoleSwitcher />}
-          {singleRole && (
-            <span className="rounded-full bg-white/15 px-2.5 py-0.5 text-xs font-medium text-white capitalize">
-              {singleRole}
-            </span>
-          )}
         </div>
         <div className="flex items-center gap-2">
           <NotificationBell />

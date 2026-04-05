@@ -12,6 +12,18 @@ export function formatDate(date: Date | string): string {
 }
 
 /**
+ * Format a Date or ISO string to friendly format: "Apr 29, 2026"
+ * Used for parent-facing dates (session lists, booking flows).
+ */
+export function formatDateFriendly(date: Date | string): string {
+  const d = typeof date === 'string' ? new Date(date + (typeof date === 'string' && !date.includes('T') ? 'T12:00:00' : '')) : date
+  const month = MONTHS[d.getMonth()]
+  const day = d.getDate()
+  const year = d.getFullYear()
+  return `${month} ${day}, ${year}`
+}
+
+/**
  * Format a time string (HH:MM:SS or HH:MM) to 12-hour format
  */
 export function formatTime(time: string): string {

@@ -540,22 +540,16 @@ export function AvailabilityCalendar({
 
   return (
     <div className="space-y-3">
-      {/* Tab bar */}
-      <div className="flex flex-wrap items-center gap-1.5">
+      {/* Main tabs: Your Privates / Availabilities */}
+      <div className="flex items-center gap-1.5">
         <button type="button" onClick={() => { setActiveTab('yours'); setBookingPopup(null) }}
-          className={cn('rounded-full px-3 py-1 text-xs font-medium transition-all', activeTab === 'yours' ? 'bg-primary text-white shadow-sm' : 'border border-border text-muted-foreground hover:text-foreground hover:bg-muted/50')}>
+          className={cn('rounded-full px-3 py-1.5 text-xs font-medium transition-all', activeTab === 'yours' ? 'bg-primary text-white shadow-sm' : 'border border-border text-muted-foreground hover:text-foreground hover:bg-muted/50')}>
           Your Privates
         </button>
-        <button type="button" onClick={() => { setActiveTab('all'); setBookingPopup(null) }}
-          className={cn('rounded-full px-3 py-1 text-xs font-medium transition-all', activeTab === 'all' ? 'bg-primary text-white shadow-sm' : 'border border-border text-muted-foreground hover:text-foreground hover:bg-muted/50')}>
-          All Coaches
+        <button type="button" onClick={() => { if (activeTab === 'yours') { setActiveTab('all'); setBookingPopup(null) } }}
+          className={cn('rounded-full px-3 py-1.5 text-xs font-medium transition-all', activeTab !== 'yours' ? 'bg-primary text-white shadow-sm' : 'border border-border text-muted-foreground hover:text-foreground hover:bg-muted/50')}>
+          Availabilities
         </button>
-        {bookableCoaches.map((coach) => (
-          <button key={coach.id} type="button" onClick={() => { setActiveTab(coach.id); setBookingPopup(null) }}
-            className={cn('rounded-full px-3 py-1 text-xs font-medium transition-all', activeTab === coach.id ? 'bg-primary text-white shadow-sm' : 'border border-border text-muted-foreground hover:text-foreground hover:bg-muted/50')}>
-            {coach.name}
-          </button>
-        ))}
 
         {isCoachTab && (
           <div className="ml-auto">
@@ -564,39 +558,64 @@ export function AvailabilityCalendar({
         )}
       </div>
 
-      {/* Coach color legend — shown on All Coaches tab */}
-      {activeTab === 'all' && (
-        <div className="space-y-1">
-          {bookableCoaches.map((coach, i) => {
-            const dotColors = ['bg-[#2B5EA7]', 'bg-[#E87450]', 'bg-[#8B78B0]', 'bg-[#F5B041]', 'bg-[#6480A4]']
-            return (
-              <div key={coach.id} className="flex items-center gap-2">
-                <span className={cn('size-2.5 rounded-full', dotColors[i % dotColors.length])} />
-                <span className="text-xs font-medium text-foreground">{coach.name}</span>
-                <span className="text-xs text-muted-foreground">
-                  <span className="font-semibold text-foreground">${(coach.rate_per_hour_cents / 200).toFixed(0)}</span>/30min · <span className="font-semibold text-foreground">${(coach.rate_per_hour_cents / 100).toFixed(0)}</span>/hr
-                </span>
-              </div>
-            )
-          })}
+      {/* Coach filter — shown when on Availabilities */}
+      {isCoachTab && (
+        <div className="space-y-2">
+          <div className="flex flex-wrap items-center gap-1.5">
+            {bookableCoaches.map((coach) => {
+              const isActive = activeTab === 'all' || activeTab === coach.id
+              return (
+                <button key={coach.id} type="button" onClick={() => {
+                  setActiveTab(activeTab === coach.id ? 'all' : coach.id)
+                  setBookingPopup(null)
+                }}
+                  className={cn('rounded-full px-2.5 py-1 text-[11px] font-medium transition-all', isActive ? 'bg-primary/10 text-primary border border-primary/30' : 'border border-border text-muted-foreground/50 line-through')}>
+                  {coach.name}
+                </button>
+              )
+            })}
+          </div>
+
+          {/* Pricing — grouped by rate */}
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+            {(() => {
+              // Group coaches by rate for cleaner display
+              const rateGroups = new Map<number, string[]>()
+              const visibleCoaches = activeTab === 'all' ? bookableCoaches : bookableCoaches.filter(c => c.id === activeTab)
+              for (const c of visibleCoaches) {
+                const names = rateGroups.get(c.rate_per_hour_cents) ?? []
+                names.push(c.name)
+                rateGroups.set(c.rate_per_hour_cents, names)
+              }
+              return Array.from(rateGroups.entries())
+                .sort(([a], [b]) => b - a)
+                .map(([rate, names]) => (
+                  <span key={rate}>
+                    {names.length <= 2 ? names.join(' & ') : `${names.length} coaches`}:{' '}
+                    <span className="font-semibold text-foreground text-sm">${(rate / 200).toFixed(0)}</span>
+                    <span className="text-[10px]">/30min</span>
+                    {' · '}
+                    <span className="font-semibold text-foreground text-sm">${(rate / 100).toFixed(0)}</span>
+                    <span className="text-[10px]">/hr</span>
+                  </span>
+                ))
+            })()}
+          </div>
         </div>
       )}
 
-      {/* Coach pricing — individual coach tab */}
-      {selectedCoach && activeTab !== 'all' && activeTab !== 'yours' && (
-        <p className="text-xs text-muted-foreground">
-          <span className="font-semibold text-foreground">${(selectedCoach.rate_per_hour_cents / 200).toFixed(0)}</span>/30min · <span className="font-semibold text-foreground">${(selectedCoach.rate_per_hour_cents / 100).toFixed(0)}</span>/hr
-        </p>
-      )}
+      {/* View toggle + Calendar */}
+      <div className="flex items-center gap-2 mb-1">
+        <ViewToggle viewMode={viewMode} setViewMode={setViewMode} />
+      </div>
 
-      {/* Calendar */}
       {viewMode === 'weekly' ? (
         <WeeklyCalendar
           events={activeEvents}
           onEventClick={handleEventClick}
           nextJumpDate={activeTab === 'yours' ? nextPrivateDate ?? undefined : undefined}
           nextJumpLabel="Next private"
-          headerLeft={<ViewToggle viewMode={viewMode} setViewMode={setViewMode} />}
+          defaultView="day"
         />
       ) : (
         <MonthlyCalendar events={activeEvents} onDayClick={(dateStr) => setDayPopup(dateStr)} />
@@ -604,8 +623,8 @@ export function AvailabilityCalendar({
 
       {/* ── View existing booking popup ──────────────────────────────── */}
       {viewPopup && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 backdrop-blur-sm sm:items-center" onClick={() => setViewPopup(null)}>
-          <div className="w-full max-w-md animate-slide-up rounded-t-2xl bg-popover p-5 shadow-elevated sm:rounded-2xl" style={{ maxHeight: '85vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4" onClick={() => setViewPopup(null)}>
+          <div className="w-full max-w-md animate-slide-up rounded-2xl bg-popover p-5 shadow-elevated" style={{ maxHeight: '85vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
             <div className="flex items-start justify-between">
               <h3 className="text-sm font-semibold text-foreground">Private Lesson</h3>
               <button type="button" onClick={() => setViewPopup(null)} className="rounded-lg p-1 text-muted-foreground hover:bg-muted/50 hover:text-foreground"><X className="size-4" /></button>
@@ -673,8 +692,8 @@ export function AvailabilityCalendar({
 
       {/* ── Book new slot popup ──────────────────────────────────────── */}
       {bookingPopup && popupCoach && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 backdrop-blur-sm sm:items-center" onClick={() => setBookingPopup(null)}>
-          <div className="w-full max-w-md animate-slide-up rounded-t-2xl bg-popover p-5 shadow-elevated sm:rounded-2xl" style={{ maxHeight: '85vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4" onClick={() => setBookingPopup(null)}>
+          <div className="w-full max-w-md animate-slide-up rounded-2xl bg-popover p-5 shadow-elevated" style={{ maxHeight: '85vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
             <div className="flex items-start justify-between">
               <h3 className="text-sm font-semibold text-foreground">Book Private Lesson</h3>
               <button type="button" onClick={() => setBookingPopup(null)} className="rounded-lg p-1 text-muted-foreground hover:bg-muted/50 hover:text-foreground"><X className="size-4" /></button>
@@ -773,8 +792,8 @@ export function AvailabilityCalendar({
         const dotColors = ['bg-[#2B5EA7]', 'bg-[#E87450]', 'bg-[#8B78B0]', 'bg-[#F5B041]', 'bg-[#6480A4]']
 
         return (
-          <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 backdrop-blur-sm sm:items-center" onClick={() => setDayPopup(null)}>
-            <div className="w-full max-w-md animate-slide-up rounded-t-2xl bg-popover p-5 shadow-elevated sm:rounded-2xl" style={{ maxHeight: '85vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4" onClick={() => setDayPopup(null)}>
+            <div className="w-full max-w-md animate-slide-up rounded-2xl bg-popover p-5 shadow-elevated" style={{ maxHeight: '85vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
               <div className="flex items-start justify-between">
                 <h3 className="text-sm font-semibold text-foreground">{dateLabel}</h3>
                 <button type="button" onClick={() => setDayPopup(null)} className="rounded-lg p-1 text-muted-foreground hover:bg-muted/50 hover:text-foreground"><X className="size-4" /></button>

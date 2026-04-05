@@ -269,6 +269,7 @@ export function EnrolledCalendar({
         events={visibleEvents}
         players={familyPlayers}
         enrolledPlayersMap={enrolledPlayersMapData}
+        hideCapacity
         onMarkAway={async (sid, pid) => {
           const fn = onMarkAway ?? markSessionAway
           const r = await fn(sid, pid)

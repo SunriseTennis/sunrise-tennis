@@ -470,6 +470,8 @@ export function WeeklyCalendar({
   renderPopup,
   renderDayEvent,
   defaultView,
+  hideCapacity,
+  onDayClick,
 }: {
   events: CalendarEvent[]
   onEventClick?: (event: CalendarEvent) => void
@@ -499,6 +501,10 @@ export function WeeklyCalendar({
   renderDayEvent?: (event: CalendarEvent) => React.ReactNode
   /** Default view mode */
   defaultView?: 'week' | 'day'
+  /** Hide capacity labels (for parent views) */
+  hideCapacity?: boolean
+  /** Called when user clicks a day column header in week view */
+  onDayClick?: (dayIndex: number) => void
 }) {
   const [viewMode, setViewMode] = useState<'week' | 'day'>(defaultView ?? 'week')
   const [selectedDayIndex, setSelectedDayIndex] = useState(() => {
@@ -634,10 +640,45 @@ export function WeeklyCalendar({
   return (
     <div ref={calendarRef} className="relative overflow-hidden rounded-xl border border-border bg-card shadow-card">
       {/* Week navigation header */}
-      <div className="flex items-center justify-between border-b border-border bg-gradient-to-r from-dawn-cream to-peach-mist/40 px-4 py-2.5">
-        <div className="flex items-center gap-2">
+      <div className="border-b border-border bg-gradient-to-r from-dawn-cream to-peach-mist/40 px-3 py-2">
+        {/* Row 1: Nav arrows + date */}
+        <div className="flex items-center justify-between">
+          <button
+            onClick={() => viewMode === 'day'
+              ? setSelectedDayIndex(i => { if (i === 0) { setWeekOffset(o => o - 1); return 6 } return i - 1 })
+              : setWeekOffset(o => o - 1)
+            }
+            className="flex size-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-white/60 hover:text-foreground"
+          >
+            <ChevronLeft className="size-4" />
+          </button>
+          <div className="flex flex-col items-center gap-0.5">
+            <span className="text-sm font-semibold text-foreground">
+              {viewMode === 'day'
+                ? formatDayDate(addDays(monday, selectedDayIndex).toISOString().split('T')[0])
+                : formatWeekRange(monday)
+              }
+            </span>
+            {(() => {
+              const term = getTermInfo(monday)
+              return term ? (
+                <span className="text-[11px] font-medium text-muted-foreground">{term}</span>
+              ) : null
+            })()}
+          </div>
+          <button
+            onClick={() => viewMode === 'day'
+              ? setSelectedDayIndex(i => { if (i === 6) { setWeekOffset(o => o + 1); return 0 } return i + 1 })
+              : setWeekOffset(o => o + 1)
+            }
+            className="flex size-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-white/60 hover:text-foreground"
+          >
+            <ChevronRight className="size-4" />
+          </button>
+        </div>
+        {/* Row 2: View toggle + jump buttons */}
+        <div className="mt-1.5 flex items-center justify-center gap-2 flex-wrap">
           {headerLeft}
-          {/* View mode toggle */}
           <div className="flex rounded-lg border border-border bg-white/60 p-0.5">
             <button
               onClick={() => setViewMode('week')}
@@ -660,86 +701,52 @@ export function WeeklyCalendar({
               Day
             </button>
           </div>
-          <button
-            onClick={() => viewMode === 'day'
-              ? setSelectedDayIndex(i => { if (i === 0) { setWeekOffset(o => o - 1); return 6 } return i - 1 })
-              : setWeekOffset(o => o - 1)
-            }
-            className="flex size-7 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-white/60 hover:text-foreground"
-          >
-            <ChevronLeft className="size-4" />
-          </button>
-        </div>
-        <div className="flex flex-col items-center gap-0.5">
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-semibold text-foreground">
-              {viewMode === 'day'
-                ? formatDayDate(addDays(monday, selectedDayIndex).toISOString().split('T')[0])
-                : formatWeekRange(monday)
-              }
-            </span>
-            {weekOffset !== 0 && (
+          {weekOffset !== 0 && (
+            <button
+              onClick={() => setWeekOffset(0)}
+              className="rounded-md bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary transition-colors hover:bg-primary/20"
+            >
+              Today
+            </button>
+          )}
+          {(() => {
+            const nextTerm = getNextTermStart(new Date())
+            if (!nextTerm) return null
+            const todayMonday = getMonday(new Date())
+            const nextTermMonday = getMonday(nextTerm)
+            const diffWeeks = Math.round((nextTermMonday.getTime() - todayMonday.getTime()) / (7 * 24 * 60 * 60 * 1000))
+            if (diffWeeks <= 0 || diffWeeks === weekOffset) return null
+            return (
               <button
-                onClick={() => setWeekOffset(0)}
+                onClick={() => setWeekOffset(diffWeeks)}
                 className="rounded-md bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary transition-colors hover:bg-primary/20"
               >
-                Today
+                Next term
               </button>
-            )}
-            {(() => {
-              const nextTerm = getNextTermStart(new Date())
-              if (!nextTerm) return null
-              const todayMonday = getMonday(new Date())
-              const nextTermMonday = getMonday(nextTerm)
-              const diffWeeks = Math.round((nextTermMonday.getTime() - todayMonday.getTime()) / (7 * 24 * 60 * 60 * 1000))
-              if (diffWeeks <= 0 || diffWeeks === weekOffset) return null
-              return (
-                <button
-                  onClick={() => setWeekOffset(diffWeeks)}
-                  className="rounded-md bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary transition-colors hover:bg-primary/20"
-                >
-                  Next term
-                </button>
-              )
-            })()}
-            {nextJumpDate && nextJumpLabel && (() => {
-              const jumpDate = new Date(nextJumpDate + 'T12:00:00')
-              const todayMonday = getMonday(new Date())
-              const jumpMonday = getMonday(jumpDate)
-              const diffWeeks = Math.round((jumpMonday.getTime() - todayMonday.getTime()) / (7 * 24 * 60 * 60 * 1000))
-              if (diffWeeks === weekOffset) return null
-              return (
-                <button
-                  onClick={() => setWeekOffset(diffWeeks)}
-                  className="rounded-md bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary transition-colors hover:bg-primary/20"
-                >
-                  {nextJumpLabel}
-                </button>
-              )
-            })()}
-          </div>
-          {(() => {
-            const term = getTermInfo(monday)
-            return term ? (
-              <span className="text-[11px] font-medium text-muted-foreground">{term}</span>
-            ) : null
+            )
+          })()}
+          {nextJumpDate && nextJumpLabel && (() => {
+            const jumpDate = new Date(nextJumpDate + 'T12:00:00')
+            const todayMonday = getMonday(new Date())
+            const jumpMonday = getMonday(jumpDate)
+            const diffWeeks = Math.round((jumpMonday.getTime() - todayMonday.getTime()) / (7 * 24 * 60 * 60 * 1000))
+            if (diffWeeks === weekOffset) return null
+            return (
+              <button
+                onClick={() => setWeekOffset(diffWeeks)}
+                className="rounded-md bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary transition-colors hover:bg-primary/20"
+              >
+                {nextJumpLabel}
+              </button>
+            )
           })()}
         </div>
-        <button
-          onClick={() => viewMode === 'day'
-            ? setSelectedDayIndex(i => { if (i === 6) { setWeekOffset(o => o + 1); return 0 } return i + 1 })
-            : setWeekOffset(o => o + 1)
-          }
-          className="flex size-7 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-white/60 hover:text-foreground"
-        >
-          <ChevronRight className="size-4" />
-        </button>
       </div>
 
-      {weekEvents.length === 0 ? (
+      {weekEvents.length === 0 && viewMode !== 'day' ? (
         <div className="flex flex-col items-center justify-center py-10 text-center">
-          <p className="text-sm text-muted-foreground">No sessions this {viewMode === 'day' ? 'day' : 'week'}</p>
-          <p className="mt-1 text-xs text-muted-foreground/70">Use the arrows to navigate to another {viewMode === 'day' ? 'day' : 'week'}</p>
+          <p className="text-sm text-muted-foreground">No sessions this week</p>
+          <p className="mt-1 text-xs text-muted-foreground/70">Use the arrows to navigate to another week</p>
         </div>
       ) : viewMode === 'day' ? (
         /* ── Day View ── */
@@ -801,6 +808,8 @@ export function WeeklyCalendar({
                     blue: 'bg-primary/10 text-primary',
                   }
 
+                  const isDarkBg = event.color?.includes('text-white') || event.color?.includes('text-black')
+
                   return (
                     <button
                       key={event.id}
@@ -816,8 +825,8 @@ export function WeeklyCalendar({
                       <div className="flex items-start justify-between p-3">
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-2">
-                            <p className="font-semibold text-foreground truncate">{event.title}</p>
-                            {event.sessionStatus && (
+                            <p className={cn('font-semibold truncate', isDarkBg ? 'text-inherit' : 'text-foreground')}>{event.title}</p>
+                            {event.sessionStatus && !isDarkBg && (
                               <span className={cn(
                                 'shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium capitalize',
                                 event.sessionStatus === 'completed' ? 'bg-success/10 text-success' :
@@ -829,7 +838,7 @@ export function WeeklyCalendar({
                               </span>
                             )}
                           </div>
-                          <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
+                          <div className={cn('mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm', isDarkBg ? 'text-inherit opacity-90' : 'text-muted-foreground')}>
                             <span className="flex items-center gap-1">
                               <Clock className="size-3.5" />
                               {formatTimeShort(event.startTime)} – {formatTimeShort(event.endTime)}
@@ -845,7 +854,7 @@ export function WeeklyCalendar({
                             )}
                           </div>
                         </div>
-                        {event.capacityLabel && (
+                        {event.capacityLabel && !hideCapacity && (
                           <span className={cn(
                             'shrink-0 ml-2 rounded-full px-2 py-0.5 text-xs font-bold tabular-nums',
                             CAPACITY_COLORS[event.capacityColor ?? 'green']
@@ -871,8 +880,8 @@ export function WeeklyCalendar({
               const date = weekDates[i]
               const today = isToday(date)
               return (
-                <div key={day} className={cn(
-                  'border-l border-border px-1 py-2 text-center',
+                <button key={day} type="button" onClick={() => { setViewMode('day'); setSelectedDayIndex(i) }} className={cn(
+                  'border-l border-border px-1 py-2 text-center cursor-pointer hover:bg-primary/10 transition-colors',
                   today && 'bg-primary/5',
                   !today && i >= 5 && 'bg-warm-sand/15'
                 )}>
@@ -888,7 +897,7 @@ export function WeeklyCalendar({
                   )}>
                     {date.getDate()}
                   </div>
-                </div>
+                </button>
               )
             })}
           </div>
@@ -970,16 +979,16 @@ export function WeeklyCalendar({
                             {event.title}
                           </p>
                           {height >= 36 && (
-                            <p className="truncate text-[10px] opacity-75 leading-tight">
+                            <p className="truncate text-[10px] opacity-90 leading-tight">
                               {formatTimeShort(event.startTime)} - {formatTimeShort(event.endTime)}
                             </p>
                           )}
                           {event.subtitle && height >= 48 && (
-                            <p className="truncate text-[10px] font-semibold opacity-85 leading-tight">
+                            <p className="truncate text-[10px] font-semibold opacity-90 leading-tight">
                               {event.subtitle}
                             </p>
                           )}
-                          {event.capacityLabel && height >= 36 && (
+                          {event.capacityLabel && height >= 36 && !hideCapacity && (
                             <span className="absolute bottom-0.5 right-0.5 rounded px-1 text-[9px] font-bold opacity-90 bg-white/20">
                               {event.capacityLabel}
                             </span>
@@ -1051,7 +1060,7 @@ export function WeeklyCalendar({
                   )}
                 </div>
               )}
-              {popupEvent.spotsLeft !== undefined && popupEvent.spotsLeft !== null && popupEvent.spotsLeft <= 3 && (
+              {!hideCapacity && popupEvent.spotsLeft !== undefined && popupEvent.spotsLeft !== null && popupEvent.spotsLeft <= 3 && (
                 <div className="flex items-center gap-2 text-sm">
                   <Users className="size-3.5 shrink-0 text-danger" />
                   <span className={popupEvent.spotsLeft > 0 ? 'font-medium text-danger' : 'font-medium text-danger'}>
