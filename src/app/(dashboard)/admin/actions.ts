@@ -1138,3 +1138,99 @@ export async function adminCompleteSession(sessionId: string) {
   revalidatePath('/admin/programs')
   redirect('/admin/programs')
 }
+
+// ── Bulk Enrol Players ─────────────────────────────────────────────────
+
+export async function bulkEnrolPlayers(formData: FormData) {
+  const user = await requireAdmin()
+  const supabase = await createClient()
+
+  const programId = formData.get('program_id') as string
+  const playerIdsRaw = formData.get('player_ids') as string
+  const bookingType = (formData.get('booking_type') as string) || 'term'
+
+  if (!programId || !playerIdsRaw) {
+    redirect(`/admin/programs/${programId || ''}?error=${encodeURIComponent('Missing required fields')}`)
+  }
+
+  let playerIds: string[]
+  try { playerIds = JSON.parse(playerIdsRaw) } catch { playerIds = [] }
+
+  if (playerIds.length === 0) {
+    redirect(`/admin/programs/${programId}?error=${encodeURIComponent('No players selected')}`)
+  }
+
+  // Get existing roster to skip duplicates
+  const { data: existingRoster } = await supabase
+    .from('program_roster')
+    .select('player_id')
+    .eq('program_id', programId)
+    .eq('status', 'enrolled')
+
+  const existingIds = new Set((existingRoster ?? []).map(r => r.player_id))
+  const newPlayerIds = playerIds.filter(id => !existingIds.has(id))
+
+  if (newPlayerIds.length === 0) {
+    redirect(`/admin/programs/${programId}?error=${encodeURIComponent('All selected players are already enrolled')}`)
+  }
+
+  // Bulk insert roster entries
+  const rosterRows = newPlayerIds.map(playerId => ({
+    program_id: programId,
+    player_id: playerId,
+    status: 'enrolled',
+  }))
+
+  const { error: rosterError } = await supabase
+    .from('program_roster')
+    .insert(rosterRows)
+
+  if (rosterError) {
+    redirect(`/admin/programs/${programId}?error=${encodeURIComponent(rosterError.message)}`)
+  }
+
+  // Get player-family mapping for booking records
+  const { data: playerFamilies } = await supabase
+    .from('players')
+    .select('id, family_id')
+    .in('id', newPlayerIds)
+
+  // Create booking records
+  if (playerFamilies && playerFamilies.length > 0) {
+    const bookingRows = playerFamilies.map(p => ({
+      family_id: p.family_id,
+      player_id: p.id,
+      program_id: programId,
+      booking_type: bookingType,
+      status: 'confirmed',
+      booked_by: user?.id,
+    }))
+
+    await supabase.from('bookings').insert(bookingRows)
+  }
+
+  // Send notification to each unique family
+  try {
+    const { data: programInfo } = await supabase
+      .from('programs')
+      .select('name')
+      .eq('id', programId)
+      .single()
+
+    const familyIds = [...new Set((playerFamilies ?? []).map(p => p.family_id))]
+    for (const fid of familyIds) {
+      await sendNotificationToTarget({
+        title: 'Enrollment Confirmed',
+        body: `Your child has been enrolled in ${programInfo?.name ?? 'a program'}.`,
+        url: `/parent/programs/${programId}`,
+        targetType: 'family',
+        targetId: fid,
+      })
+    }
+  } catch (e) {
+    console.error('Bulk enrol notification error:', e)
+  }
+
+  revalidatePath(`/admin/programs/${programId}`)
+  redirect(`/admin/programs/${programId}?success=${encodeURIComponent(`Enrolled ${newPlayerIds.length} player(s)`)}`)
+}

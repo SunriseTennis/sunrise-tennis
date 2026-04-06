@@ -8,6 +8,7 @@ import { calculateGroupCoachPay } from '@/lib/utils/billing'
 import { getCurrentOrNextTerm, getTermFromParams } from '@/lib/utils/school-terms'
 import { ProgramEditForm } from './program-edit-form'
 import { AdminEnrolForm } from './admin-enrol-form'
+import { BulkEnrolForm } from './bulk-enrol-form'
 import { RosterTable } from './roster-table'
 import { PageHeader } from '@/components/page-header'
 import { StatusBadge } from '@/components/status-badge'
@@ -60,7 +61,7 @@ export default async function ProgramDetailPage({
       .eq('program_id', id)
       .order('enrolled_at'),
     supabase.from('families')
-      .select('id, display_id, family_name, players(id, first_name, last_name)')
+      .select('id, display_id, family_name, players(id, first_name, last_name, ball_color)')
       .eq('status', 'active')
       .order('display_id'),
     // Sessions filtered by term
@@ -521,6 +522,26 @@ export default async function ProgramDetailPage({
               lastName: p.last_name,
             })),
           }))}
+        />
+
+        <BulkEnrolForm
+          programId={id}
+          programLevel={program.level}
+          families={(allFamilies ?? []).map(f => ({
+            id: f.id,
+            displayId: f.display_id,
+            familyName: f.family_name,
+            players: ((f.players as unknown as { id: string; first_name: string; last_name: string; ball_color?: string | null }[]) ?? []).map(p => ({
+              id: p.id,
+              firstName: p.first_name,
+              lastName: p.last_name,
+              ballColor: p.ball_color ?? null,
+            })),
+          }))}
+          existingPlayerIds={(roster ?? []).map(r => {
+            const p = r.players as unknown as { id: string } | null
+            return p?.id ?? ''
+          }).filter(Boolean)}
         />
 
         <ProgramEditForm program={program} />

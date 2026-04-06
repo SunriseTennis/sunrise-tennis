@@ -362,6 +362,35 @@ export const teamMessageFormSchema = z.object({
   body: safeString(5000).min(1, 'Message cannot be empty'),
 })
 
+// Direct messages (parent → admin/coach)
+export const sendMessageFormSchema = z.object({
+  recipient_role: z.enum(['admin', 'coach']),
+  recipient_id: optionalUuid(),
+  category: z.enum(['question_program', 'scheduling', 'payment', 'general']),
+  subject: requiredString('Subject is required', 200),
+  body: safeString(5000).min(1, 'Message cannot be empty'),
+  player_id: optionalUuid(),
+  program_id: optionalUuid(),
+})
+
+// Admin/coach reply to a message
+export const replyMessageFormSchema = z.object({
+  message_id: uuidString('Invalid message ID'),
+  reply: safeString(5000).min(1, 'Reply cannot be empty'),
+})
+
+// Bulk enrollment
+export const bulkEnrolFormSchema = z.object({
+  program_id: uuidString('Invalid program'),
+  player_ids: z.string().min(1, 'Select at least one player'),
+  booking_type: z.enum(['term', 'trial', 'casual']),
+})
+
+// Bulk payment recording
+export const bulkPaymentFormSchema = z.object({
+  payments: z.string().min(1, 'No payments to record'),
+})
+
 // Availability response uses dynamic keys (status_PLAYERID_DATE)
 // so it's validated procedurally, not with a static schema
 

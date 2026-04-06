@@ -6,7 +6,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   const supabase = await createClient()
 
   // Query admin badge counts in parallel
-  const [pendingVouchersResult, pendingBookingsResult] = await Promise.all([
+  const [pendingVouchersResult, pendingBookingsResult, unreadMessagesResult] = await Promise.all([
     // Pending voucher submissions
     supabase
       .from('vouchers')
@@ -17,10 +17,18 @@ export default async function AdminLayout({ children }: { children: React.ReactN
       .from('bookings')
       .select('id', { count: 'exact', head: true })
       .eq('status', 'pending'),
+    // Unread parent messages (messages table pending migration)
+    // @ts-expect-error messages table not yet in DB types
+    supabase.from('messages')
+      .select('id', { count: 'exact', head: true })
+      .eq('recipient_role', 'admin')
+      .is('read_at', null)
+      .is('archived_at', null),
   ])
 
   const voucherBadge = (pendingVouchersResult.count ?? 0) > 0 ? pendingVouchersResult.count! : false
   const bookingBadge = (pendingBookingsResult.count ?? 0) > 0 ? pendingBookingsResult.count! : false
+  const messageBadge = (unreadMessagesResult.count ?? 0) > 0 ? unreadMessagesResult.count! : false
 
   const navItems: NavItem[] = [
     { href: '/admin', label: 'Overview', icon: 'LayoutDashboard' },
@@ -33,6 +41,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     { href: '/admin/competitions', label: 'Comps', icon: 'Swords' },
     { href: '/admin/events', label: 'Events', icon: 'CalendarDays' },
     { href: '/admin/reports', label: 'Reports', icon: 'BarChart3' },
+    { href: '/admin/messages', label: 'Messages', icon: 'MessageSquare', badge: messageBadge },
     { href: '/admin/notifications', label: 'Notifications', icon: 'Bell' },
     { href: '/admin/activity', label: 'Activity', icon: 'Shield' },
   ]

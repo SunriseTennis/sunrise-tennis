@@ -6,7 +6,7 @@ import { formatTime } from '@/lib/utils/dates'
 import { getTermForDate, getNextTermStart } from '@/lib/utils/school-terms'
 import { EmptyState } from '@/components/empty-state'
 import { ImageHero } from '@/components/image-hero'
-import { Users, GraduationCap, ChevronRight, CalendarDays, MapPin, UserPlus, CreditCard, Ticket, Calendar } from 'lucide-react'
+import { Users, GraduationCap, ChevronRight, CalendarDays, MapPin, UserPlus, CreditCard, Ticket, Calendar, Megaphone } from 'lucide-react'
 import { EnrolledCalendar } from './enrolled-calendar'
 
 // Player card style — warm sunset accent
@@ -43,6 +43,29 @@ export default async function ParentDashboard() {
   // Pre-fetch player IDs for this family
   const { data: familyPlayerRows } = await supabase.from('players').select('id').eq('family_id', familyId)
   const familyPlayerIdList = familyPlayerRows?.map(p => p.id) ?? []
+
+  // Fetch latest unread announcement for banner
+  const { data: latestAnnouncement } = await supabase
+    .from('notification_recipients')
+    .select(`
+      id,
+      read_at,
+      notifications:notification_id(title, body, url, type)
+    `)
+    .eq('user_id', user.id)
+    .is('read_at', null)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .single()
+
+  const announcement = latestAnnouncement && (latestAnnouncement.notifications as unknown as { type: string; title: string; body: string | null; url: string | null })?.type === 'announcement'
+    ? {
+        id: latestAnnouncement.id,
+        title: (latestAnnouncement.notifications as unknown as { title: string }).title,
+        body: (latestAnnouncement.notifications as unknown as { body: string | null }).body,
+        url: (latestAnnouncement.notifications as unknown as { url: string | null }).url,
+      }
+    : null
 
   const [
     { data: family },
@@ -201,6 +224,23 @@ export default async function ParentDashboard() {
           </Link>
         </div>
       </ImageHero>
+
+      {/* ── Announcement Banner ── */}
+      {announcement && (
+        <div className="animate-fade-up" style={{ animationDelay: '40ms' }}>
+          <Link
+            href={announcement.url || '/parent/notifications'}
+            className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm shadow-card transition-all hover:shadow-elevated press-scale"
+          >
+            <Megaphone className="mt-0.5 size-4 shrink-0 text-amber-600" />
+            <div className="min-w-0">
+              <p className="font-semibold text-amber-900">{announcement.title}</p>
+              {announcement.body && <p className="mt-0.5 text-amber-700 line-clamp-2">{announcement.body}</p>}
+            </div>
+            <ChevronRight className="mt-0.5 size-4 shrink-0 text-amber-400" />
+          </Link>
+        </div>
+      )}
 
       {/* ── Quick Actions ── */}
       <div className="animate-fade-up flex gap-2 overflow-x-auto pb-1" style={{ animationDelay: '60ms' }}>

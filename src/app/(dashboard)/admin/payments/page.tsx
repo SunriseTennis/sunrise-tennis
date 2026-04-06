@@ -77,6 +77,12 @@ export default async function AdminPaymentsPage({
               >
                 <Ticket className="size-3" /> Vouchers
               </Link>
+              <Link
+                href="/admin/payments/bulk"
+                className="inline-flex items-center gap-1 rounded-full bg-white/20 px-2.5 py-0.5 text-xs font-medium text-white backdrop-blur-sm transition-colors hover:bg-white/30"
+              >
+                Bulk Record <ChevronRight className="size-3" />
+              </Link>
             </div>
           </div>
         </div>

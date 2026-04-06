@@ -10,8 +10,10 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { DollarSign, Users, CalendarDays, TrendingUp } from 'lucide-react'
+import { DollarSign, Users, CalendarDays, TrendingUp, Download } from 'lucide-react'
 import { ReportTabs } from './report-tabs'
+import { Button } from '@/components/ui/button'
+import Link from 'next/link'
 
 function getMonthLabel(dateStr: string): string {
   const d = new Date(dateStr + 'T00:00:00')
@@ -175,6 +177,32 @@ export default async function AdminReportsPage() {
       />
 
       <ReportTabs financial={financialData} attendance={attendanceData} />
+
+      {/* ── CSV Exports ── */}
+      <div className="mt-8 rounded-xl border border-border bg-card p-5 shadow-card">
+        <h2 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
+          <Download className="size-4 text-primary" />
+          Export Data (CSV)
+        </h2>
+        <div className="flex flex-wrap gap-2">
+          <Button asChild variant="outline" size="sm">
+            <a href="/api/admin/export?type=families" download>Families</a>
+          </Button>
+          <Button asChild variant="outline" size="sm">
+            <a href="/api/admin/export?type=players" download>Players</a>
+          </Button>
+          <Button asChild variant="outline" size="sm">
+            <a href="/api/admin/export?type=balances" download>Balances</a>
+          </Button>
+          <Button asChild variant="outline" size="sm">
+            <a href="/api/admin/export?type=attendance" download>Attendance (All)</a>
+          </Button>
+          <Button asChild variant="outline" size="sm">
+            <a href={`/api/admin/export?type=attendance&term=T2-2026`} download>Attendance (Term 2)</a>
+          </Button>
+        </div>
+        <p className="mt-2 text-xs text-muted-foreground">Downloads a CSV file for use with Excel, Google Sheets, or your accountant.</p>
+      </div>
     </div>
   )
 }
