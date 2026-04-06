@@ -174,6 +174,38 @@ export async function revokeCalendarToken() {
   redirect('/parent/settings?success=Calendar+link+revoked')
 }
 
+export async function changePassword(formData: FormData) {
+  const supabase = await createClient()
+  const user = await getSessionUser()
+  if (!user) redirect('/login')
+
+  const { checkRateLimitAsync } = await import('@/lib/utils/rate-limit')
+  if (!await checkRateLimitAsync(`password:${user.id}`, 3, 60_000)) {
+    redirect('/parent/settings?error=Too+many+attempts.+Please+wait+a+minute.')
+  }
+
+  const newPassword = formData.get('new_password') as string
+  const confirmPassword = formData.get('confirm_password') as string
+
+  if (!newPassword || newPassword.length < 8) {
+    redirect('/parent/settings?error=Password+must+be+at+least+8+characters')
+  }
+
+  if (newPassword !== confirmPassword) {
+    redirect('/parent/settings?error=Passwords+do+not+match')
+  }
+
+  const { error } = await supabase.auth.updateUser({ password: newPassword })
+
+  if (error) {
+    console.error('Password change failed:', error.message)
+    redirect('/parent/settings?error=Password+change+failed.+Please+try+again.')
+  }
+
+  revalidatePath('/parent/settings')
+  redirect('/parent/settings?success=Password+changed+successfully')
+}
+
 export async function updateNotificationPreferences(formData: FormData) {
   const supabase = await createClient()
   const familyId = await getParentFamilyId()

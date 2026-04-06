@@ -15,8 +15,14 @@ import {
 } from '@/components/ui/table'
 import { Users, UserCheck, GraduationCap, DollarSign, ChevronRight } from 'lucide-react'
 import { OverviewCalendar } from './overview-calendar'
+import { RainOutButton } from './rain-out-button'
 
-export default async function AdminDashboard() {
+export default async function AdminDashboard({
+  searchParams,
+}: {
+  searchParams: Promise<{ error?: string; success?: string }>
+}) {
+  const { error: pageError, success: pageSuccess } = await searchParams
   const supabase = await createClient()
   const { start: termStart, end: termEnd } = getCurrentTermRange(new Date())
   const nextTermEnd = getCurrentOrNextTermEnd(new Date())
@@ -172,6 +178,12 @@ export default async function AdminDashboard() {
     }
   })
 
+  // Count today's scheduled sessions for rain-out button
+  const today = new Date().toISOString().split('T')[0]
+  const todayScheduledCount = (calendarSessions ?? []).filter(
+    s => s.date === today && s.status === 'scheduled'
+  ).length
+
   const serializedPrograms = (programs ?? []).map(p => ({
     id: p.id,
     name: p.name,
@@ -182,6 +194,17 @@ export default async function AdminDashboard() {
 
   return (
     <div className="space-y-6">
+      {pageError && (
+        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+          {decodeURIComponent(pageError)}
+        </div>
+      )}
+      {pageSuccess && (
+        <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
+          {decodeURIComponent(pageSuccess)}
+        </div>
+      )}
+
       {/* ── Hero Banner ── */}
       <div className="animate-fade-up relative overflow-hidden rounded-2xl bg-gradient-to-r from-[#2B5EA7] via-[#6480A4] to-[#E87450] p-5 text-white shadow-elevated">
         <div className="absolute inset-0 rounded-2xl bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.15),transparent_60%)]" />
@@ -216,6 +239,13 @@ export default async function AdminDashboard() {
           icon={DollarSign}
         />
       </div>
+
+      {/* ── Quick Actions ── */}
+      {todayScheduledCount > 0 && (
+        <div className="animate-fade-up" style={{ animationDelay: '120ms' }}>
+          <RainOutButton todaySessionCount={todayScheduledCount} />
+        </div>
+      )}
 
       {/* ── Schedule Calendar ── */}
       <section className="animate-fade-up" style={{ animationDelay: '160ms' }}>

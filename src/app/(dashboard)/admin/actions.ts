@@ -857,6 +857,142 @@ export async function cancelSession(sessionId: string, formData: FormData) {
   redirect('/admin/programs')
 }
 
+// ── Rain-Out: Cancel All Today's Sessions ─────────────────────────────
+
+export async function rainOutToday() {
+  const user = await requireAdmin()
+  const supabase = await createClient()
+
+  const today = new Date().toLocaleDateString('en-CA') // YYYY-MM-DD
+
+  // Find all scheduled sessions for today
+  const { data: sessions } = await supabase
+    .from('sessions')
+    .select('id, program_id')
+    .eq('date', today)
+    .eq('status', 'scheduled')
+
+  if (!sessions || sessions.length === 0) {
+    redirect('/admin?error=No+scheduled+sessions+today+to+cancel')
+  }
+
+  const reason = 'Rained out'
+  const affectedProgramIds = new Set<string>()
+  const allAffectedFamilies = new Set<string>()
+
+  for (const session of sessions) {
+    // Cancel the session
+    await supabase
+      .from('sessions')
+      .update({ status: 'cancelled', cancellation_reason: reason })
+      .eq('id', session.id)
+
+    // Handle credits for enrolled families
+    if (session.program_id) {
+      affectedProgramIds.add(session.program_id)
+
+      const { data: roster } = await supabase
+        .from('program_roster')
+        .select('player_id')
+        .eq('program_id', session.program_id)
+        .eq('status', 'enrolled')
+
+      if (roster) {
+        for (const rosterEntry of roster) {
+          const { data: booking } = await supabase
+            .from('bookings')
+            .select('id, family_id, payment_option')
+            .eq('player_id', rosterEntry.player_id)
+            .eq('program_id', session.program_id)
+            .eq('status', 'confirmed')
+            .order('booked_at', { ascending: false })
+            .limit(1)
+            .single()
+
+          if (!booking) continue
+
+          allAffectedFamilies.add(booking.family_id)
+
+          const existingCharge = await getExistingSessionCharge(supabase, session.id, rosterEntry.player_id)
+
+          if (booking.payment_option === 'pay_later' && existingCharge) {
+            await voidCharge(supabase, existingCharge.id, booking.family_id)
+          } else if (booking.payment_option === 'pay_now') {
+            const { data: program } = await supabase
+              .from('programs')
+              .select('name, type')
+              .eq('id', session.program_id)
+              .single()
+
+            const sessionPrice = await getSessionPrice(supabase, booking.family_id, session.program_id, program?.type)
+            if (!existingCharge) {
+              await createCharge(supabase, {
+                familyId: booking.family_id,
+                playerId: rosterEntry.player_id,
+                type: 'credit',
+                sourceType: 'cancellation',
+                sourceId: session.id,
+                sessionId: session.id,
+                programId: session.program_id,
+                bookingId: booking.id,
+                description: `${program?.name ?? 'Session'} - Rained out`,
+                amountCents: -sessionPrice,
+                status: 'confirmed',
+                createdBy: user.id,
+              })
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // Recalculate balances
+  for (const fid of allAffectedFamilies) {
+    await recalculateBalance(supabase, fid)
+  }
+
+  // Send notifications per affected program
+  try {
+    const serviceClient = createServiceClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    )
+
+    for (const programId of affectedProgramIds) {
+      const { data: program } = await supabase
+        .from('programs')
+        .select('name')
+        .eq('id', programId)
+        .single()
+
+      await serviceClient.from('notifications').insert({
+        type: 'rain_cancel',
+        title: 'Session Cancelled - Weather',
+        body: `${program?.name ?? 'Today\'s session'} has been cancelled due to weather. No charge for this session.`,
+        url: '/parent',
+        target_type: 'program',
+        target_id: programId,
+        created_by: user.id,
+      })
+
+      await sendNotificationToTarget({
+        title: 'Session Cancelled - Weather',
+        body: `${program?.name ?? 'Today\'s session'} has been cancelled due to weather. No charge for this session.`,
+        url: '/parent',
+        targetType: 'program',
+        targetId: programId,
+      })
+    }
+  } catch (e) {
+    console.error('Rain-out notification failed:', e instanceof Error ? e.message : 'Unknown error')
+  }
+
+  revalidatePath('/admin')
+  revalidatePath('/admin/programs')
+  redirect(`/admin?success=${encodeURIComponent(`Rained out ${sessions.length} session${sessions.length !== 1 ? 's' : ''}. All families notified.`)}`)
+}
+
 // ── Admin Booking on Behalf ────────────────────────────────────────────
 
 export async function adminBookPlayer(formData: FormData) {

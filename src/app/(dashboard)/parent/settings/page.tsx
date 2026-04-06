@@ -4,6 +4,7 @@ import { ContactInfoForm } from './contact-info-form'
 import { MediaConsentForm } from './media-consent-form'
 import { NotificationPrefsForm } from './notification-prefs-form'
 import { CalendarSyncForm } from './calendar-sync-form'
+import { PasswordChangeForm } from './password-change-form'
 import { PageHeader } from '@/components/page-header'
 import { Card, CardContent } from '@/components/ui/card'
 import { AlertCircle, CheckCircle } from 'lucide-react'
@@ -71,6 +72,9 @@ export default async function ParentSettingsPage({
 
         {/* Calendar Sync */}
         <CalendarSyncForm calendarToken={family.calendar_token ?? null} />
+
+        {/* Password Change */}
+        <PasswordChangeForm />
 
         {/* Media Consent */}
         {players && players.length > 0 && (
