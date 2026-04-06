@@ -15,6 +15,7 @@ import {
   Calendar,
   Clock,
   DollarSign,
+  BarChart3,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 
@@ -35,6 +36,7 @@ export const NAV_ICONS: Record<string, LucideIcon> = {
   Calendar,
   Clock,
   DollarSign,
+  BarChart3,
 }
 
 export type NavIconName = keyof typeof NAV_ICONS

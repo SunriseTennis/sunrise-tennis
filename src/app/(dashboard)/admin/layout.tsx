@@ -31,6 +31,8 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     { href: '/admin/players', label: 'Players', icon: 'UserCheck' },
     { href: '/admin/payments', label: 'Payments', icon: 'CreditCard', badge: voucherBadge },
     { href: '/admin/competitions', label: 'Comps', icon: 'Swords' },
+    { href: '/admin/events', label: 'Events', icon: 'CalendarDays' },
+    { href: '/admin/reports', label: 'Reports', icon: 'BarChart3' },
     { href: '/admin/notifications', label: 'Notifications', icon: 'Bell' },
     { href: '/admin/activity', label: 'Activity', icon: 'Shield' },
   ]

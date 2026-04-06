@@ -1,5 +1,6 @@
 import { DashboardHeader } from '@/components/dashboard-header'
 import { PushPrompt } from '@/components/push-prompt'
+import { PullToRefresh } from '@/components/pull-to-refresh'
 
 export default function DashboardLayout({
   children,
@@ -11,7 +12,9 @@ export default function DashboardLayout({
       <DashboardHeader />
       <main className="mx-auto max-w-7xl px-4 py-6">
         <PushPrompt />
-        {children}
+        <PullToRefresh>
+          {children}
+        </PullToRefresh>
       </main>
     </div>
   )
