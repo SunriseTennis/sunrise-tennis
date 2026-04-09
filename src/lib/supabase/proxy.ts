@@ -3,7 +3,7 @@ import { NextResponse, type NextRequest } from 'next/server'
 
 /**
  * Sign a value with HMAC-SHA256 to prevent cookie tampering.
- * Uses the Supabase anon key as signing secret (always available in middleware).
+ * Uses the Supabase anon key as signing secret (always available in the proxy).
  */
 async function signValue(value: string): Promise<string> {
   const secret = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
@@ -49,7 +49,7 @@ export async function updateSession(request: NextRequest) {
 
   // Performance optimisation: only call getUser() (network) when the JWT
   // is within 5 minutes of expiry. Otherwise read from the session cookie
-  // (local, 0ms). Middleware still refreshes the token when needed.
+  // (local, 0ms). The proxy still refreshes the token when needed.
   const { data: { session } } = await supabase.auth.getSession()
 
   let user = session?.user ?? null

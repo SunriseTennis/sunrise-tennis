@@ -1,7 +1,7 @@
 import { type NextRequest } from 'next/server'
-import { updateSession } from '@/lib/supabase/middleware'
+import { updateSession } from '@/lib/supabase/proxy'
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   // Generate a nonce for CSP — Next.js reads x-nonce from request headers
   // and automatically applies it to inline <script> tags
   const nonce = Buffer.from(crypto.randomUUID()).toString('base64')
