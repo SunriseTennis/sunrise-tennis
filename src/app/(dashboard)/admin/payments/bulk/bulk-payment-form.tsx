@@ -150,8 +150,7 @@ export function BulkPaymentForm({ families }: { families: Family[] }) {
                 >
                   <option value="bank_transfer">Bank transfer</option>
                   <option value="cash">Cash</option>
-                  <option value="card">Card</option>
-                  <option value="square">Square</option>
+                  <option value="stripe">Stripe</option>
                 </select>
               </div>
               <div>

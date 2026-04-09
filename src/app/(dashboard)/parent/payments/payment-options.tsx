@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { SquarePaymentForm } from '@/components/square-payment-form'
+import { StripePaymentForm } from '@/components/stripe-payment-form'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { CreditCard, Building2, Copy, Check, ChevronRight } from 'lucide-react'
@@ -49,7 +49,7 @@ export function PaymentOptions({
               </div>
               <div className="flex-1">
                 <p className="font-semibold text-foreground">Pay by Card</p>
-                <p className="mt-0.5 text-xs text-muted-foreground">Visa, Mastercard, AMEX via Square</p>
+                <p className="mt-0.5 text-xs text-muted-foreground">Visa, Mastercard, AMEX via Stripe</p>
               </div>
               <ChevronRight className="size-5 text-muted-foreground/50 transition-transform group-hover:translate-x-0.5" />
             </div>
@@ -86,7 +86,7 @@ export function PaymentOptions({
           </Button>
         </div>
         <div className="mt-4">
-          <SquarePaymentForm
+          <StripePaymentForm
             familyId={familyId}
             defaultAmountDollars={owedDollars}
             maxAmountDollars={owedDollars}

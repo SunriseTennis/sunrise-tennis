@@ -39,7 +39,7 @@ interface ReportTabsProps {
 }
 
 const METHOD_LABELS: Record<string, string> = {
-  card: 'Card (Square)',
+  stripe: 'Card (Stripe)',
   bank_transfer: 'Bank Transfer',
   cash: 'Cash',
   voucher: 'Sports Voucher',

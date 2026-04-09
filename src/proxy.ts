@@ -14,22 +14,18 @@ export async function proxy(request: NextRequest) {
   // Run auth middleware (handles session refresh, role checks, redirects)
   const response = await updateSession(request)
 
-  // Determine if this is a payment route (Square SDK may need unsafe-eval)
-  const isPaymentRoute = request.nextUrl.pathname.startsWith('/parent/payments')
-    || request.nextUrl.pathname.startsWith('/admin/payments')
-
-  const scriptSrc = isPaymentRoute
-    ? `'self' 'nonce-${nonce}' 'unsafe-eval' https://web.squarecdn.com https://sandbox.web.squarecdn.com`
-    : `'self' 'nonce-${nonce}' https://web.squarecdn.com https://sandbox.web.squarecdn.com`
+  // Stripe.js loads from js.stripe.com on every page (lightweight); the
+  // PaymentElement iframe served from m.stripe.network embeds the card form.
+  const scriptSrc = `'self' 'nonce-${nonce}' https://js.stripe.com`
 
   const csp = [
     `default-src 'self'`,
     `script-src ${scriptSrc}`,
     `style-src 'self' 'unsafe-inline'`,
-    `img-src 'self' data: blob: https://*.supabase.co`,
+    `img-src 'self' data: blob: https://*.supabase.co https://*.stripe.com`,
     `font-src 'self'`,
-    `connect-src 'self' https://*.supabase.co wss://*.supabase.co https://connect.squareup.com https://connect.squareupsandbox.com https://pep.squarecdn.com https://va.vercel-scripts.com`,
-    `frame-src https://www.youtube.com https://youtube-nocookie.com https://pep.squarecdn.com`,
+    `connect-src 'self' https://*.supabase.co wss://*.supabase.co https://api.stripe.com https://maps.stripe.com https://va.vercel-scripts.com`,
+    `frame-src https://www.youtube.com https://youtube-nocookie.com https://js.stripe.com https://hooks.stripe.com https://m.stripe.network`,
     `object-src 'none'`,
     `base-uri 'self'`,
     `form-action 'self'`,

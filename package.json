@@ -13,6 +13,8 @@
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
     "@hookform/resolvers": "^5.2.2",
+    "@stripe/react-stripe-js": "^6.1.0",
+    "@stripe/stripe-js": "^9.1.0",
     "@supabase/ssr": "^0.9.0",
     "@supabase/supabase-js": "^2.99.2",
     "@upstash/ratelimit": "^2.0.8",
@@ -28,6 +30,7 @@
     "react-dom": "19.2.3",
     "react-hook-form": "^7.71.2",
     "sonner": "^2.0.7",
+    "stripe": "^22.0.1",
     "tailwind-merge": "^3.5.0",
     "web-push": "^3.6.7",
     "zod": "^4.3.6"

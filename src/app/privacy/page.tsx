@@ -63,8 +63,8 @@ export default function PrivacyPage() {
 
           <h3>Payment information</h3>
           <p>
-            Payments are processed by <strong>Square</strong> using client-side tokenisation. Your
-            card details are sent directly to Square and never touch our servers. We only store
+            Payments are processed by <strong>Stripe</strong> using client-side tokenisation. Your
+            card details are sent directly to Stripe and never touch our servers. We only store
             transaction references, amounts and payment status.
           </p>
 
@@ -158,7 +158,7 @@ export default function PrivacyPage() {
                 <td>All application data (encrypted at rest)</td>
               </tr>
               <tr>
-                <td>Square</td>
+                <td>Stripe</td>
                 <td>Payment processing</td>
                 <td>Payment tokens and transaction data only</td>
               </tr>

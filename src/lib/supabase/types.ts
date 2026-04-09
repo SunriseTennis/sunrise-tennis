@@ -1344,7 +1344,7 @@ export type Database = {
           payment_method: string
           received_at: string | null
           recorded_by: string | null
-          square_payment_id: string | null
+          stripe_payment_intent_id: string | null
           status: string
           voided_at: string | null
           voided_by: string | null
@@ -1361,7 +1361,7 @@ export type Database = {
           payment_method: string
           received_at?: string | null
           recorded_by?: string | null
-          square_payment_id?: string | null
+          stripe_payment_intent_id?: string | null
           status?: string
           voided_at?: string | null
           voided_by?: string | null
@@ -1378,7 +1378,7 @@ export type Database = {
           payment_method?: string
           received_at?: string | null
           recorded_by?: string | null
-          square_payment_id?: string | null
+          stripe_payment_intent_id?: string | null
           status?: string
           voided_at?: string | null
           voided_by?: string | null

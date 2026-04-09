@@ -12,7 +12,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Card, CardContent } from '@/components/ui/card'
 import { createBrowserClient } from '@supabase/ssr'
 
-const PAYMENT_METHODS = ['square', 'bank_transfer', 'cash']
+const PAYMENT_METHODS = ['stripe', 'bank_transfer', 'cash']
 
 const selectClass = 'mt-1 block w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary'
 

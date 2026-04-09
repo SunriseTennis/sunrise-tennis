@@ -54,7 +54,7 @@ export default function TermsPage() {
           <h2>4. Payments</h2>
           <ul>
             <li>All prices are in Australian Dollars (AUD) and are inclusive of GST where applicable.</li>
-            <li>Card payments are processed securely by <strong>Square</strong>. Your card details are handled directly by Square and never stored on our servers.</li>
+            <li>Card payments are processed securely by <strong>Stripe</strong>. Your card details are handled directly by Stripe and never stored on our servers.</li>
             <li>Bank transfers and cash payments are recorded manually by the administrator.</li>
             <li>Outstanding balances are expected to be settled promptly. We may suspend bookings for accounts with overdue balances.</li>
             <li>Refunds are handled on a case-by-case basis. Contact us to discuss.</li>
