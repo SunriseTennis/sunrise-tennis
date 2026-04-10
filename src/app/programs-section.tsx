@@ -1,7 +1,6 @@
 'use client'
 
 import { useState } from 'react'
-import Image from 'next/image'
 import { ChevronDown, ChevronRight, LayoutGrid, Calendar } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 
@@ -26,7 +25,8 @@ const LEVEL_CONFIG: Record<string, {
   color: string
   bgLight: string
   border: string
-  image: string
+  ballColor: string
+  ballHighlight: string
 }> = {
   blue: {
     label: 'Blue Ball',
@@ -35,7 +35,8 @@ const LEVEL_CONFIG: Record<string, {
     color: 'text-[#4A90D9]',
     bgLight: 'bg-[#4A90D9]/10',
     border: 'border-[#4A90D9]/30',
-    image: '/images/tennis/level-red.jpg', // Placeholder — no blue ball image yet
+    ballColor: '#4A90D9',
+    ballHighlight: '#6BB0F0',
   },
   red: {
     label: 'Red Ball',
@@ -44,7 +45,8 @@ const LEVEL_CONFIG: Record<string, {
     color: 'text-[#C53030]',
     bgLight: 'bg-[#C53030]/10',
     border: 'border-[#C53030]/30',
-    image: '/images/tennis/level-red.jpg',
+    ballColor: '#C53030',
+    ballHighlight: '#E25555',
   },
   orange: {
     label: 'Orange Ball',
@@ -53,7 +55,8 @@ const LEVEL_CONFIG: Record<string, {
     color: 'text-[#E86A20]',
     bgLight: 'bg-[#E86A20]/10',
     border: 'border-[#E86A20]/30',
-    image: '/images/tennis/level-orange.jpg',
+    ballColor: '#E86A20',
+    ballHighlight: '#F59042',
   },
   green: {
     label: 'Green Ball',
@@ -62,7 +65,8 @@ const LEVEL_CONFIG: Record<string, {
     color: 'text-[#2D8A4E]',
     bgLight: 'bg-[#2D8A4E]/10',
     border: 'border-[#2D8A4E]/30',
-    image: '/images/tennis/level-green.jpg',
+    ballColor: '#2D8A4E',
+    ballHighlight: '#44B06E',
   },
   yellow: {
     label: 'Yellow Ball',
@@ -71,7 +75,8 @@ const LEVEL_CONFIG: Record<string, {
     color: 'text-[#92730A]',
     bgLight: 'bg-[#EAB308]/10',
     border: 'border-[#EAB308]/30',
-    image: '/images/tennis/level-yellow.jpg',
+    ballColor: '#D4A20A',
+    ballHighlight: '#EAB308',
   },
 }
 
@@ -82,7 +87,25 @@ const DEFAULT_LEVEL_CONFIG = {
   color: 'text-[#2B5EA7]',
   bgLight: 'bg-[#2B5EA7]/10',
   border: 'border-[#2B5EA7]/30',
-  image: '/images/tennis/hero-sunset.jpg',
+  ballColor: '#2B5EA7',
+  ballHighlight: '#4A7EC7',
+}
+
+function TennisBall({ color, highlight, size = 64 }: { color: string; highlight: string; size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <circle cx="32" cy="32" r="30" fill={color} />
+      <circle cx="32" cy="32" r="30" fill="url(#ballShine)" />
+      <path d="M12 16C20 28 20 36 12 48" stroke={highlight} strokeWidth="2.5" strokeLinecap="round" opacity="0.6" />
+      <path d="M52 16C44 28 44 36 52 48" stroke={highlight} strokeWidth="2.5" strokeLinecap="round" opacity="0.6" />
+      <defs>
+        <radialGradient id="ballShine" cx="0.35" cy="0.3" r="0.65">
+          <stop offset="0%" stopColor="white" stopOpacity="0.3" />
+          <stop offset="100%" stopColor="white" stopOpacity="0" />
+        </radialGradient>
+      </defs>
+    </svg>
+  )
 }
 
 function formatTime(time: string) {
@@ -168,19 +191,13 @@ export function ProgramsSection({ programs }: { programs: Program[] }) {
                   key={level}
                   className={`group overflow-hidden rounded-xl border bg-white shadow-sm transition-all hover:shadow-md ${config.border}`}
                 >
-                  {/* Card header with image */}
+                  {/* Card header with ball icon */}
                   <button
                     onClick={() => setExpandedLevel(isExpanded ? null : level)}
                     className="flex w-full items-start gap-4 p-4 text-left"
                   >
-                    <div className="relative size-16 shrink-0 overflow-hidden rounded-lg sm:size-20">
-                      <Image
-                        src={config.image}
-                        alt={config.label}
-                        fill
-                        className="object-cover"
-                        sizes="80px"
-                      />
+                    <div className="flex size-16 shrink-0 items-center justify-center rounded-lg sm:size-20">
+                      <TennisBall color={config.ballColor} highlight={config.ballHighlight} size={56} />
                     </div>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
@@ -238,14 +255,15 @@ export function ProgramsSection({ programs }: { programs: Program[] }) {
             {/* Private lessons card */}
             <div className="group overflow-hidden rounded-xl border border-[#E0D0BE]/40 bg-white shadow-sm transition-all hover:shadow-md sm:col-span-2">
               <div className="flex items-start gap-4 p-4">
-                <div className="relative size-16 shrink-0 overflow-hidden rounded-lg sm:size-20">
-                  <Image
-                    src="/images/tennis/coaching-1on1.jpg"
-                    alt="Private tennis coaching"
-                    fill
-                    className="object-cover"
-                    sizes="80px"
-                  />
+                <div className="flex size-16 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-gradient-to-br from-[#2B5EA7] to-[#1A4A8A] sm:size-20">
+                  {/* Blue court visual */}
+                  <svg width="56" height="56" viewBox="0 0 56 56" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <rect width="56" height="56" rx="4" fill="#2B5EA7" />
+                    <rect x="8" y="8" width="40" height="40" rx="2" stroke="white" strokeWidth="1.5" strokeOpacity="0.5" />
+                    <line x1="28" y1="8" x2="28" y2="48" stroke="white" strokeWidth="1.5" strokeOpacity="0.4" />
+                    <line x1="8" y1="28" x2="48" y2="28" stroke="white" strokeWidth="1.5" strokeOpacity="0.4" />
+                    <circle cx="28" cy="28" r="6" stroke="white" strokeWidth="1.5" strokeOpacity="0.3" />
+                  </svg>
                 </div>
                 <div className="min-w-0 flex-1">
                   <h3 className="text-lg font-semibold text-[#2B5EA7]">Private Lessons</h3>

@@ -10,7 +10,8 @@ const trialSchema = z.object({
   phone: z.string().trim().min(1, 'Phone is required').max(30),
   childName: z.string().trim().min(1, "Child's name is required").max(200),
   childAge: z.number().int().min(3).max(16),
-  preferredDays: z.array(z.string()).max(6).default([]),
+  childGender: z.enum(['male', 'female']),
+  preferredDays: z.array(z.string()).max(7).default([]),
   message: z.string().trim().max(2000).optional(),
 })
 
@@ -47,7 +48,7 @@ export async function POST(request: NextRequest) {
     )
   }
 
-  const { parentName, email, phone, childName, childAge, preferredDays, message } = parsed.data
+  const { parentName, email, phone, childName, childAge, childGender, preferredDays, message } = parsed.data
   const supabase = getServiceClient()
 
   // Check for duplicate lead (same email)
@@ -89,6 +90,7 @@ export async function POST(request: NextRequest) {
       status: 'lead',
       notes: [
         `Trial booking via website`,
+        `Gender: ${childGender}`,
         preferredDays.length > 0 ? `Preferred days: ${preferredDays.join(', ')}` : null,
         message ? `Message: ${message}` : null,
       ].filter(Boolean).join('\n'),

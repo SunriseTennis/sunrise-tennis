@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { CheckCircle, Loader2 } from 'lucide-react'
 
-const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
 const AGES = Array.from({ length: 14 }, (_, i) => i + 3) // 3-16
 
 export function TrialBookingForm() {
@@ -32,6 +32,7 @@ export function TrialBookingForm() {
       phone: data.get('phone') as string,
       childName: data.get('childName') as string,
       childAge: parseInt(data.get('childAge') as string, 10),
+      childGender: data.get('childGender') as string,
       preferredDays: selectedDays,
       message: (data.get('message') as string) || undefined,
     }
@@ -116,7 +117,7 @@ export function TrialBookingForm() {
       </div>
 
       {/* Child details */}
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className="grid gap-4 sm:grid-cols-3">
         <div>
           <label htmlFor="childName" className="mb-1 block text-sm font-medium text-[#1A2332]">
             Child&apos;s name
@@ -145,6 +146,22 @@ export function TrialBookingForm() {
             {AGES.map((age) => (
               <option key={age} value={age}>{age} years old</option>
             ))}
+          </select>
+        </div>
+        <div>
+          <label htmlFor="childGender" className="mb-1 block text-sm font-medium text-[#1A2332]">
+            Gender
+          </label>
+          <select
+            id="childGender"
+            name="childGender"
+            required
+            className="w-full rounded-lg border border-[#E0D0BE] bg-white px-3 py-2.5 text-sm text-[#1A2332] focus:border-[#2B5EA7] focus:ring-1 focus:ring-[#2B5EA7] focus:outline-none"
+            defaultValue=""
+          >
+            <option value="" disabled>Select</option>
+            <option value="male">Male</option>
+            <option value="female">Female</option>
           </select>
         </div>
       </div>

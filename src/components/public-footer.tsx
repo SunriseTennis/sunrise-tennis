@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { Sun, Phone, Instagram, MapPin, Mail } from 'lucide-react'
+import { Sun, Phone, MapPin, Mail } from 'lucide-react'
 
 export function PublicFooter() {
   return (
@@ -42,15 +42,9 @@ export function PublicFooter() {
                 </a>
               </li>
               <li>
-                <a href="mailto:hello@sunrisetennis.com.au" className="flex items-center gap-2 transition-colors hover:text-white">
+                <a href="mailto:info@sunrisetennis.com.au" className="flex items-center gap-2 transition-colors hover:text-white">
                   <Mail className="size-4 shrink-0" />
-                  hello@sunrisetennis.com.au
-                </a>
-              </li>
-              <li>
-                <a href="https://instagram.com/sunrisetennis" target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 transition-colors hover:text-white">
-                  <Instagram className="size-4 shrink-0" />
-                  @sunrisetennis
+                  info@sunrisetennis.com.au
                 </a>
               </li>
             </ul>
@@ -67,9 +61,6 @@ export function PublicFooter() {
                 <p>Somerton Park SA 5044</p>
               </div>
             </div>
-            <p className="mt-3 text-xs text-white/50">
-              Sessions run Monday–Saturday during SA school terms
-            </p>
           </div>
         </div>
 

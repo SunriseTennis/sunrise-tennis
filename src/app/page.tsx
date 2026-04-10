@@ -75,17 +75,9 @@ export default async function Home() {
 
       {/* ── Hero ──────────────────────────────────────────────────────── */}
       <section className="relative flex min-h-[100dvh] items-center justify-center overflow-hidden px-4 pt-16 pb-20 text-white">
-        <Image
-          src="/images/tennis/hero-kids.jpg"
-          alt="Junior tennis player on court"
-          fill
-          className="object-cover"
-          priority
-          sizes="100vw"
-        />
-        {/* Stronger, warmer gradient overlay — not washed out */}
-        <div className="absolute inset-0 bg-gradient-to-b from-[#1A2332]/75 via-[#2B5EA7]/55 to-[#E87450]/40" />
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,rgba(247,205,93,0.20),transparent_60%)]" />
+        {/* Gradient background — image to be added later with real club photos */}
+        <div className="absolute inset-0 bg-gradient-to-b from-[#1A2332] via-[#2B5EA7] to-[#E87450]" />
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,rgba(247,205,93,0.25),transparent_60%)]" />
 
         <div className="relative mx-auto max-w-3xl text-center">
           {/* Logo mark */}
@@ -135,7 +127,7 @@ export default async function Home() {
                 <Users className="size-5 text-[#2B5EA7]" />
               </div>
               <div>
-                <p className="text-lg font-bold text-[#1A2332]">50+</p>
+                <p className="text-lg font-bold text-[#1A2332]">100+</p>
                 <p className="text-xs text-[#556270]">Active Students</p>
               </div>
             </div>
@@ -307,10 +299,6 @@ export default async function Home() {
       <section id="contact" className="scroll-mt-20 bg-[#FFFBF7] px-4 py-16 sm:py-20">
         <div className="mx-auto max-w-4xl text-center">
           <h2 className="text-2xl font-bold text-[#1A2332] sm:text-3xl">Find Us</h2>
-          <p className="mt-3 text-[#556270]">
-            Sessions run Monday–Saturday during SA school terms
-          </p>
-
           <div className="mt-10 grid gap-6 sm:grid-cols-3">
             <a
               href="https://maps.google.com/?q=Somerton+Park+Tennis+Club+40+Wilton+Ave+Somerton+Park+SA+5044"
