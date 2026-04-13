@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c 'echo \"=== Sunrise Tennis Codebase State ===\"; echo \"Branch: $(git branch --show-current)\"; echo \"Last 3 commits:\"; git log --oneline -3; echo \"Migrations: $(ls supabase/migrations/ 2>/dev/null | wc -l) files\"; echo \"Routes: $(find src/app -name page.tsx 2>/dev/null | wc -l) pages\"; echo \"Uncommitted: $(git status --porcelain | wc -l) files\"'"
+          }
+        ]
+      }
+    ]
+  }
+}
