@@ -24,7 +24,9 @@ import {
   getSessionPrice,
   getExistingSessionCharge,
   recalculateBalance,
+  formatChargeDescription,
 } from '@/lib/utils/billing'
+import { getTermLabel } from '@/lib/utils/school-terms'
 
 // ── Families ────────────────────────────────────────────────────────────
 
@@ -511,9 +513,22 @@ export async function updateAttendance(sessionId: string, formData: FormData) {
   // Get session details for billing context
   const { data: session } = await supabase
     .from('sessions')
-    .select('id, program_id, session_type')
+    .select('id, program_id, session_type, date, start_time, coach_id, coaches:coach_id(name)')
     .eq('id', sessionId)
     .single()
+
+  // Batch-fetch player first names for charge description formatting (3b)
+  const playerNames = new Map<string, string>()
+  if (entries.length > 0) {
+    const { data: playerRows } = await supabase
+      .from('players')
+      .select('id, first_name')
+      .in('id', entries.map(e => e.playerId))
+    for (const p of playerRows ?? []) playerNames.set(p.id, p.first_name)
+  }
+  const sessionDate = session?.date ?? null
+  const termLabel = sessionDate ? getTermLabel(sessionDate) : null
+  const privateCoachName = (session?.coaches as unknown as { name?: string } | null)?.name ?? null
 
   // Upsert attendance records
   for (const entry of entries) {
@@ -569,7 +584,12 @@ export async function updateAttendance(sessionId: string, formData: FormData) {
               sessionId,
               programId,
               bookingId: booking.id,
-              description: `${program?.name ?? 'Session'} - ${new Date().toLocaleDateString('en-AU', { day: '2-digit', month: 'short' })}`,
+              description: formatChargeDescription({
+                playerName: playerNames.get(entry.playerId),
+                label: program?.name ?? 'Session',
+                term: termLabel,
+                date: sessionDate,
+              }),
               amountCents: sessionPrice,
               status: 'confirmed',
               createdBy: user.id,
@@ -601,7 +621,13 @@ export async function updateAttendance(sessionId: string, formData: FormData) {
                 sessionId,
                 programId,
                 bookingId: booking.id,
-                description: `${program?.name ?? 'Session'} - No Show`,
+                description: formatChargeDescription({
+                  playerName: playerNames.get(entry.playerId),
+                  label: program?.name ?? 'Session',
+                  suffix: 'No Show',
+                  term: termLabel,
+                  date: sessionDate,
+                }),
                 amountCents: sessionPrice,
                 status: 'confirmed',
                 createdBy: user.id,
@@ -629,7 +655,13 @@ export async function updateAttendance(sessionId: string, formData: FormData) {
               sessionId,
               programId,
               bookingId: booking.id,
-              description: `${program?.name ?? 'Session'} - Absence credit`,
+              description: formatChargeDescription({
+                playerName: playerNames.get(entry.playerId),
+                label: program?.name ?? 'Session',
+                suffix: 'Absence credit',
+                term: termLabel,
+                date: sessionDate,
+              }),
               amountCents: -sessionPrice,
               status: 'confirmed',
               createdBy: user.id,
@@ -647,7 +679,13 @@ export async function updateAttendance(sessionId: string, formData: FormData) {
               sessionId,
               programId,
               bookingId: booking.id,
-              description: `${program?.name ?? 'Session'} - Makeup session`,
+              description: formatChargeDescription({
+                playerName: playerNames.get(entry.playerId),
+                label: program?.name ?? 'Session',
+                suffix: 'Makeup session',
+                term: termLabel,
+                date: sessionDate,
+              }),
               amountCents: sessionPrice,
               status: 'confirmed',
               createdBy: user.id,
@@ -667,7 +705,11 @@ export async function updateAttendance(sessionId: string, formData: FormData) {
               sessionId,
               programId,
               bookingId: booking.id,
-              description: `Private lesson - ${new Date().toLocaleDateString('en-AU', { day: '2-digit', month: 'short' })}`,
+              description: formatChargeDescription({
+                playerName: playerNames.get(entry.playerId),
+                label: privateCoachName ? `Private w/ ${privateCoachName}` : 'Private lesson',
+                date: sessionDate,
+              }),
               amountCents: sessionPrice,
               status: 'confirmed',
               createdBy: user.id,
@@ -702,7 +744,12 @@ export async function updateAttendance(sessionId: string, formData: FormData) {
               sessionId,
               programId,
               bookingId: booking.id,
-              description: `Private lesson - No Show (${(priorNoShows ?? 0) === 0 ? '50%' : 'full'} charge)`,
+              description: formatChargeDescription({
+                playerName: playerNames.get(entry.playerId),
+                label: privateCoachName ? `Private w/ ${privateCoachName}` : 'Private lesson',
+                suffix: `No Show - ${(priorNoShows ?? 0) === 0 ? '50%' : 'full'} charge`,
+                date: sessionDate,
+              }),
               amountCents: chargeAmount,
               status: 'confirmed',
               createdBy: user.id,
@@ -730,7 +777,7 @@ export async function cancelSession(sessionId: string, formData: FormData) {
   // Get session details
   const { data: session } = await supabase
     .from('sessions')
-    .select('id, program_id')
+    .select('id, program_id, date')
     .eq('id', sessionId)
     .single()
 
@@ -808,7 +855,12 @@ export async function cancelSession(sessionId: string, formData: FormData) {
               sessionId,
               programId,
               bookingId: booking.id,
-              description: `${program?.name ?? 'Session'} - Cancelled${reason ? ` (${reason})` : ''}`,
+              description: formatChargeDescription({
+                label: program?.name ?? 'Session',
+                suffix: reason ? `Cancelled - ${reason}` : 'Cancelled',
+                term: session?.date ? getTermLabel(session.date) : null,
+                date: session?.date ?? null,
+              }),
               amountCents: -sessionPrice,
               status: 'confirmed',
               createdBy: user.id,
@@ -935,7 +987,12 @@ export async function rainOutToday() {
                 sessionId: session.id,
                 programId: session.program_id,
                 bookingId: booking.id,
-                description: `${program?.name ?? 'Session'} - Rained out`,
+                description: formatChargeDescription({
+                  label: program?.name ?? 'Session',
+                  suffix: 'Rained out',
+                  term: getTermLabel(today),
+                  date: today,
+                }),
                 amountCents: -sessionPrice,
                 status: 'confirmed',
                 createdBy: user.id,

@@ -8,6 +8,10 @@
     {
       "path": "/api/cron/expire-bookings",
       "schedule": "0 9 * * *"
+    },
+    {
+      "path": "/api/cron/pre-charge-notifications",
+      "schedule": "0 9 * * *"
     }
   ]
 }

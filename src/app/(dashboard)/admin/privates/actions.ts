@@ -534,7 +534,7 @@ export async function adminBookPrivate(formData: FormData) {
   }
 
   // Create charge
-  const { createCharge } = await import('@/lib/utils/billing')
+  const { createCharge, formatChargeDescription } = await import('@/lib/utils/billing')
   await createCharge(supabase, {
     familyId,
     playerId: player.id,
@@ -542,7 +542,11 @@ export async function adminBookPrivate(formData: FormData) {
     sourceType: 'enrollment',
     sessionId: session.id,
     bookingId: booking.id,
-    description: `Private lesson with ${coach?.name ?? 'coach'} - ${date}`,
+    description: formatChargeDescription({
+      playerName: player.first_name,
+      label: `Private w/ ${coach?.name ?? 'coach'}`,
+      date,
+    }),
     amountCents: priceCents,
     status: 'confirmed',
     createdBy: adminUser?.id ?? null,
@@ -622,14 +626,18 @@ export async function adminCreateSharedPrivate(formData: FormData) {
   }
 
   // Create two charges — one per family, each for half
-  const { createCharge } = await import('@/lib/utils/billing')
+  const { createCharge, formatChargeDescription } = await import('@/lib/utils/billing')
   const coachName = coach?.name ?? 'coach'
 
   await createCharge(supabase, {
     familyId: familyId1, playerId: player1.id,
     type: 'private', sourceType: 'enrollment',
     sessionId: session.id, bookingId: booking.id,
-    description: `Shared private with ${coachName} (${player1.first_name} + ${player2.first_name}) - ${date}`,
+    description: formatChargeDescription({
+      playerName: player1.first_name,
+      label: `Shared private w/ ${coachName} (+ ${player2.first_name})`,
+      date,
+    }),
     amountCents: halfPrice, status: 'confirmed', createdBy: adminUser?.id ?? null,
   })
 
@@ -637,7 +645,11 @@ export async function adminCreateSharedPrivate(formData: FormData) {
     familyId: familyId2, playerId: player2.id,
     type: 'private', sourceType: 'enrollment',
     sessionId: session.id, bookingId: booking.id,
-    description: `Shared private with ${coachName} (${player2.first_name} + ${player1.first_name}) - ${date}`,
+    description: formatChargeDescription({
+      playerName: player2.first_name,
+      label: `Shared private w/ ${coachName} (+ ${player1.first_name})`,
+      date,
+    }),
     amountCents: halfPrice, status: 'confirmed', createdBy: adminUser?.id ?? null,
   })
 

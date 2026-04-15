@@ -479,6 +479,7 @@ export function WeeklyCalendar({
   hideCapacity,
   hideViewToggle,
   onDayClick,
+  initialJumpDate,
 }: {
   events: CalendarEvent[]
   onEventClick?: (event: CalendarEvent) => void
@@ -514,6 +515,8 @@ export function WeeklyCalendar({
   hideViewToggle?: boolean
   /** Called when user clicks a day column header in week view */
   onDayClick?: (dayIndex: number) => void
+  /** Date string (YYYY-MM-DD) to auto-jump to on first mount (e.g. next available) */
+  initialJumpDate?: string
 }) {
   const [viewMode, setViewMode] = useState<'week' | 'day'>(defaultView ?? 'week')
 
@@ -541,6 +544,20 @@ export function WeeklyCalendar({
     const nextTermMonday = getMonday(nextStart)
     return Math.round((nextTermMonday.getTime() - todayMonday.getTime()) / (7 * 24 * 60 * 60 * 1000))
   })
+  // Auto-jump to `initialJumpDate` on first render only
+  useEffect(() => {
+    if (!initialJumpDate) return
+    const target = new Date(initialJumpDate + 'T12:00:00')
+    if (isNaN(target.getTime())) return
+    const todayMonday = getMonday(new Date())
+    const targetMonday = getMonday(target)
+    const offset = Math.round((targetMonday.getTime() - todayMonday.getTime()) / (7 * 24 * 60 * 60 * 1000))
+    setWeekOffset(offset)
+    const day = target.getDay()
+    setSelectedDayIndex(day === 0 ? 6 : day - 1)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   const [popupEvent, setPopupEvent] = useState<CalendarEvent | null>(null)
   const [popupPos, setPopupPos] = useState<{ top: number; left: number; preferRight: boolean } | null>(null)
   const [selectedPlayerIds, setSelectedPlayerIds] = useState<Set<string>>(new Set())
@@ -974,7 +991,8 @@ export function WeeklyCalendar({
                       const startHour = parseTime(event.startTime)
                       const endHour = parseTime(event.endTime)
                       const top = (startHour - minHour) * hourHeight
-                      const height = Math.max((endHour - startHour) * hourHeight, 24)
+                      // 44px floor — 30-min slots render ≥44px tall to satisfy mobile tap-target guidelines
+                      const height = Math.max((endHour - startHour) * hourHeight, 44)
                       const isSelected = popupEvent?.id === event.id
                       const layout = collisionLayout.get(event.id) ?? { col: 0, total: 1 }
                       const widthPct = 100 / layout.total

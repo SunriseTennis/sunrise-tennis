@@ -4,7 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { createClient, getSessionUser } from '@/lib/supabase/server'
 import { validateFormData, requestPrivateFormSchema, cancelPrivateFormSchema } from '@/lib/utils/validation'
-import { createCharge, voidCharge } from '@/lib/utils/billing'
+import { createCharge, voidCharge, formatChargeDescription } from '@/lib/utils/billing'
 import { sendPushToUser, sendPushToAdmins } from '@/lib/push/send'
 import {
   canPlayerBookCoach,
@@ -163,7 +163,11 @@ export async function requestPrivateBooking(formData: FormData) {
     sourceType: 'enrollment',
     sessionId: session.id,
     bookingId: booking.id,
-    description: `Private lesson with ${coach.name} - ${date}`,
+    description: formatChargeDescription({
+      playerName: player.first_name,
+      label: `Private w/ ${coach.name}`,
+      date,
+    }),
     amountCents: priceCents,
     status: autoApprove ? 'confirmed' : 'pending',
     createdBy: userId,
@@ -293,7 +297,11 @@ export async function cancelPrivateBooking(formData: FormData) {
         sourceType: 'cancellation',
         sessionId: booking.session_id!,
         bookingId: booking_id,
-        description: `Late cancellation fee (${100 - creditPercent}%)`,
+        description: formatChargeDescription({
+          label: 'Late cancellation fee',
+          suffix: `${100 - creditPercent}%`,
+          date: session.date,
+        }),
         amountCents: chargeAmount,
         status: 'confirmed',
         createdBy: userId,
@@ -412,7 +420,11 @@ export async function requestStandingPrivate(formData: FormData) {
   await createCharge(supabase, {
     familyId, playerId: player_id, type: 'private', sourceType: 'enrollment',
     sessionId: firstSession.id, bookingId: parentBooking.id,
-    description: `Private lesson with ${coach.name} - ${date}`,
+    description: formatChargeDescription({
+      playerName: player.first_name,
+      label: `Private w/ ${coach.name}`,
+      date,
+    }),
     amountCents: priceCents, status: autoApprove ? 'confirmed' : 'pending', createdBy: userId,
   })
 
@@ -445,7 +457,11 @@ export async function requestStandingPrivate(formData: FormData) {
       await createCharge(supabase, {
         familyId, playerId: player_id, type: 'private', sourceType: 'enrollment',
         sessionId: sess.id, bookingId: bk.id,
-        description: `Private lesson with ${coach.name} - ${futureDate}`,
+        description: formatChargeDescription({
+          playerName: player.first_name,
+          label: `Private w/ ${coach.name}`,
+          date: futureDate,
+        }),
         amountCents: priceCents, status: autoApprove ? 'confirmed' : 'pending', createdBy: userId,
       })
     }

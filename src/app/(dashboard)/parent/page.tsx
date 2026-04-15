@@ -8,6 +8,8 @@ import { EmptyState } from '@/components/empty-state'
 import { ImageHero } from '@/components/image-hero'
 import { Users, GraduationCap, ChevronRight, CalendarDays, MapPin, UserPlus, CreditCard, Ticket, Calendar, Megaphone } from 'lucide-react'
 import { EnrolledCalendar } from './enrolled-calendar'
+import { PreChargeBanner } from './pre-charge-banner'
+import { CoachingMomentStrip, type UpcomingMoment } from './coaching-moment-strip'
 
 // Player card style — warm sunset accent
 const PLAYER_CARD_STYLE = 'bg-[#FDD5D0] border border-[#F0B8B0] text-deep-navy'
@@ -185,6 +187,43 @@ export default async function ParentDashboard() {
       })()
     : null
 
+  // Coaching-moment strip data: flatten today's enrolled group sessions + private bookings
+  // into { playerName, startAt, programName, href } entries for the client strip.
+  const coachingMoments: UpcomingMoment[] = (() => {
+    const out: UpcomingMoment[] = []
+    // Group sessions — use first enrolled player from this family as the name
+    for (const s of enrolledSessions) {
+      if (!s.program_id || !s.start_time) continue
+      // Find a player from this family enrolled in that program
+      const enrolment = (enrollments ?? []).find(e => {
+        const prog = e.programs as unknown as { id: string } | null
+        return prog?.id === s.program_id
+      })
+      const playerName = (enrolment?.players as unknown as { first_name: string } | null)?.first_name
+      const programName = (enrolment?.programs as unknown as { name: string } | null)?.name
+      if (!playerName || !programName) continue
+      out.push({
+        playerName,
+        startAt: `${s.date}T${s.start_time}`,
+        programName,
+        href: `/parent/programs`,
+      })
+    }
+    // Private bookings
+    for (const b of privateBookings ?? []) {
+      const session = b.sessions as unknown as { date: string; start_time: string | null; status: string; coaches: { name: string } | null } | null
+      const player = b.players as unknown as { first_name: string } | null
+      if (!session?.date || !session.start_time || session.status !== 'scheduled' || !player?.first_name) continue
+      out.push({
+        playerName: player.first_name,
+        startAt: `${session.date}T${session.start_time}`,
+        programName: `Private with ${session.coaches?.name ?? 'coach'}`,
+        href: `/parent/bookings`,
+      })
+    }
+    return out
+  })()
+
   // Term break awareness
   const isTermBreak = !getTermForDate(now)
   const nextTermStart = isTermBreak ? getNextTermStart(now) : null
@@ -242,6 +281,9 @@ export default async function ParentDashboard() {
         </div>
       )}
 
+      {/* ── Pre-Charge Heads-up Banner ── */}
+      <PreChargeBanner familyId={familyId} />
+
       {/* ── Quick Actions ── */}
       <div className="animate-fade-up flex gap-2 overflow-x-auto pb-1" style={{ animationDelay: '60ms' }}>
         <Link href="/parent/bookings" className="flex shrink-0 items-center gap-1.5 rounded-full border border-border bg-card px-3.5 py-2 text-xs font-medium text-deep-navy shadow-card transition-all hover:shadow-elevated press-scale">
@@ -263,6 +305,9 @@ export default async function ParentDashboard() {
       </div>
 
       <div className="section-divider" />
+
+      {/* ── Coaching-moment strip ── */}
+      <CoachingMomentStrip moments={coachingMoments} />
 
       {/* ── Two-column: Players + Upcoming Events ── */}
       <div className="grid gap-6 lg:grid-cols-2">

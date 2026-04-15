@@ -182,7 +182,7 @@ export async function completeOnboarding(pushSubscription: string | null) {
   // Mark onboarding complete
   const { error } = await supabase
     .from('families')
-    .update({ completed_onboarding: true })
+    .update({ completed_onboarding: true, terms_acknowledged_at: new Date().toISOString() })
     .eq('id', familyId)
 
   if (error) {

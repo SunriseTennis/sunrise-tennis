@@ -27,7 +27,7 @@ export default function TermsPage() {
         </div>
 
         <div className="prose prose-sm max-w-none text-muted-foreground [&_h2]:text-foreground [&_h3]:text-foreground [&_strong]:text-foreground">
-          <p className="text-xs">Last updated: 19 March 2026</p>
+          <p className="text-xs">Last updated: 16 April 2026</p>
 
           <h2>1. About this service</h2>
           <p>
@@ -44,18 +44,27 @@ export default function TermsPage() {
             <li>You must provide accurate information and keep it up to date.</li>
           </ul>
 
-          <h2>3. Bookings and enrolments</h2>
+          <h2 id="bookings">3. Bookings and enrolments</h2>
           <ul>
             <li>Session bookings and program enrolments are subject to availability and coach discretion.</li>
             <li>We reserve the right to cancel or reschedule sessions due to weather, court availability, or other operational reasons.</li>
-            <li>Cancellation policies are communicated at the time of booking. Makeup sessions may be offered at our discretion.</li>
+            <li><strong>Cancellation policy (private lessons):</strong>
+              <ul>
+                <li><strong>First cancellation per term, per child — waived</strong> (no charge), provided notice is given before the session starts.</li>
+                <li><strong>Late cancellation (less than 24 hours before start) — 50% of the session fee.</strong></li>
+                <li><strong>No-show — 100% of the session fee.</strong></li>
+                <li>Sunrise Tennis may waive or adjust these fees at its discretion (e.g. illness, family emergency).</li>
+              </ul>
+            </li>
+            <li>Rainouts and coach-initiated cancellations are not charged, and makeup sessions may be offered where practical.</li>
           </ul>
 
-          <h2>4. Payments</h2>
+          <h2 id="payments">4. Payments</h2>
           <ul>
             <li>All prices are in Australian Dollars (AUD) and are inclusive of GST where applicable.</li>
             <li>Card payments are processed securely by <strong>Stripe</strong>. Your card details are handled directly by Stripe and never stored on our servers.</li>
             <li>Bank transfers and cash payments are recorded manually by the administrator.</li>
+            <li>A heads-up push notification is sent roughly 10 days before sessions add to your family balance. You can opt out in your notification preferences.</li>
             <li>Outstanding balances are expected to be settled promptly. We may suspend bookings for accounts with overdue balances.</li>
             <li>Refunds are handled on a case-by-case basis. Contact us to discuss.</li>
           </ul>

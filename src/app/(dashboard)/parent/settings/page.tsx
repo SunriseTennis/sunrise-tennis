@@ -68,6 +68,7 @@ export default async function ParentSettingsPage({
         {/* Notification Preferences */}
         <NotificationPrefsForm
           currentPref={(family.notification_preferences as Record<string, string> | null)?.session_reminders ?? 'first_week_and_privates'}
+          preChargeHeadsUp={((family.notification_preferences as Record<string, unknown> | null)?.pre_charge_heads_up ?? true) !== false}
         />
 
         {/* Calendar Sync */}

@@ -80,6 +80,16 @@ export function getAllTerms(): SchoolTerm[] {
   return [...SA_TERMS].sort((a, b) => a.year - b.year || a.term - b.term)
 }
 
+/**
+ * Human-readable term label for a given date: "Term 2 2026".
+ * Returns null if the date falls outside any configured term (holidays).
+ */
+export function getTermLabel(date: Date | string): string | null {
+  const d = typeof date === 'string' ? new Date(date) : date
+  const t = getTermForDate(d)
+  return t ? `Term ${t.term} ${t.year}` : null
+}
+
 /** Find the term that contains a given date, or null */
 export function getTermForDate(date: Date): SchoolTerm | null {
   const day = startOfDay(date)

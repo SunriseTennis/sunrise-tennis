@@ -217,10 +217,24 @@ export async function updateNotificationPreferences(formData: FormData) {
     redirect('/parent/settings?error=Invalid+preference')
   }
 
+  const preChargeHeadsUp = formData.get('pre_charge_heads_up') === 'on'
+
+  // Preserve any other keys in notification_preferences
+  const { data: existing } = await supabase
+    .from('families')
+    .select('notification_preferences')
+    .eq('id', familyId)
+    .single()
+  const current = (existing?.notification_preferences as Record<string, unknown> | null) ?? {}
+
   const { error } = await supabase
     .from('families')
     .update({
-      notification_preferences: { session_reminders: sessionReminders },
+      notification_preferences: {
+        ...current,
+        session_reminders: sessionReminders,
+        pre_charge_heads_up: preChargeHeadsUp,
+      },
     })
     .eq('id', familyId)
 

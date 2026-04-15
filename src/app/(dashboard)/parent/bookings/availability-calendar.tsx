@@ -485,6 +485,34 @@ export function AvailabilityCalendar({
 
   const activeEvents = activeTab === 'yours' ? yourEvents : coachEvents
 
+  // Earliest available coach slot date — used to auto-jump the calendar on load.
+  const earliestAvailableDate = useMemo(() => {
+    const todayStr = new Date().toISOString().split('T')[0]
+    const dates = coachEvents
+      .filter(e => e.selectable && e.date && e.date >= todayStr && e.id.includes('-avail-'))
+      .map(e => e.date as string)
+      .sort()
+    return dates[0] ?? null
+  }, [coachEvents])
+
+  // Scarcity: if only one coach is selected AND their visible-week slot count <4, show a badge.
+  const scarcityInfo = useMemo(() => {
+    if (visibleCoachIds.size !== 1) return null
+    const [coachId] = [...visibleCoachIds]
+    // Visible week = the Monday of current offset. We don't own weekOffset here, so
+    // approximate by counting slots in the earliest visible week from today forward.
+    const todayStr = new Date().toISOString().split('T')[0]
+    const weekEnd = new Date()
+    weekEnd.setDate(weekEnd.getDate() + 7)
+    const weekEndStr = weekEnd.toISOString().split('T')[0]
+    const count = coachEvents.filter(e =>
+      e.selectable && e.id.startsWith(coachId) && e.id.includes('-avail-') &&
+      e.date && e.date >= todayStr && e.date <= weekEndStr,
+    ).length
+    if (count >= 4) return null
+    return { count, coachId }
+  }, [visibleCoachIds, coachEvents])
+
   // Next upcoming private for jump button
   const nextPrivateDate = useMemo(() => {
     const now = new Date()
@@ -645,9 +673,19 @@ export function AvailabilityCalendar({
           onEventClick={handleEventClick}
           nextJumpDate={activeTab === 'yours' ? nextPrivateDate ?? undefined : undefined}
           nextJumpLabel="Next private"
+          initialJumpDate={activeTab === 'availabilities' ? earliestAvailableDate ?? undefined : undefined}
           defaultView={viewMode}
           hideViewToggle
-          headerLeft={<ViewToggle viewMode={viewMode} setViewMode={setViewMode} />}
+          headerLeft={
+            <div className="flex items-center gap-2">
+              <ViewToggle viewMode={viewMode} setViewMode={setViewMode} />
+              {scarcityInfo && (
+                <span className="inline-flex items-center rounded-full bg-amber-100 border border-amber-200 px-2 py-0.5 text-[11px] font-semibold text-amber-900">
+                  {scarcityInfo.count} slot{scarcityInfo.count !== 1 ? 's' : ''} this week
+                </span>
+              )}
+            </div>
+          }
         />
       )}
 
@@ -810,6 +848,14 @@ export function AvailabilityCalendar({
                   : 'Your coach will confirm within 24 hours'}
               </p>
             )}
+
+            <p className="mt-2 text-center text-[10px] text-muted-foreground">
+              Cancellation policy applies.{' '}
+              <a href="/terms#bookings" target="_blank" rel="noreferrer" className="underline hover:text-foreground">
+                See terms
+              </a>
+              .
+            </p>
           </div>
         </div>
       )}

@@ -12,7 +12,13 @@ const OPTIONS = [
   { value: 'off', label: 'Off', description: 'No session reminders' },
 ] as const
 
-export function NotificationPrefsForm({ currentPref }: { currentPref: string }) {
+export function NotificationPrefsForm({
+  currentPref,
+  preChargeHeadsUp,
+}: {
+  currentPref: string
+  preChargeHeadsUp: boolean
+}) {
   return (
     <Card>
       <CardContent className="pt-6">
@@ -41,8 +47,24 @@ export function NotificationPrefsForm({ currentPref }: { currentPref: string }) 
             </Label>
           ))}
 
+          <div className="mt-5 border-t border-border pt-4">
+            <h3 className="text-sm font-semibold text-foreground">Billing heads-up</h3>
+            <Label className="mt-2 flex cursor-pointer items-start gap-3 rounded-lg border border-border p-3 transition-colors hover:bg-muted/30 has-[:checked]:border-primary/30 has-[:checked]:bg-primary/5">
+              <input
+                type="checkbox"
+                name="pre_charge_heads_up"
+                defaultChecked={preChargeHeadsUp}
+                className="mt-0.5 size-4 rounded border-border text-primary focus:ring-primary"
+              />
+              <div>
+                <span className="text-sm font-medium text-foreground">Heads-up before a charge posts</span>
+                <p className="text-xs text-muted-foreground">Get a push notification ~10 days before sessions add to your balance.</p>
+              </div>
+            </Label>
+          </div>
+
           <Button type="submit" size="sm" className="mt-2">
-            Save preference
+            Save preferences
           </Button>
         </form>
       </CardContent>

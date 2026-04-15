@@ -460,6 +460,19 @@ function StepNotifications({ error }: { error: string | null }) {
         </div>
       </div>
 
+      <p className="rounded-lg border border-border bg-muted/30 px-3 py-2.5 text-xs text-muted-foreground">
+        By continuing you confirm you&apos;ve reviewed our updated{' '}
+        <a
+          href="/terms"
+          target="_blank"
+          rel="noreferrer"
+          className="font-medium text-primary underline hover:text-primary/80"
+        >
+          Terms &amp; Conditions
+        </a>
+        , including the cancellation policy for private lessons.
+      </p>
+
       <div className="flex items-center justify-between gap-3">
         <button
           type="button"

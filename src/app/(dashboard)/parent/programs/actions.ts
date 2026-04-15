@@ -5,7 +5,8 @@ import { redirect } from 'next/navigation'
 import { createClient, getSessionUser } from '@/lib/supabase/server'
 import { sendPushToUser } from '@/lib/push/send'
 import { validateFormData, enrolFormSchema } from '@/lib/utils/validation'
-import { createCharge, getTermPrice, getSessionPrice, voidCharge, getExistingSessionCharge } from '@/lib/utils/billing'
+import { createCharge, getTermPrice, getSessionPrice, voidCharge, getExistingSessionCharge, formatChargeDescription } from '@/lib/utils/billing'
+import { getTermLabel } from '@/lib/utils/school-terms'
 
 async function getParentFamilyId(): Promise<{ userId: string; familyId: string } | null> {
   const supabase = await createClient()
@@ -44,7 +45,7 @@ export async function enrolInProgram(programId: string, familyId: string, formDa
   // Verify player belongs to this family
   const { data: player } = await supabase
     .from('players')
-    .select('id')
+    .select('id, first_name')
     .eq('id', playerId)
     .eq('family_id', familyId)
     .single()
@@ -173,7 +174,12 @@ export async function enrolInProgram(programId: string, familyId: string, formDa
       sourceId: booking.id,
       programId,
       bookingId: booking.id,
-      description: `${program?.name ?? 'Program'} - Term enrolment${discountDesc}`,
+      description: formatChargeDescription({
+        playerName: player.first_name,
+        label: `${program?.name ?? 'Program'} - Term enrolment`,
+        suffix: discountCents > 0 ? `${program?.early_pay_discount_pct}% early-pay discount` : null,
+        term: getTermLabel(new Date()),
+      }),
       amountCents: chargeAmount,
       status: 'confirmed',
       createdBy: auth.userId,
@@ -190,7 +196,11 @@ export async function enrolInProgram(programId: string, familyId: string, formDa
       sourceId: booking.id,
       programId,
       bookingId: booking.id,
-      description: `${program?.name ?? 'Program'} - Casual session`,
+      description: formatChargeDescription({
+        playerName: player.first_name,
+        label: `${program?.name ?? 'Program'} - Casual session`,
+        term: getTermLabel(new Date()),
+      }),
       amountCents: priceCents,
       status: 'pending',
       createdBy: auth.userId,
@@ -253,13 +263,14 @@ export async function bookSession(
   // Verify all players belong to this family
   const { data: players } = await supabase
     .from('players')
-    .select('id')
+    .select('id, first_name')
     .eq('family_id', auth.familyId)
     .in('id', playerIds)
 
   if (!players || players.length !== playerIds.length) {
     return { error: 'Player not found' }
   }
+  const playerNameById = new Map(players.map(p => [p.id, p.first_name]))
 
   // Get session + program info
   const { data: session } = await supabase
@@ -315,7 +326,12 @@ export async function bookSession(
         sourceId: sessionId,
         sessionId,
         programId,
-        description: `${program?.name ?? 'Session'} - ${session.date}`,
+        description: formatChargeDescription({
+          playerName: playerNameById.get(playerId),
+          label: program?.name ?? 'Session',
+          term: getTermLabel(session.date),
+          date: session.date,
+        }),
         amountCents: sessionPrice,
         status: 'confirmed',
         createdBy: auth.userId,

@@ -131,6 +131,51 @@ export async function waiveCharge(
   return recalculateBalance(supabase, familyId)
 }
 
+// ── Charge descriptions ────────────────────────────────────────────────
+
+export interface ChargeDescriptionInput {
+  /** Player first name, e.g. "Anya". Optional but recommended. */
+  playerName?: string | null
+  /** Program or session label, e.g. "Wed Red-Ball 4:15" or "Private w/ Zoe". */
+  label?: string | null
+  /** Suffix qualifier in parens after the label, e.g. "No Show", "Makeup", "50% charge". */
+  suffix?: string | null
+  /** Session/booking date — used when no term label applies (e.g. privates). */
+  date?: Date | string | null
+  /** Term label, e.g. "Term 2 2026". Preferred over date for group sessions. */
+  term?: string | null
+}
+
+/**
+ * Canonical charge description format — `<Player> - <Label[(suffix)]> - <Term or Date>`.
+ * Example outputs:
+ *   "Anya - Wed Red-Ball 4:15 - Term 2 2026"
+ *   "Anya - Wed Red-Ball 4:15 (No Show) - Term 2 2026"
+ *   "Anya - Private w/ Zoe - 03 May 2026"
+ *
+ * Use this at every charge creation site so the parent payments list is
+ * uniformly readable (action-plan 3b). See .claude/rules/financial-accuracy.md.
+ */
+export function formatChargeDescription(input: ChargeDescriptionInput): string {
+  const parts: string[] = []
+  if (input.playerName) parts.push(input.playerName)
+
+  let middle = ''
+  if (input.label) middle = input.label
+  if (input.suffix) middle = middle ? `${middle} (${input.suffix})` : input.suffix
+  if (middle) parts.push(middle)
+
+  if (input.term) parts.push(input.term)
+  else if (input.date) {
+    const d = typeof input.date === 'string' ? new Date(input.date) : input.date
+    if (!isNaN(d.getTime())) {
+      parts.push(d.toLocaleDateString('en-AU', { day: '2-digit', month: 'short', year: 'numeric' }))
+    }
+  }
+
+  return parts.filter(Boolean).join(' - ') || 'Charge'
+}
+
 // ── Charges ─────────────────────────────────────────────────────────────
 
 export interface CreateChargeParams {
