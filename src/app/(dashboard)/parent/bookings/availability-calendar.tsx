@@ -258,8 +258,8 @@ function generateCoachAvailabilityEvents(
             } else {
               calEvents.push({
                 id: `${idPrefix}-avail-${eventId}`,
-                title: formatTimeShort(startTime),
-                subtitle: coachName,
+                title: coachName,
+                subtitle: `${formatTimeShort(startTime)} - ${formatTimeShort(endTime)}`,
                 dayOfWeek, startTime, endTime,
                 date: dateStr,
                 color: `${availColor.bg} ${availColor.hover}`,
