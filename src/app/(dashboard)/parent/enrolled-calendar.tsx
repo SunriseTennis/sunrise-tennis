@@ -28,7 +28,7 @@ export const PLAYER_CARD_STYLES = [
   'bg-gradient-to-br from-[#8B78B0] to-[#A08EC0] border-[#7B68A0] text-white',
 ]
 
-// Program type colors
+// Program type colors (fallback when no level-based color applies)
 const TYPE_COLORS: Record<string, string> = {
   group: 'bg-[#2B5EA7] border-[#1F4E97] text-white',
   squad: 'bg-[#6480A4] border-[#547094] text-white',
@@ -37,6 +37,21 @@ const TYPE_COLORS: Record<string, string> = {
   school: 'bg-[#8B78B0] border-[#7B68A0] text-white',
   competition: 'bg-[#F7CD5D] border-[#E7BD4D] text-deep-navy',
 }
+
+// Level-based solid colors for "by type" mode (groups/squads)
+const LEVEL_TYPE_COLORS: Record<string, string> = {
+  red: 'bg-ball-red border-ball-red text-white',
+  orange: 'bg-ball-orange border-ball-orange text-white',
+  green: 'bg-ball-green border-ball-green text-white',
+  yellow: 'bg-ball-yellow border-ball-yellow text-deep-navy',
+  competitive: 'bg-[#2B5EA7] border-[#1F4E97] text-white',
+}
+
+// Private lesson style in "by type" mode — coral with dashed border
+const PRIVATE_TYPE_COLOR = 'bg-[#E87450] border-[#E87450] text-white border-dashed'
+
+// Competition style in "by type" mode — gold
+const COMP_TYPE_COLOR = 'bg-[#F7CD5D] border-[#F7CD5D] text-deep-navy'
 
 const DAY_PREFIXES = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
 
@@ -200,7 +215,14 @@ export function EnrolledCalendar({
           color = playerColorMap.get(playerNames[0] ?? '') ?? PLAYER_PALETTE[0]
         }
       } else {
-        color = TYPE_COLORS[first?.programType ?? 'group'] ?? TYPE_COLORS.group
+        if (first?.programType === 'private') {
+          color = PRIVATE_TYPE_COLOR
+        } else if (first?.programType === 'competition') {
+          color = COMP_TYPE_COLOR
+        } else {
+          // Group/squad: color by ball level, fallback to type color
+          color = LEVEL_TYPE_COLORS[first?.programLevel ?? ''] ?? TYPE_COLORS[first?.programType ?? 'group'] ?? TYPE_COLORS.group
+        }
       }
 
       return {
@@ -240,7 +262,7 @@ export function EnrolledCalendar({
         endTime: b.endTime!,
         color: colorMode === 'player'
           ? (playerColorMap.get(b.playerName) ?? PLAYER_PALETTE[0])
-          : TYPE_COLORS.private,
+          : PRIVATE_TYPE_COLOR,
         programType: 'private',
         playerNames: [b.playerName],
         date: b.date ?? undefined,
