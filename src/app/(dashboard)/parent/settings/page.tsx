@@ -8,8 +8,8 @@ import { EmailChangeForm, PasswordChangeFormShared } from '@/components/settings
 import { SignOutButton } from './sign-out-button'
 import { ImageHero } from '@/components/image-hero'
 import { WarmToast } from '@/components/warm-toast'
-import { SettingsAccordion } from './settings-accordion'
-import { Settings, User, Bell, CalendarDays, Camera, Mail, Lock, LogOut } from 'lucide-react'
+import { SettingsAccordion, type AccordionSection } from './settings-accordion'
+import { Settings } from 'lucide-react'
 
 export default async function ParentSettingsPage({
   searchParams,
@@ -42,10 +42,10 @@ export default async function ParentSettingsPage({
   const primaryContact = family.primary_contact as { name?: string; phone?: string; email?: string } | null
   const secondaryContact = family.secondary_contact as { name?: string; phone?: string; email?: string } | null
 
-  const sections = [
+  const sections: AccordionSection[] = [
     {
       id: 'contact',
-      icon: User,
+      iconName: 'User',
       label: 'Contact Information',
       description: 'Primary and secondary contact details',
       content: (
@@ -57,7 +57,7 @@ export default async function ParentSettingsPage({
     },
     {
       id: 'notifications',
-      icon: Bell,
+      iconName: 'Bell',
       label: 'Notifications',
       description: 'Session reminders and charge alerts',
       content: (
@@ -69,7 +69,7 @@ export default async function ParentSettingsPage({
     },
     {
       id: 'calendar',
-      icon: CalendarDays,
+      iconName: 'CalendarDays',
       label: 'Calendar Sync',
       description: 'Subscribe to your schedule in Apple/Google Calendar',
       content: (
@@ -78,7 +78,7 @@ export default async function ParentSettingsPage({
     },
     ...(players && players.length > 0 ? [{
       id: 'media',
-      icon: Camera,
+      iconName: 'Camera',
       label: 'Media Consent',
       description: 'Photo and video usage permissions',
       content: (
@@ -96,7 +96,7 @@ export default async function ParentSettingsPage({
     }] : []),
     {
       id: 'email',
-      icon: Mail,
+      iconName: 'Mail',
       label: 'Email Address',
       description: user.email ?? 'Change your login email',
       content: (
@@ -108,7 +108,7 @@ export default async function ParentSettingsPage({
     },
     {
       id: 'password',
-      icon: Lock,
+      iconName: 'Lock',
       label: 'Password',
       description: 'Update your password',
       content: (
@@ -117,7 +117,7 @@ export default async function ParentSettingsPage({
     },
     {
       id: 'signout',
-      icon: LogOut,
+      iconName: 'LogOut',
       label: 'Sign Out',
       destructive: true,
       content: (

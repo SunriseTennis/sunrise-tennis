@@ -1,13 +1,17 @@
 'use client'
 
 import { useState } from 'react'
-import { ChevronRight } from 'lucide-react'
+import { ChevronRight, User, Bell, CalendarDays, Camera, Mail, Lock, LogOut } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
 import type { LucideIcon } from 'lucide-react'
 
-interface AccordionSection {
+const ICON_MAP: Record<string, LucideIcon> = {
+  User, Bell, CalendarDays, Camera, Mail, Lock, LogOut,
+}
+
+export interface AccordionSection {
   id: string
-  icon: LucideIcon
+  iconName: string
   label: string
   description?: string
   content: React.ReactNode
@@ -21,7 +25,7 @@ export function SettingsAccordion({ sections }: { sections: AccordionSection[] }
     <div className="overflow-hidden rounded-xl border border-border bg-card shadow-card divide-y divide-border/40">
       {sections.map(section => {
         const isOpen = openId === section.id
-        const Icon = section.icon
+        const Icon = ICON_MAP[section.iconName] ?? User
         return (
           <div key={section.id}>
             <button
