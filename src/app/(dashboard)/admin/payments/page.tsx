@@ -36,8 +36,12 @@ export default async function AdminPaymentsPage({
     .limit(50)
 
   if (!showAll) {
-    // Default: show only pending payments that need action
-    query = query.in('status', ['pending', 'received'])
+    // Default: show only received (completed) payments
+    query = query.eq('status', 'received')
+  } else {
+    // Show all statuses but exclude abandoned Stripe PaymentIntents
+    // (pending + stripe = user started payment but never completed)
+    query = query.neq('status', 'pending')
   }
 
   const [{ data: payments }, { data: families }] = await Promise.all([
@@ -45,9 +49,9 @@ export default async function AdminPaymentsPage({
     supabase.from('families').select('id, display_id, family_name').eq('status', 'active').order('family_name'),
   ])
 
-  // Compute total pending amount for hero
-  const pendingTotal = (payments ?? [])
-    .filter(p => p.status === 'pending' || p.status === 'received')
+  // Compute total received amount for hero
+  const receivedTotal = (payments ?? [])
+    .filter(p => p.status === 'received')
     .reduce((sum, p) => sum + p.amount_cents, 0)
 
   return (
@@ -62,8 +66,8 @@ export default async function AdminPaymentsPage({
             <p className="mt-0.5 text-sm text-white/70">Record payments and manage invoices</p>
           </div>
           <div className="text-right">
-            <p className="text-xs font-medium text-white/70">{showAll ? 'Shown' : 'Pending'}</p>
-            <p className="text-2xl font-bold tabular-nums">{formatCurrency(pendingTotal)}</p>
+            <p className="text-xs font-medium text-white/70">{showAll ? 'Shown' : 'Received'}</p>
+            <p className="text-2xl font-bold tabular-nums">{formatCurrency(receivedTotal)}</p>
             <div className="mt-1 flex flex-wrap justify-end gap-1.5">
               <Link
                 href="/admin/payments/invoices"

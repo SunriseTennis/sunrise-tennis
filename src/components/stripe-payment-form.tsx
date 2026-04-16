@@ -29,6 +29,7 @@ export function StripePaymentForm({
   defaultAmountDollars,
   maxAmountDollars,
   description,
+  payingForLabel,
   invoiceId,
   editable = false,
 }: {
@@ -36,6 +37,8 @@ export function StripePaymentForm({
   defaultAmountDollars: string
   maxAmountDollars?: string
   description?: string
+  /** Shown below the amount input (e.g. "Red Ball Group - Sophia") */
+  payingForLabel?: string | null
   invoiceId?: string
   editable?: boolean
 }) {
@@ -43,6 +46,13 @@ export function StripePaymentForm({
   const [clientSecret, setClientSecret] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [creatingIntent, setCreatingIntent] = useState(false)
+
+  // Sync amount when a new click-to-pay prefill comes in
+  useEffect(() => {
+    setAmountDollars(defaultAmountDollars)
+    setClientSecret(null)
+    setError(null)
+  }, [defaultAmountDollars])
 
   const stripeJsPromise = useMemo(() => getStripeJs(), [])
 
@@ -126,6 +136,11 @@ export function StripePaymentForm({
                 className="block w-full rounded-lg border border-border bg-background py-2.5 pl-7 pr-3 text-sm text-foreground tabular-nums shadow-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 disabled:opacity-60"
               />
             </div>
+            {payingForLabel && (
+              <p className="mt-1.5 text-xs text-muted-foreground">
+                Paying for: <span className="font-medium text-foreground/80">{payingForLabel}</span>
+              </p>
+            )}
             {maxAmountDollars && (
               <p className="mt-1 text-xs text-muted-foreground">
                 Outstanding balance: ${maxAmountDollars}

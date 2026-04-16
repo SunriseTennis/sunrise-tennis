@@ -45,6 +45,7 @@ export function VoucherForm({ players, familyContact, familyAddress }: VoucherFo
   const [selectedPlayerId, setSelectedPlayerId] = useState(players[0]?.id ?? '')
   const [amount, setAmount] = useState<'100' | '200'>('100')
   const [file, setFile] = useState<File | null>(null)
+  const [validationErrors, setValidationErrors] = useState<Record<string, string>>({})
 
   // Pre-populate from selected player
   const selectedPlayer = players.find(p => p.id === selectedPlayerId)
@@ -142,7 +143,34 @@ export function VoucherForm({ players, familyContact, familyAddress }: VoucherFo
 
         {/* ── Form Mode ── */}
         {mode === 'form' && (
-          <form key={selectedPlayerId} action={submitVoucherForm} className="mt-4 space-y-5">
+          <form key={selectedPlayerId} action={submitVoucherForm} className="mt-4 space-y-5" onSubmit={(e) => {
+            // Client-side validation for toggle pills and required fields
+            const form = e.currentTarget
+            const errors: Record<string, string> = {}
+            const requiredToggles = ['child_gender', 'first_time', 'has_disability', 'english_main_language', 'is_indigenous']
+            for (const name of requiredToggles) {
+              const input = form.querySelector<HTMLInputElement>(`input[name="${name}"]`)
+              if (!input?.value) {
+                errors[name] = 'This field is required'
+              }
+            }
+            // Also validate visible required inputs
+            const requiredInputs = form.querySelectorAll<HTMLInputElement>('input[required]:not([type="hidden"])')
+            for (const input of requiredInputs) {
+              if (!input.value.trim()) {
+                errors[input.name] = `${input.previousElementSibling?.textContent?.replace(' *', '') || 'This field'} is required`
+              }
+            }
+            if (Object.keys(errors).length > 0) {
+              e.preventDefault()
+              setValidationErrors(errors)
+              // Scroll to first error
+              const firstErrorField = form.querySelector(`[name="${Object.keys(errors)[0]}"]`)
+              firstErrorField?.closest('div')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+              return
+            }
+            setValidationErrors({})
+          }}>
             {/* Shared fields: player + amount */}
             <PlayerSelector
               players={players}
@@ -165,15 +193,16 @@ export function VoucherForm({ players, familyContact, familyAddress }: VoucherFo
                 name="child_gender"
                 label="Gender"
                 options={['Male', 'Female', 'Gender Diverse']}
-                defaultValue={selectedPlayer?.gender ?? ''}
+                defaultValue={normalizeGender(selectedPlayer?.gender ?? null)}
                 required
+                error={validationErrors.child_gender}
               />
-              <TogglePills name="first_time" label="Is this the first time your child has joined this activity provider?" options={['Yes', 'No']} required />
+              <TogglePills name="first_time" label="Is this the first time your child has joined this activity provider?" options={['Yes', 'No']} required error={validationErrors.first_time} />
               <FormField label="What is the cost to participate in this activity?" name="activity_cost" placeholder="e.g. 260 (whole dollars, no $ sign)" required />
-              <TogglePills name="has_disability" label="Has your child been identified as living with a disability?" options={['Yes', 'No']} defaultValue="No" required />
-              <TogglePills name="english_main_language" label="Is English the main language spoken at home?" options={['Yes', 'No']} defaultValue="Yes" required />
+              <TogglePills name="has_disability" label="Has your child been identified as living with a disability?" options={['Yes', 'No']} defaultValue="No" required error={validationErrors.has_disability} />
+              <TogglePills name="english_main_language" label="Is English the main language spoken at home?" options={['Yes', 'No']} defaultValue="Yes" required error={validationErrors.english_main_language} />
               <FormField label="If no, what language do you speak at home?" name="other_language" />
-              <TogglePills name="is_indigenous" label="Is your child from an Aboriginal or Torres Strait Islander background?" options={['Yes', 'No']} defaultValue="No" required />
+              <TogglePills name="is_indigenous" label="Is your child from an Aboriginal or Torres Strait Islander background?" options={['Yes', 'No']} defaultValue="No" required error={validationErrors.is_indigenous} />
             </fieldset>
 
             {/* ── Medicare Information ── */}
@@ -429,12 +458,14 @@ function TogglePills({
   options,
   defaultValue = '',
   required,
+  error,
 }: {
   name: string
   label: string
   options: string[]
   defaultValue?: string
   required?: boolean
+  error?: string
 }) {
   const [selected, setSelected] = useState(defaultValue)
 
@@ -454,13 +485,18 @@ function TogglePills({
               'rounded-full px-4 py-2 text-sm font-medium transition-all',
               selected === opt
                 ? 'bg-primary text-white shadow-sm'
-                : 'border border-border text-foreground hover:bg-muted/50',
+                : error && !selected
+                  ? 'border border-danger text-foreground hover:bg-muted/50'
+                  : 'border border-border text-foreground hover:bg-muted/50',
             )}
           >
             {opt}
           </button>
         ))}
       </div>
+      {error && !selected && (
+        <p className="mt-1 text-xs text-danger">{error}</p>
+      )}
       <input type="hidden" name={name} value={selected} />
     </div>
   )
@@ -563,4 +599,14 @@ function parseContactName(name: string | null | undefined): { first: string; las
 function formatDobForVoucher(isoDate: string): string {
   const [y, m, d] = isoDate.split('-')
   return `${d}/${m}/${y}`
+}
+
+/** Map DB gender values (lowercase/mixed) to the voucher form options */
+function normalizeGender(dbGender: string | null): string {
+  if (!dbGender) return ''
+  const lower = dbGender.toLowerCase().trim()
+  if (lower === 'male' || lower === 'm') return 'Male'
+  if (lower === 'female' || lower === 'f') return 'Female'
+  if (lower.includes('diverse') || lower === 'other' || lower === 'x') return 'Gender Diverse'
+  return ''
 }

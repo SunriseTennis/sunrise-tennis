@@ -190,6 +190,8 @@ export function ChargesList({ charges }: { charges: Charge[] }) {
                 const statusParts: string[] = []
                 if (dueCount > 0) statusParts.push(`${dueCount} due`)
                 if (scheduledCount > 0) statusParts.push(`${scheduledCount} scheduled`)
+                // Color subtotal amber if any charges are due
+                const hasOwed = dueCount > 0
 
                 return (
                   <div key={key} className="border-b border-border/20 last:border-b-0">
@@ -211,7 +213,10 @@ export function ChargesList({ charges }: { charges: Charge[] }) {
                             {statusParts.length > 0 && ` · ${statusParts.join(', ')}`}
                           </p>
                         </div>
-                        <span className="text-sm font-bold tabular-nums text-foreground shrink-0">
+                        <span className={cn(
+                          'text-sm font-bold tabular-nums shrink-0',
+                          hasOwed ? 'text-amber-700' : 'text-foreground',
+                        )}>
                           {formatCurrency(sSubtotal)}
                         </span>
                       </button>
@@ -249,7 +254,10 @@ export function ChargesList({ charges }: { charges: Charge[] }) {
                 <div className="border-t border-border/50 bg-gradient-to-r from-muted/20 to-transparent px-4 py-3 flex justify-between items-center">
                   <span className="text-sm font-semibold text-muted-foreground">{playerName} total</span>
                   <div className="flex items-center gap-3">
-                    <span className="text-sm font-bold tabular-nums text-foreground">
+                    <span className={cn(
+                      'text-sm font-bold tabular-nums',
+                      services.some(s => s.dueCount > 0) ? 'text-amber-700' : 'text-foreground',
+                    )}>
                       {formatCurrency(subtotalCents)}
                     </span>
                     <button

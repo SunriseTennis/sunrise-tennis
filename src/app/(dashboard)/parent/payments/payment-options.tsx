@@ -10,10 +10,12 @@ import { usePayment } from './payment-context'
 export function PaymentOptions({
   familyId,
   balanceCents,
+  familyName,
   outstandingInvoices,
 }: {
   familyId: string
   balanceCents: number
+  familyName?: string | null
   outstandingInvoices: { id: string; display_id: string; amount_cents: number }[]
 }) {
   const [method, setMethod] = useState<'choose' | 'card' | 'bank'>('choose')
@@ -99,17 +101,13 @@ export function PaymentOptions({
             Back
           </Button>
         </div>
-        {payment?.prefillDescription && (
-          <p className="mt-1 text-xs text-muted-foreground">
-            Paying for: {payment.prefillDescription}
-          </p>
-        )}
         <div className="mt-4">
           <StripePaymentForm
             familyId={familyId}
             defaultAmountDollars={prefillDollars}
             maxAmountDollars={owedDollars}
             description={prefillDesc}
+            payingForLabel={payment?.prefillDescription}
             editable
           />
         </div>
@@ -120,7 +118,7 @@ export function PaymentOptions({
   // Bank transfer
   const referenceText = outstandingInvoices.length === 1
     ? outstandingInvoices[0].display_id
-    : 'Your family name'
+    : familyName || 'Your family name'
 
   return (
     <div>

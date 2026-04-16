@@ -48,7 +48,7 @@ export default async function ParentPaymentsPage({
     supabase.from('charges').select('id, type, source_type, description, amount_cents, status, program_id, session_id, player_id, created_at, sessions:session_id(date, status), players:player_id(first_name)').eq('family_id', familyId).in('status', ['pending', 'confirmed', 'paid', 'credited']).order('created_at', { ascending: false }).limit(150),
     supabase.from('vouchers').select('id, child_first_name, child_surname, amount_cents, status, submitted_at, rejection_reason, voucher_number, submission_method').eq('family_id', familyId).order('submitted_at', { ascending: false }).limit(20),
     supabase.from('players').select('id, first_name, last_name, dob, gender').eq('family_id', familyId).eq('status', 'active').order('first_name'),
-    supabase.from('families').select('primary_contact, address').eq('id', familyId).single(),
+    supabase.from('families').select('primary_contact, address, family_name').eq('id', familyId).single(),
   ])
 
   const balance = balanceRes.data
@@ -59,6 +59,7 @@ export default async function ParentPaymentsPage({
   const familyData = familyRes.data
   const familyContact = familyData?.primary_contact as { name?: string; phone?: string; email?: string } | null
   const familyAddress = familyData?.address as string | null
+  const familyName = familyData?.family_name ?? null
 
   // Enrich charges with program names + types
   const programIds = [...new Set((charges ?? []).filter(c => c.program_id).map(c => c.program_id!))]
@@ -163,6 +164,7 @@ export default async function ParentPaymentsPage({
             <PaymentOptions
               familyId={familyId}
               balanceCents={totalBalanceCents}
+              familyName={familyName}
               outstandingInvoices={[]}
             />
           </section>

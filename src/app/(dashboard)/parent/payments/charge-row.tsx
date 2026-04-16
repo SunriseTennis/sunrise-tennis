@@ -88,6 +88,7 @@ export function ChargeRow({
             'tabular-nums font-semibold',
             isPaid ? 'text-muted-foreground line-through' :
             charge.amountCents < 0 ? 'text-success' :
+            charge.badge === 'due' ? 'text-amber-700' :
             'text-foreground',
           )}>
             {formatCurrency(charge.amountCents)}
