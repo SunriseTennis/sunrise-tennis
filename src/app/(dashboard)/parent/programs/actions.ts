@@ -442,3 +442,83 @@ export async function cancelSessionBooking(
   revalidatePath('/parent/payments')
   return {}
 }
+
+// ── Unenrol a player from a term program ────────────────────────────────
+
+export async function unenrolFromProgram(
+  programId: string,
+  playerId: string,
+): Promise<{ error?: string }> {
+  const supabase = await createClient()
+  const auth = await getParentFamilyId()
+  if (!auth) return { error: 'Not authenticated' }
+
+  const { checkRateLimitAsync } = await import('@/lib/utils/rate-limit')
+  if (!await checkRateLimitAsync(`unenrol:${auth.userId}`, 5, 60_000)) {
+    return { error: 'Too many requests. Please wait a moment.' }
+  }
+
+  // Verify player belongs to this family
+  const { data: player } = await supabase
+    .from('players')
+    .select('id, first_name')
+    .eq('id', playerId)
+    .eq('family_id', auth.familyId)
+    .single()
+
+  if (!player) return { error: 'Player not found' }
+
+  // Verify the player is enrolled in this program
+  const { data: rosterEntry } = await supabase
+    .from('program_roster')
+    .select('id')
+    .eq('program_id', programId)
+    .eq('player_id', playerId)
+    .eq('status', 'enrolled')
+    .single()
+
+  if (!rosterEntry) return { error: 'Player is not enrolled in this program' }
+
+  // Withdraw from roster (soft delete)
+  const { error: rosterError } = await supabase
+    .from('program_roster')
+    .update({ status: 'withdrawn' })
+    .eq('id', rosterEntry.id)
+
+  if (rosterError) {
+    console.error('Failed to withdraw from roster:', rosterError.message)
+    return { error: 'Failed to unenrol. Please try again.' }
+  }
+
+  // Void all future pending charges for this player+program
+  const today = new Date().toISOString().split('T')[0]
+  const { data: futureSessionCharges } = await supabase
+    .from('charges')
+    .select('id, session_id, sessions:session_id(date)')
+    .eq('family_id', auth.familyId)
+    .eq('player_id', playerId)
+    .eq('program_id', programId)
+    .eq('status', 'pending')
+
+  for (const c of futureSessionCharges ?? []) {
+    const session = c.sessions as unknown as { date: string } | null
+    if (session && session.date > today) {
+      await voidCharge(supabase, c.id, auth.familyId)
+    }
+  }
+
+  // Notify admin
+  const { sendPushToAdmins } = await import('@/lib/push/send')
+  const { data: program } = await supabase.from('programs').select('name').eq('id', programId).single()
+  await sendPushToAdmins({
+    title: 'Player Unenrolled',
+    body: `${player.first_name} was unenrolled from ${program?.name ?? 'a program'} by their parent.`,
+    url: `/admin/programs/${programId}`,
+  }).catch(() => {})
+
+  revalidatePath(`/parent/programs/${programId}`)
+  revalidatePath('/parent/programs')
+  revalidatePath('/parent')
+  revalidatePath('/parent/payments')
+  return {}
+}

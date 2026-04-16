@@ -1,11 +1,11 @@
 'use client'
 
-import { useState } from 'react'
 import Link from 'next/link'
 import { formatCurrency } from '@/lib/utils/currency'
 import { formatDateFriendly } from '@/lib/utils/dates'
-import { MessageCircle, ExternalLink, CreditCard, ChevronDown } from 'lucide-react'
+import { MessageCircle, ExternalLink, CreditCard, ChevronDown, BookOpen } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
+import { usePayment } from './payment-context'
 
 export type ChargeBadge = 'due' | 'scheduled' | 'paid'
 
@@ -33,10 +33,24 @@ const BADGE_LABELS: Record<ChargeBadge, string> = {
   paid: 'Paid',
 }
 
-export function ChargeRow({ charge, compact }: { charge: ChargeRowData; compact?: boolean }) {
-  const [expanded, setExpanded] = useState(false)
+export function ChargeRow({
+  charge,
+  compact,
+  isExpanded,
+  onToggle,
+}: {
+  charge: ChargeRowData
+  compact?: boolean
+  isExpanded?: boolean
+  onToggle?: () => void
+}) {
+  const payment = usePayment()
   const displayDate = charge.date ? formatDateFriendly(charge.date) : null
   const isPaid = charge.badge === 'paid'
+
+  // Use props-based expand/collapse when provided (accordion mode)
+  const expanded = isExpanded ?? false
+  const handleToggle = onToggle ?? (() => {})
 
   // Build pre-filled message URL
   const questionUrl = `/parent/messages?compose=charge:${charge.id}&subject=${encodeURIComponent(`Question about charge`)}&body=${encodeURIComponent(`Hi, I have a question about the charge: ${charge.description} (${formatCurrency(charge.amountCents)})${displayDate ? ` on ${displayDate}` : ''}.`)}`
@@ -45,7 +59,7 @@ export function ChargeRow({ charge, compact }: { charge: ChargeRowData; compact?
     <div>
       <button
         type="button"
-        onClick={() => !isPaid && setExpanded(!expanded)}
+        onClick={() => !isPaid && handleToggle()}
         disabled={isPaid}
         className={cn(
           'flex w-full items-start gap-3 px-4 py-3 text-left transition-colors',
@@ -87,23 +101,33 @@ export function ChargeRow({ charge, compact }: { charge: ChargeRowData; compact?
       {/* Action sheet */}
       {expanded && !isPaid && (
         <div className="border-t border-border/30 bg-muted/5 px-4 py-2.5 flex flex-wrap gap-2">
-          {charge.sessionId && (
+          {charge.sessionId && charge.programId && (
             <Link
-              href={charge.programId ? `/parent/programs/${charge.programId}` : '/parent/programs'}
+              href={`/parent/programs/${charge.programId}#session-${charge.sessionId}`}
               className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground shadow-sm hover:shadow-card transition-all"
             >
               <ExternalLink className="size-3" />
               Go to session
             </Link>
           )}
-          {charge.badge === 'due' && (
+          {charge.programId && (
             <Link
-              href="/parent/payments#pay"
+              href={`/parent/programs/${charge.programId}`}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground shadow-sm hover:shadow-card transition-all"
+            >
+              <BookOpen className="size-3" />
+              View program
+            </Link>
+          )}
+          {charge.badge === 'due' && payment && (
+            <button
+              type="button"
+              onClick={() => payment.requestPayment(charge.amountCents, charge.description)}
               className="inline-flex items-center gap-1.5 rounded-lg border border-primary/30 bg-primary/5 px-3 py-1.5 text-xs font-medium text-primary shadow-sm hover:bg-primary/10 transition-all"
             >
               <CreditCard className="size-3" />
               Pay now
-            </Link>
+            </button>
           )}
           <Link
             href={questionUrl}

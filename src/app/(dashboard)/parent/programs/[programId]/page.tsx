@@ -7,6 +7,7 @@ import Link from 'next/link'
 import { ImageHero } from '@/components/image-hero'
 import { WarmToast } from '@/components/warm-toast'
 import { Calendar, MapPin, DollarSign, Users, CheckCircle } from 'lucide-react'
+import { UnenrolButton } from './unenrol-button'
 
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 const DAY_PREFIXES = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
@@ -199,7 +200,14 @@ export default async function ParentProgramDetailPage({
               {enrolledPlayers.map((player) => (
                 <div key={player.id} className="flex items-center gap-2.5 text-sm text-foreground">
                   <CheckCircle className="size-3.5 text-success" />
-                  {player.first_name} {player.last_name}
+                  <span className="flex-1">{player.first_name} {player.last_name}</span>
+                  <UnenrolButton
+                    programId={programId}
+                    playerId={player.id}
+                    playerName={player.first_name}
+                    programName={displayName}
+                    remainingSessions={upcomingSessions?.length ?? 0}
+                  />
                 </div>
               ))}
             </div>
@@ -250,7 +258,7 @@ export default async function ParentProgramDetailPage({
           </div>
           <div className="divide-y divide-border/40">
             {upcomingSessions.map((session) => (
-              <div key={session.id} className="flex items-center justify-between px-5 py-3 text-sm">
+              <div key={session.id} id={`session-${session.id}`} className="flex items-center justify-between px-5 py-3 text-sm">
                 <span className="text-foreground">{formatDateFriendly(session.date)}</span>
                 <span className="text-muted-foreground tabular-nums">
                   {session.start_time ? formatTime(session.start_time) : '-'}

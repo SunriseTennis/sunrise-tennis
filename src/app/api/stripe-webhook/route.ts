@@ -61,6 +61,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ received: true, duplicate: true })
     }
 
+    // Auto-allocate the payment to oldest unallocated charges (FIFO)
+    await supabase.rpc('allocate_payment_to_charges', { target_payment_id: updated[0].id })
+
     // Recalculate the family balance via the same RPC the parent flow uses
     const familyId = updated[0].family_id
     if (familyId) {

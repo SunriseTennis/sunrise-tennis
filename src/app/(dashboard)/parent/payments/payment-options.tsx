@@ -1,10 +1,11 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { StripePaymentForm } from '@/components/stripe-payment-form'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { CreditCard, Building2, Copy, Check, ChevronRight } from 'lucide-react'
+import { usePayment } from './payment-context'
 
 export function PaymentOptions({
   familyId,
@@ -17,10 +18,18 @@ export function PaymentOptions({
 }) {
   const [method, setMethod] = useState<'choose' | 'card' | 'bank'>('choose')
   const [copied, setCopied] = useState<string | null>(null)
+  const payment = usePayment()
 
   // Outstanding balance (positive value for display)
   const owedCents = Math.abs(Math.min(balanceCents, 0))
   const owedDollars = (owedCents / 100).toFixed(2)
+
+  // When a click-to-pay request comes in, auto-switch to card mode
+  useEffect(() => {
+    if (payment?.prefillAmountCents) {
+      setMethod('card')
+    }
+  }, [payment?.prefillAmountCents])
 
   const bankBsb = process.env.NEXT_PUBLIC_BANK_BSB || ''
   const bankAccount = process.env.NEXT_PUBLIC_BANK_ACCOUNT_NUMBER || ''
@@ -77,20 +86,30 @@ export function PaymentOptions({
   }
 
   if (method === 'card') {
+    // Use prefilled amount from click-to-pay if available, otherwise full balance
+    const prefillCents = payment?.prefillAmountCents
+    const prefillDollars = prefillCents ? (prefillCents / 100).toFixed(2) : owedDollars
+    const prefillDesc = payment?.prefillDescription ?? 'Account payment'
+
     return (
       <div>
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold text-foreground">Pay by Card</h2>
-          <Button variant="ghost" size="sm" onClick={() => setMethod('choose')}>
+          <Button variant="ghost" size="sm" onClick={() => { setMethod('choose'); payment?.clearPrefill() }}>
             Back
           </Button>
         </div>
+        {payment?.prefillDescription && (
+          <p className="mt-1 text-xs text-muted-foreground">
+            Paying for: {payment.prefillDescription}
+          </p>
+        )}
         <div className="mt-4">
           <StripePaymentForm
             familyId={familyId}
-            defaultAmountDollars={owedDollars}
+            defaultAmountDollars={prefillDollars}
             maxAmountDollars={owedDollars}
-            description="Account payment"
+            description={prefillDesc}
             editable
           />
         </div>

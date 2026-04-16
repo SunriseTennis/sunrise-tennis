@@ -9,6 +9,7 @@ import { VoucherForm, VoucherHistory } from './voucher-form'
 import { BalanceHero } from './balance-hero'
 import { OverdueBanner } from './overdue-banner'
 import { PaymentHistory } from './payment-history'
+import { PaymentProvider } from './payment-context'
 
 export default async function ParentPaymentsPage({
   searchParams,
@@ -43,10 +44,10 @@ export default async function ParentPaymentsPage({
 
   const [balanceRes, paymentsRes, chargesRes, vouchersRes, playersRes, familyRes] = await Promise.all([
     supabase.from('family_balance').select('balance_cents, confirmed_balance_cents, projected_balance_cents').eq('family_id', familyId).single(),
-    supabase.from('payments').select('*, payment_allocations(amount_cents, charge_id, charges:charge_id(description, session_id, sessions:session_id(date, status)))').eq('family_id', familyId).neq('status', 'voided').order('created_at', { ascending: false }).limit(100),
+    supabase.from('payments').select('*, payment_allocations(amount_cents, charge_id, charges:charge_id(description, session_id, sessions:session_id(date, status)))').eq('family_id', familyId).neq('status', 'voided').neq('status', 'pending').order('created_at', { ascending: false }).limit(100),
     supabase.from('charges').select('id, type, source_type, description, amount_cents, status, program_id, session_id, player_id, created_at, sessions:session_id(date, status), players:player_id(first_name)').eq('family_id', familyId).in('status', ['pending', 'confirmed', 'paid', 'credited']).order('created_at', { ascending: false }).limit(150),
     supabase.from('vouchers').select('id, child_first_name, child_surname, amount_cents, status, submitted_at, rejection_reason, voucher_number, submission_method').eq('family_id', familyId).order('submitted_at', { ascending: false }).limit(20),
-    supabase.from('players').select('id, first_name, last_name, dob').eq('family_id', familyId).eq('status', 'active').order('first_name'),
+    supabase.from('players').select('id, first_name, last_name, dob, gender').eq('family_id', familyId).eq('status', 'active').order('first_name'),
     supabase.from('families').select('primary_contact, address').eq('id', familyId).single(),
   ])
 
@@ -96,7 +97,8 @@ export default async function ParentPaymentsPage({
 
   const confirmedBalanceCents = balance?.confirmed_balance_cents ?? 0
   const projectedBalanceCents = balance?.projected_balance_cents ?? 0
-  const hasOutstandingBalance = confirmedBalanceCents < 0 || projectedBalanceCents < 0
+  // Only show payment options when there's actual money owed for completed sessions
+  const hasOutstandingBalance = confirmedBalanceCents < 0
 
   // Check for overdue: confirmed balance negative means money owed for completed sessions
   const isOverdue = confirmedBalanceCents < 0
@@ -135,65 +137,67 @@ export default async function ParentPaymentsPage({
   })
 
   return (
-    <div className="space-y-6">
-      {error && (
-        <WarmToast variant="danger">{decodeURIComponent(error)}</WarmToast>
-      )}
-      {success && (
-        <WarmToast variant="success">{decodeURIComponent(success)}</WarmToast>
-      )}
+    <PaymentProvider>
+      <div className="space-y-6">
+        {error && (
+          <WarmToast variant="danger">{decodeURIComponent(error)}</WarmToast>
+        )}
+        {success && (
+          <WarmToast variant="success">{decodeURIComponent(success)}</WarmToast>
+        )}
 
-      {/* ── Overdue Banner ── */}
-      {isOverdue && (
-        <OverdueBanner
-          amountCents={confirmedBalanceCents}
-          oldestChargeDate={oldestUnpaidDate}
-        />
-      )}
-
-      {/* ── Balance Hero ── */}
-      <BalanceHero confirmedBalanceCents={confirmedBalanceCents} />
-
-      {/* ── Make a Payment ── */}
-      {hasOutstandingBalance && (
-        <section className="animate-fade-up" style={{ animationDelay: '80ms' }}>
-          <PaymentOptions
-            familyId={familyId}
-            balanceCents={projectedBalanceCents}
-            outstandingInvoices={[]}
+        {/* ── Overdue Banner ── */}
+        {isOverdue && (
+          <OverdueBanner
+            amountCents={confirmedBalanceCents}
+            oldestChargeDate={oldestUnpaidDate}
           />
+        )}
+
+        {/* ── Balance Hero ── */}
+        <BalanceHero confirmedBalanceCents={confirmedBalanceCents} />
+
+        {/* ── Make a Payment ── */}
+        {hasOutstandingBalance && (
+          <section id="payment-section" className="animate-fade-up" style={{ animationDelay: '80ms' }}>
+            <PaymentOptions
+              familyId={familyId}
+              balanceCents={confirmedBalanceCents}
+              outstandingInvoices={[]}
+            />
+          </section>
+        )}
+
+        {/* ── Current Charges ── */}
+        {enrichedCharges.length > 0 && (
+          <section className="animate-fade-up" style={{ animationDelay: '160ms' }}>
+            <ChargesList charges={enrichedCharges} />
+          </section>
+        )}
+
+        {/* ── Sports Voucher ── */}
+        <section className="animate-fade-up" style={{ animationDelay: '220ms' }}>
+          <VoucherForm
+            players={players}
+            familyContact={familyContact}
+            familyAddress={familyAddress}
+          />
+          {vouchers && <VoucherHistory vouchers={vouchers} />}
         </section>
-      )}
 
-      {/* ── Current Charges ── */}
-      {enrichedCharges.length > 0 && (
-        <section className="animate-fade-up" style={{ animationDelay: '160ms' }}>
-          <ChargesList charges={enrichedCharges} />
+        {/* ── Payment History ── */}
+        <section className="animate-fade-up" style={{ animationDelay: '300ms' }}>
+          <PaymentHistory payments={paymentRows} />
         </section>
-      )}
 
-      {/* ── Sports Voucher ── */}
-      <section className="animate-fade-up" style={{ animationDelay: '220ms' }}>
-        <VoucherForm
-          players={players}
-          familyContact={familyContact}
-          familyAddress={familyAddress}
-        />
-        {vouchers && <VoucherHistory vouchers={vouchers} />}
-      </section>
-
-      {/* ── Payment History ── */}
-      <section className="animate-fade-up" style={{ animationDelay: '300ms' }}>
-        <PaymentHistory payments={paymentRows} />
-      </section>
-
-      <p className="pt-4 text-center text-xs text-muted-foreground">
-        Payments are governed by our{' '}
-        <a href="/terms#payments" target="_blank" rel="noreferrer" className="underline hover:text-foreground">
-          Terms
-        </a>
-        .
-      </p>
-    </div>
+        <p className="pt-4 text-center text-xs text-muted-foreground">
+          Payments are governed by our{' '}
+          <a href="/terms#payments" target="_blank" rel="noreferrer" className="underline hover:text-foreground">
+            Terms
+          </a>
+          .
+        </p>
+      </div>
+    </PaymentProvider>
   )
 }

@@ -15,6 +15,7 @@ interface Player {
   first_name: string
   last_name: string
   dob: string | null
+  gender: string | null
 }
 
 interface FamilyContact {
@@ -70,7 +71,6 @@ export function VoucherForm({ players, familyContact, familyAddress }: VoucherFo
             </div>
             <div>
               <h3 className="text-lg font-semibold text-foreground">Sports Voucher</h3>
-              <p className="text-xs text-muted-foreground">SA Sports Vouchers Plus - up to $200 credit</p>
             </div>
           </div>
           {mode && (
@@ -142,7 +142,7 @@ export function VoucherForm({ players, familyContact, familyAddress }: VoucherFo
 
         {/* ── Form Mode ── */}
         {mode === 'form' && (
-          <form action={submitVoucherForm} className="mt-4 space-y-5">
+          <form key={selectedPlayerId} action={submitVoucherForm} className="mt-4 space-y-5">
             {/* Shared fields: player + amount */}
             <PlayerSelector
               players={players}
@@ -160,29 +160,20 @@ export function VoucherForm({ players, familyContact, familyAddress }: VoucherFo
                 <FormField label="First Name" name="child_first_name" defaultValue={selectedPlayer?.first_name ?? ''} required />
                 <FormField label="Family Name" name="child_surname" defaultValue={selectedPlayer?.last_name ?? ''} required />
               </div>
-              <div className="grid grid-cols-2 gap-3">
-                <FormField label="Date of Birth" name="child_dob" defaultValue={playerDob} placeholder="DD/MM/YYYY" required />
-                <div>
-                  <Label htmlFor="child_gender" className="text-xs">Gender <span className="text-red-500">*</span></Label>
-                  <select
-                    id="child_gender"
-                    name="child_gender"
-                    required
-                    className="mt-1 block w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
-                  >
-                    <option value="">Select...</option>
-                    <option value="Male">Male</option>
-                    <option value="Female">Female</option>
-                    <option value="Gender Diverse">Gender Diverse</option>
-                  </select>
-                </div>
-              </div>
-              <YesNoField name="first_time" label="Is this the first time your child has joined this activity provider?" />
+              <FormField label="Date of Birth" name="child_dob" defaultValue={playerDob} placeholder="DD/MM/YYYY" required />
+              <TogglePills
+                name="child_gender"
+                label="Gender"
+                options={['Male', 'Female', 'Gender Diverse']}
+                defaultValue={selectedPlayer?.gender ?? ''}
+                required
+              />
+              <TogglePills name="first_time" label="Is this the first time your child has joined this activity provider?" options={['Yes', 'No']} required />
               <FormField label="What is the cost to participate in this activity?" name="activity_cost" placeholder="e.g. 260 (whole dollars, no $ sign)" required />
-              <YesNoField name="has_disability" label="Has your child been identified as living with a disability?" defaultValue="No" />
-              <YesNoField name="english_main_language" label="Is English the main language spoken at home?" defaultValue="Yes" />
+              <TogglePills name="has_disability" label="Has your child been identified as living with a disability?" options={['Yes', 'No']} defaultValue="No" required />
+              <TogglePills name="english_main_language" label="Is English the main language spoken at home?" options={['Yes', 'No']} defaultValue="Yes" required />
               <FormField label="If no, what language do you speak at home?" name="other_language" />
-              <YesNoField name="is_indigenous" label="Is your child from an Aboriginal or Torres Strait Islander background?" defaultValue="No" />
+              <TogglePills name="is_indigenous" label="Is your child from an Aboriginal or Torres Strait Islander background?" options={['Yes', 'No']} defaultValue="No" required />
             </fieldset>
 
             {/* ── Medicare Information ── */}
@@ -432,21 +423,45 @@ function MedicareFields() {
   )
 }
 
-function YesNoField({ name, label, defaultValue = '' }: { name: string; label: string; defaultValue?: string }) {
+function TogglePills({
+  name,
+  label,
+  options,
+  defaultValue = '',
+  required,
+}: {
+  name: string
+  label: string
+  options: string[]
+  defaultValue?: string
+  required?: boolean
+}) {
+  const [selected, setSelected] = useState(defaultValue)
+
   return (
     <div>
-      <Label htmlFor={name} className="text-xs">{label} <span className="text-red-500">*</span></Label>
-      <select
-        id={name}
-        name={name}
-        required
-        defaultValue={defaultValue}
-        className="mt-1 block w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
-      >
-        <option value="">Select...</option>
-        <option value="Yes">Yes</option>
-        <option value="No">No</option>
-      </select>
+      <Label className="text-xs">
+        {label}
+        {required && <span className="text-red-500 ml-0.5">*</span>}
+      </Label>
+      <div className="mt-1.5 flex flex-wrap gap-2">
+        {options.map((opt) => (
+          <button
+            key={opt}
+            type="button"
+            onClick={() => setSelected(opt)}
+            className={cn(
+              'rounded-full px-4 py-2 text-sm font-medium transition-all',
+              selected === opt
+                ? 'bg-primary text-white shadow-sm'
+                : 'border border-border text-foreground hover:bg-muted/50',
+            )}
+          >
+            {opt}
+          </button>
+        ))}
+      </div>
+      <input type="hidden" name={name} value={selected} />
     </div>
   )
 }

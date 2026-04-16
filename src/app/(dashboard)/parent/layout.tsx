@@ -22,10 +22,10 @@ export default async function ParentLayout({ children }: { children: React.React
 
     if (role?.family_id) {
       const [balanceResult, pendingBookingsResult, unreadRepliesResult] = await Promise.all([
-        // Outstanding balance (negative = owes money)
+        // Outstanding confirmed balance (negative = owes money for completed sessions)
         supabase
           .from('family_balance')
-          .select('balance_cents')
+          .select('confirmed_balance_cents')
           .eq('family_id', role.family_id)
           .single(),
         // Pending private bookings awaiting confirmation
@@ -43,8 +43,8 @@ export default async function ParentLayout({ children }: { children: React.React
           .is('read_at', null),
       ])
 
-      const balance = balanceResult.data?.balance_cents ?? 0
-      if (balance < 0) paymentBadge = true
+      const confirmedBalance = balanceResult.data?.confirmed_balance_cents ?? 0
+      if (confirmedBalance < 0) paymentBadge = true
       if (pendingBookingsResult.count && pendingBookingsResult.count > 0) {
         privatesBadge = pendingBookingsResult.count
       }
