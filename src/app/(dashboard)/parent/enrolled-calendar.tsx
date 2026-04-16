@@ -103,6 +103,8 @@ export function EnrolledCalendar({
   familyPlayers,
   onMarkAway,
   onCancelPrivate,
+  nextJumpDate,
+  nextJumpLabel,
 }: {
   enrollments: Enrollment[]
   sessions: SessionData[]
@@ -112,6 +114,8 @@ export function EnrolledCalendar({
   familyPlayers?: CalendarPlayer[]
   onMarkAway?: (sessionId: string, playerId: string) => Promise<{ error?: string }>
   onCancelPrivate?: (bookingId: string) => Promise<{ error?: string }>
+  nextJumpDate?: string
+  nextJumpLabel?: string
 }) {
   const router = useRouter()
   const [colorMode, setColorMode] = useState<ColorMode>('player')
@@ -322,6 +326,8 @@ export function EnrolledCalendar({
         enrolledPlayersMap={enrolledPlayersMapData}
         sessionEnrolledMap={sessionEnrolledMapData}
         hideCapacity
+        nextJumpDate={nextJumpDate}
+        nextJumpLabel={nextJumpLabel}
         onBookSession={async (sid, pid, pids) => {
           const r = await bookSession(sid, pid, pids)
           router.refresh()

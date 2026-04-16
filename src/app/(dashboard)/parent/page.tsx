@@ -6,7 +6,7 @@ import { formatTime } from '@/lib/utils/dates'
 import { getTermForDate, getNextTermStart } from '@/lib/utils/school-terms'
 import { EmptyState } from '@/components/empty-state'
 import { ImageHero } from '@/components/image-hero'
-import { Users, GraduationCap, ChevronRight, CalendarDays, MapPin, UserPlus, CreditCard, Calendar, Megaphone } from 'lucide-react'
+import { Users, GraduationCap, ChevronRight, CalendarDays, MapPin, UserPlus, CreditCard, Calendar, Megaphone, Trophy } from 'lucide-react'
 import { EnrolledCalendar } from './enrolled-calendar'
 import { PreChargeBanner } from './pre-charge-banner'
 import { CoachingMomentStrip, type UpcomingMoment } from './coaching-moment-strip'
@@ -100,6 +100,28 @@ export default async function ParentDashboard() {
       .in('status', ['confirmed', 'pending'])
       .limit(20),
   ])
+
+  // Fetch competitions the family's players are in (competition_players -> teams -> competitions)
+  const { data: familyCompetitionRows } = familyPlayerIdList.length > 0
+    ? await supabase
+        .from('competition_players')
+        .select('team_id, teams:team_id(competition_id, competitions:competition_id(id, name, status))')
+        .in('player_id', familyPlayerIdList)
+    : { data: [] }
+
+  // Dedupe competitions
+  const activeCompetitions = (() => {
+    const seen = new Set<string>()
+    const out: { id: string; name: string }[] = []
+    for (const cp of familyCompetitionRows ?? []) {
+      const team = cp.teams as unknown as { competition_id: string; competitions: { id: string; name: string; status: string } | null } | null
+      const comp = team?.competitions
+      if (!comp || comp.status !== 'active' || seen.has(comp.id)) continue
+      seen.add(comp.id)
+      out.push({ id: comp.id, name: comp.name })
+    }
+    return out
+  })()
 
   // Fetch actual sessions for enrolled programs
   const enrolledProgramIds = [...new Set((enrollments ?? []).map(e => {
@@ -236,17 +258,6 @@ export default async function ParentDashboard() {
           <div>
             <p className="text-sm font-medium text-white/80">Welcome back</p>
             <h1 className="text-2xl font-bold">{firstName}</h1>
-            {nextSessionLabel && nextProgramName && (
-              <p className="mt-1 text-sm text-white/80">
-                <Calendar className="mr-1 inline size-3.5 align-text-bottom" />
-                Next: <span className="font-medium text-white">{nextProgramName}</span> &mdash; {nextSessionLabel}
-              </p>
-            )}
-            {!nextSession && isTermBreak && nextTermStart && (
-              <p className="mt-1 text-sm text-white/80">
-                Term break &mdash; sessions resume {DAYS[nextTermStart.getDay()]} {nextTermStart.getDate()} {['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][nextTermStart.getMonth()]}
-              </p>
-            )}
           </div>
           <Link href="/parent/payments" className="text-right group">
             <p className="text-xs font-medium text-white/70">Current Balance</p>
@@ -264,9 +275,35 @@ export default async function ParentDashboard() {
         </div>
       </ImageHero>
 
+      {/* ── Next Session Strip ── */}
+      {nextSessionLabel && nextProgramName && (
+        <Link
+          href={nextSessionProgram ? `/parent/programs/${(nextSessionProgram.programs as unknown as { id: string })?.id}` : '/parent/programs'}
+          className="animate-fade-up flex items-center gap-3 rounded-xl border border-border bg-card px-4 py-3 shadow-card transition-all hover:shadow-elevated press-scale"
+          style={{ animationDelay: '40ms' }}
+        >
+          <div className="flex size-10 items-center justify-center rounded-lg bg-primary/10">
+            <Calendar className="size-5 text-primary" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-xs font-medium text-muted-foreground">Next session</p>
+            <p className="text-sm font-semibold text-foreground truncate">{nextProgramName}</p>
+            <p className="text-xs text-muted-foreground">{nextSessionLabel}</p>
+          </div>
+          <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
+        </Link>
+      )}
+      {!nextSession && isTermBreak && nextTermStart && (
+        <div className="animate-fade-up rounded-xl border border-border bg-card px-4 py-3 shadow-card" style={{ animationDelay: '40ms' }}>
+          <p className="text-sm text-muted-foreground">
+            Term break — sessions resume {DAYS[nextTermStart.getDay()]} {nextTermStart.getDate()} {['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][nextTermStart.getMonth()]}
+          </p>
+        </div>
+      )}
+
       {/* ── Announcement Banner ── */}
       {announcement && (
-        <div className="animate-fade-up" style={{ animationDelay: '40ms' }}>
+        <div className="animate-fade-up" style={{ animationDelay: '60ms' }}>
           <Link
             href={announcement.url || '/parent/notifications'}
             className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm shadow-card transition-all hover:shadow-elevated press-scale"
@@ -285,7 +322,7 @@ export default async function ParentDashboard() {
       <PreChargeBanner familyId={familyId} />
 
       {/* ── Quick Actions ── */}
-      <div className="animate-fade-up flex gap-2 overflow-x-auto pb-1" style={{ animationDelay: '60ms' }}>
+      <div className="animate-fade-up flex gap-2 overflow-x-auto pb-1" style={{ animationDelay: '80ms' }}>
         <Link href="/parent/bookings" className="flex shrink-0 items-center gap-1.5 rounded-full border border-border bg-card px-3.5 py-2 text-xs font-medium text-deep-navy shadow-card transition-all hover:shadow-elevated press-scale">
           <UserPlus className="size-3.5 text-primary" />
           Book Private
@@ -305,97 +342,83 @@ export default async function ParentDashboard() {
       {/* ── Coaching-moment strip ── */}
       <CoachingMomentStrip moments={coachingMoments} />
 
-      {/* ── Two-column: Players + Upcoming Events ── */}
-      <div className="grid gap-6 lg:grid-cols-2">
-        {/* Players */}
-        <section className="animate-fade-up" style={{ animationDelay: '80ms' }}>
-          <h2 className="text-lg font-semibold text-foreground">
-            Your Players
-          </h2>
+      {/* ── Upcoming Events ── */}
+      <section className="animate-fade-up" style={{ animationDelay: '100ms' }}>
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-semibold text-foreground">Upcoming Events</h2>
+          <Link href="/parent/events" className="text-xs font-medium text-primary hover:text-primary/80 transition-colors">
+            View all
+          </Link>
+        </div>
 
-          {players && players.length > 0 ? (
-            <div className="mt-3 grid gap-3">
-              {players.map((player, i) => (
-                  <Link
-                    key={player.id}
-                    href={`/parent/players/${player.id}`}
-                    className={`group relative block overflow-hidden rounded-xl p-4 shadow-card transition-all hover:shadow-elevated hover:scale-[1.01] hover:bg-[#FAC8C0] press-scale ${PLAYER_CARD_STYLE}`}
-                    style={{ animationDelay: `${(i + 1) * 80}ms` }}
-                  >
-                    <div className="flex items-center justify-between">
-                      <p className="font-semibold truncate">
-                        {player.first_name} {player.last_name}
-                      </p>
-                      <ChevronRight className="size-4 shrink-0 opacity-40 transition-transform group-hover:translate-x-0.5" />
-                    </div>
-                  </Link>
-              ))}
-            </div>
-          ) : (
-            <div className="mt-3">
-              <EmptyState
-                icon={Users}
-                title="No players yet"
-                description="Your players will appear here once your coach adds them."
-                compact
-              />
-            </div>
-          )}
-        </section>
-
-        {/* Upcoming Events */}
-        <section className="animate-fade-up" style={{ animationDelay: '120ms' }}>
-          <div className="flex items-center justify-between">
-            <h2 className="text-lg font-semibold text-foreground">Upcoming Events</h2>
-            <Link href="/parent/events" className="text-xs font-medium text-primary hover:text-primary/80 transition-colors">
-              View all
-            </Link>
-          </div>
-
-          {upcomingEvents && upcomingEvents.length > 0 ? (
-            <div className="mt-3 space-y-2.5">
-              {upcomingEvents.map((event) => {
-                const date = new Date(event.start_date + 'T00:00:00')
-                const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-                return (
-                  <div
-                    key={event.id}
-                    className="flex items-start gap-3 rounded-xl border border-border bg-card p-3 shadow-card"
-                  >
-                    <div className="flex size-10 shrink-0 flex-col items-center justify-center rounded-lg bg-[#FDD5D0] text-deep-navy">
-                      <span className="text-[10px] font-medium uppercase leading-none">{MONTHS[date.getMonth()]}</span>
-                      <span className="text-sm font-bold leading-none">{date.getDate()}</span>
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="font-medium text-sm text-foreground truncate">{event.title}</p>
-                      {event.location && (
-                        <p className="flex items-center gap-1 text-xs text-muted-foreground mt-0.5">
-                          <MapPin className="size-3 shrink-0" />
-                          <span className="truncate">{event.location}</span>
-                        </p>
-                      )}
-                    </div>
+        {upcomingEvents && upcomingEvents.length > 0 ? (
+          <div className="mt-3 space-y-2.5">
+            {upcomingEvents.map((event) => {
+              const date = new Date(event.start_date + 'T00:00:00')
+              const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+              return (
+                <div
+                  key={event.id}
+                  className="flex items-start gap-3 rounded-xl border border-border bg-card p-3 shadow-card"
+                >
+                  <div className="flex size-10 shrink-0 flex-col items-center justify-center rounded-lg bg-[#FDD5D0] text-deep-navy">
+                    <span className="text-[10px] font-medium uppercase leading-none">{MONTHS[date.getMonth()]}</span>
+                    <span className="text-sm font-bold leading-none">{date.getDate()}</span>
                   </div>
-                )
-              })}
-            </div>
-          ) : (
-            <div className="mt-3">
-              <EmptyState
-                icon={CalendarDays}
-                title="No upcoming events"
-                description="We'll post socials and tournaments here!"
-                compact
-              />
-            </div>
-          )}
+                  <div className="min-w-0 flex-1">
+                    <p className="font-medium text-sm text-foreground truncate">{event.title}</p>
+                    {event.location && (
+                      <p className="flex items-center gap-1 text-xs text-muted-foreground mt-0.5">
+                        <MapPin className="size-3 shrink-0" />
+                        <span className="truncate">{event.location}</span>
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        ) : (
+          <div className="mt-3">
+            <EmptyState
+              icon={CalendarDays}
+              title="No upcoming events"
+              description="We'll post socials and tournaments here!"
+              compact
+            />
+          </div>
+        )}
+      </section>
+
+      {/* ── Upcoming Competition ── */}
+      {activeCompetitions.length > 0 && (
+        <section className="animate-fade-up" style={{ animationDelay: '120ms' }}>
+          <h2 className="text-lg font-semibold text-foreground">Your Competitions</h2>
+          <div className="mt-3 space-y-2.5">
+            {activeCompetitions.map(comp => (
+              <Link
+                key={comp.id}
+                href="/parent/teams"
+                className="group flex items-center gap-3 rounded-xl border border-border bg-card p-3 shadow-card transition-all hover:shadow-elevated press-scale"
+              >
+                <div className="flex size-10 items-center justify-center rounded-lg bg-[#F7CD5D]/20">
+                  <Trophy className="size-5 text-[#D4A20A]" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="font-medium text-sm text-foreground truncate">{comp.name}</p>
+                  <p className="text-xs text-muted-foreground">View your team</p>
+                </div>
+                <ChevronRight className="size-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
+              </Link>
+            ))}
+          </div>
         </section>
-      </div>
+      )}
 
       <div className="section-divider" />
 
       {/* ── Weekly Schedule ── */}
-      <section className="animate-fade-up" style={{ animationDelay: '160ms' }}>
+      <section className="animate-fade-up" style={{ animationDelay: '140ms' }}>
         <h2 className="text-lg font-semibold text-foreground">
           Weekly Schedule
         </h2>
@@ -444,6 +467,8 @@ export default async function ParentDashboard() {
                   approvalStatus: (b as unknown as { approval_status: string | null }).approval_status ?? null,
                 }
               })}
+              nextJumpDate={nextSession?.date}
+              nextJumpLabel="Next session"
             />
           </div>
         ) : (
@@ -458,6 +483,44 @@ export default async function ParentDashboard() {
                   Browse
                 </Link>
               }
+            />
+          </div>
+        )}
+      </section>
+
+      <div className="section-divider" />
+
+      {/* ── Your Players ── */}
+      <section className="animate-fade-up" style={{ animationDelay: '160ms' }}>
+        <h2 className="text-lg font-semibold text-foreground">
+          Your Players
+        </h2>
+
+        {players && players.length > 0 ? (
+          <div className="mt-3 grid gap-3">
+            {players.map((player, i) => (
+                <Link
+                  key={player.id}
+                  href={`/parent/players/${player.id}`}
+                  className={`group relative block overflow-hidden rounded-xl p-4 shadow-card transition-all hover:shadow-elevated hover:scale-[1.01] hover:bg-[#FAC8C0] press-scale ${PLAYER_CARD_STYLE}`}
+                  style={{ animationDelay: `${(i + 1) * 80}ms` }}
+                >
+                  <div className="flex items-center justify-between">
+                    <p className="font-semibold truncate">
+                      {player.first_name} {player.last_name}
+                    </p>
+                    <ChevronRight className="size-4 shrink-0 opacity-40 transition-transform group-hover:translate-x-0.5" />
+                  </div>
+                </Link>
+            ))}
+          </div>
+        ) : (
+          <div className="mt-3">
+            <EmptyState
+              icon={Users}
+              title="No players yet"
+              description="Your players will appear here once your coach adds them."
+              compact
             />
           </div>
         )}
