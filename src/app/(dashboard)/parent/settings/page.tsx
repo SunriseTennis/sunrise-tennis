@@ -50,8 +50,7 @@ export default async function ParentSettingsPage({
             <Settings className="size-5" />
           </div>
           <div>
-            <p className="text-sm font-medium text-white/80">Family</p>
-            <h1 className="text-2xl font-bold">Settings</h1>
+            <h1 className="text-2xl font-bold">Account Settings</h1>
           </div>
         </div>
       </ImageHero>

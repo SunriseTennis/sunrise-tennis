@@ -67,7 +67,7 @@ export function PriceStrip() {
           <div className="border-t border-[#E0D0BE]/30 bg-[#FFFBF7] px-5 py-3.5 sm:px-6">
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <p className="text-xs text-[#556270]">
-                <span className="font-medium text-[#1A2332]">10% early-bird discount</span> before Term start ·
+                <span className="font-medium text-[#1A2332]">15% early-bird discount</span> before Term start ·
                 <span className="ml-1 font-medium text-[#1A2332]">Multi-group discounts</span> also apply
               </p>
               <Link

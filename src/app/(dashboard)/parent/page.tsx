@@ -6,7 +6,7 @@ import { formatTime } from '@/lib/utils/dates'
 import { getTermForDate, getNextTermStart } from '@/lib/utils/school-terms'
 import { EmptyState } from '@/components/empty-state'
 import { ImageHero } from '@/components/image-hero'
-import { Users, GraduationCap, ChevronRight, CalendarDays, MapPin, UserPlus, CreditCard, Ticket, Calendar, Megaphone } from 'lucide-react'
+import { Users, GraduationCap, ChevronRight, CalendarDays, MapPin, UserPlus, CreditCard, Calendar, Megaphone } from 'lucide-react'
 import { EnrolledCalendar } from './enrolled-calendar'
 import { PreChargeBanner } from './pre-charge-banner'
 import { CoachingMomentStrip, type UpcomingMoment } from './coaching-moment-strip'
@@ -293,10 +293,6 @@ export default async function ParentDashboard() {
         <Link href="/parent/payments" className="flex shrink-0 items-center gap-1.5 rounded-full border border-border bg-card px-3.5 py-2 text-xs font-medium text-deep-navy shadow-card transition-all hover:shadow-elevated press-scale">
           <CreditCard className="size-3.5 text-primary" />
           Make Payment
-        </Link>
-        <Link href="/parent/payments#voucher" className="flex shrink-0 items-center gap-1.5 rounded-full border border-border bg-card px-3.5 py-2 text-xs font-medium text-deep-navy shadow-card transition-all hover:shadow-elevated press-scale">
-          <Ticket className="size-3.5 text-primary" />
-          Submit Voucher
         </Link>
         <Link href="/parent/programs" className="flex shrink-0 items-center gap-1.5 rounded-full border border-border bg-card px-3.5 py-2 text-xs font-medium text-deep-navy shadow-card transition-all hover:shadow-elevated press-scale">
           <GraduationCap className="size-3.5 text-primary" />
