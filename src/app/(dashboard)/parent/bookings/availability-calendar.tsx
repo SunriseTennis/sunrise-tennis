@@ -264,10 +264,10 @@ function generateCoachAvailabilityEvents(
                 calEvents.push({
                   id: `${idPrefix}-booked-${eventId}`,
                   title: 'Booked',
-                  subtitle: coachName,
                   dayOfWeek, startTime, endTime,
                   date: dateStr,
                   color: bookedColor,
+                  compact: true,
                 })
               }
             } else {

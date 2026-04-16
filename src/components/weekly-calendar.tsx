@@ -46,6 +46,8 @@ export interface CalendarEvent {
   spotsLeft?: number | null
   /** If true, clicking fires onEventClick directly without opening popup */
   selectable?: boolean
+  /** If true, render compact in weekly grid (no time subtitle, smaller min-height) */
+  compact?: boolean
   /** Booking ID for private lessons (used for cancel action) */
   bookingId?: string
   /** Per-player attendance status for this session: playerId → 'present'|'absent'|'noshow' */
@@ -1036,8 +1038,9 @@ export function WeeklyCalendar({
                       const startHour = parseTime(event.startTime)
                       const endHour = parseTime(event.endTime)
                       const top = (startHour - minHour) * hourHeight
-                      // Selectable events (availability slots) use smaller min-height since grid position shows time
-                      const minH = event.selectable ? 28 : 44
+                      // Compact/selectable events use smaller min-height since grid position shows time
+                      const isCompact = event.selectable || event.compact
+                      const minH = isCompact ? 28 : 44
                       const height = Math.max((endHour - startHour) * hourHeight, minH)
                       const isSelected = popupEvent?.id === event.id
                       const layout = collisionLayout.get(event.id) ?? { col: 0, total: 1 }
@@ -1074,16 +1077,16 @@ export function WeeklyCalendar({
                             </div>
                           )}
                           {isVeryNarrow ? (
-                            /* Ultra-compact: coach initial or start time */
+                            /* Ultra-compact: initial for compact events, start time otherwise */
                             <p className="truncate text-[8px] font-bold leading-tight px-px pt-px opacity-90">
-                              {event.selectable ? event.title.charAt(0) : formatTimeShort(event.startTime)}
+                              {isCompact ? event.title.charAt(0) : formatTimeShort(event.startTime)}
                             </p>
                           ) : (
                             <>
                               <p className={cn('truncate font-medium leading-tight', isNarrow ? 'text-[10px] pr-0' : 'text-[11px] pr-3')}>
                                 {event.title}
                               </p>
-                              {height >= 24 && !event.selectable && (
+                              {height >= 24 && !isCompact && (
                                 <p className={cn('truncate opacity-90 leading-tight', isNarrow ? 'text-[9px]' : 'text-[10px]')}>
                                   {formatTimeShort(event.startTime)}{isNarrow ? '' : ` - ${formatTimeShort(event.endTime)}`}
                                 </p>
