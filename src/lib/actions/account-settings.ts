@@ -48,6 +48,7 @@ export async function changePasswordSecure(formData: FormData) {
   })
 
   if (verifyError) {
+    console.error('Password verify failed:', verifyError.message, '| email used:', user.email)
     redirect(`${redirectPath}?error=Current+password+is+incorrect`)
   }
 

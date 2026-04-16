@@ -32,7 +32,11 @@ export function EmailChangeForm({ currentEmail, pendingEmail }: EmailChangeFormP
     setErrorMsg('')
 
     const supabase = createClient()
-    const { error } = await supabase.auth.updateUser({ email: newEmail })
+    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || window.location.origin
+    const { error } = await supabase.auth.updateUser(
+      { email: newEmail },
+      { emailRedirectTo: `${siteUrl}/auth/callback` },
+    )
 
     if (error) {
       console.error('Email change failed:', error.message)
