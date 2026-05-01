@@ -1442,6 +1442,7 @@ export type Database = {
       players: {
         Row: {
           ball_color: string | null
+          classifications: string[] | null
           coach_id: string | null
           comp_interest: string | null
           created_at: string | null
@@ -1460,10 +1461,12 @@ export type Database = {
           preferred_name: string | null
           short_term_goal: string | null
           status: string
+          track: string | null
           updated_at: string | null
         }
         Insert: {
           ball_color?: string | null
+          classifications?: string[] | null
           coach_id?: string | null
           comp_interest?: string | null
           created_at?: string | null
@@ -1482,10 +1485,12 @@ export type Database = {
           preferred_name?: string | null
           short_term_goal?: string | null
           status?: string
+          track?: string | null
           updated_at?: string | null
         }
         Update: {
           ball_color?: string | null
+          classifications?: string[] | null
           coach_id?: string | null
           comp_interest?: string | null
           created_at?: string | null
@@ -1504,6 +1509,7 @@ export type Database = {
           preferred_name?: string | null
           short_term_goal?: string | null
           status?: string
+          track?: string | null
           updated_at?: string | null
         }
         Relationships: [
@@ -1603,13 +1609,17 @@ export type Database = {
       }
       programs: {
         Row: {
+          allowed_classifications: string[] | null
           created_at: string | null
           day_of_week: number | null
           description: string | null
           duration_min: number | null
           early_bird_deadline: string | null
+          early_bird_deadline_tier2: string | null
           early_pay_discount_pct: number | null
+          early_pay_discount_pct_tier2: number | null
           end_time: string | null
+          gender_restriction: string | null
           id: string
           level: string
           max_capacity: number | null
@@ -1620,17 +1630,22 @@ export type Database = {
           status: string
           term: string | null
           term_fee_cents: number | null
+          track_required: string | null
           type: string
           venue_id: string | null
         }
         Insert: {
+          allowed_classifications?: string[] | null
           created_at?: string | null
           day_of_week?: number | null
           description?: string | null
           duration_min?: number | null
           early_bird_deadline?: string | null
+          early_bird_deadline_tier2?: string | null
           early_pay_discount_pct?: number | null
+          early_pay_discount_pct_tier2?: number | null
           end_time?: string | null
+          gender_restriction?: string | null
           id?: string
           level: string
           max_capacity?: number | null
@@ -1641,17 +1656,22 @@ export type Database = {
           status?: string
           term?: string | null
           term_fee_cents?: number | null
+          track_required?: string | null
           type: string
           venue_id?: string | null
         }
         Update: {
+          allowed_classifications?: string[] | null
           created_at?: string | null
           day_of_week?: number | null
           description?: string | null
           duration_min?: number | null
           early_bird_deadline?: string | null
+          early_bird_deadline_tier2?: string | null
           early_pay_discount_pct?: number | null
+          early_pay_discount_pct_tier2?: number | null
           end_time?: string | null
+          gender_restriction?: string | null
           id?: string
           level?: string
           max_capacity?: number | null
@@ -1662,6 +1682,7 @@ export type Database = {
           status?: string
           term?: string | null
           term_fee_cents?: number | null
+          track_required?: string | null
           type?: string
           venue_id?: string | null
         }

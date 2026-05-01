@@ -191,7 +191,13 @@ export async function updatePlayer(playerId: string, familyId: string, formData:
     redirect(`/admin/families/${familyId}/players/${playerId}?error=${encodeURIComponent(parsed.error)}`)
   }
 
-  const { first_name: firstName, last_name: lastName, preferred_name: preferredName, gender, dob, ball_color: ballColor, level, medical_notes: medicalNotes, physical_notes: physicalNotes, current_focus: currentFocus, short_term_goal: shortTermGoal, long_term_goal: longTermGoal, comp_interest: compInterest, media_consent: mediaConsent } = parsed.data
+  const { first_name: firstName, last_name: lastName, preferred_name: preferredName, gender, dob, ball_color: ballColor, level, classifications, track, status, medical_notes: medicalNotes, physical_notes: physicalNotes, current_focus: currentFocus, short_term_goal: shortTermGoal, long_term_goal: longTermGoal, comp_interest: compInterest, media_consent: mediaConsent } = parsed.data
+
+  // Parse comma-separated classifications, filter to known values
+  const VALID_CLASSES = new Set(['blue', 'red', 'orange', 'green', 'yellow', 'advanced', 'elite'])
+  const parsedClassifications = classifications
+    ? classifications.split(',').map(s => s.trim()).filter(s => VALID_CLASSES.has(s))
+    : []
 
   const { error } = await supabase
     .from('players')
@@ -203,6 +209,9 @@ export async function updatePlayer(playerId: string, familyId: string, formData:
       dob: dob || null,
       ball_color: ballColor || null,
       level: level || null,
+      classifications: parsedClassifications,
+      track: track || 'participation',
+      status: status || 'active',
       medical_notes: medicalNotes || null,
       physical_notes: physicalNotes || null,
       current_focus: currentFocus ? currentFocus.split(',').map((s) => s.trim()) : null,
@@ -267,9 +276,14 @@ export async function createProgram(formData: FormData) {
     redirect(`/admin/programs/new?error=${encodeURIComponent(parsed.error)}`)
   }
 
-  const { name, type, level, day_of_week: dayOfWeek, start_time: startTime, end_time: endTime, max_capacity: maxCapacity, per_session_dollars: perSessionDollars, term_fee_dollars: termFeeDollars, description } = parsed.data
+  const { name, type, level, day_of_week: dayOfWeek, start_time: startTime, end_time: endTime, max_capacity: maxCapacity, per_session_dollars: perSessionDollars, term_fee_dollars: termFeeDollars, description, allowed_classifications: allowedClassifications, gender_restriction: genderRestriction, track_required: trackRequired, early_pay_discount_pct: earlyPayDiscountPct, early_bird_deadline: earlyBirdDeadline, early_pay_discount_pct_tier2: earlyPayDiscountPctTier2, early_bird_deadline_tier2: earlyBirdDeadlineTier2 } = parsed.data
 
   const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')
+
+  const VALID_CLASSES = new Set(['blue', 'red', 'orange', 'green', 'yellow', 'advanced', 'elite'])
+  const parsedClassifications = allowedClassifications
+    ? allowedClassifications.split(',').map(s => s.trim()).filter(s => VALID_CLASSES.has(s))
+    : []
 
   const { data, error } = await supabase
     .from('programs')
@@ -286,6 +300,13 @@ export async function createProgram(formData: FormData) {
       description: description || null,
       slug,
       status: 'active',
+      allowed_classifications: parsedClassifications.length > 0 ? parsedClassifications : (level ? [level] : null),
+      gender_restriction: genderRestriction || null,
+      track_required: trackRequired || null,
+      early_pay_discount_pct: earlyPayDiscountPct ? parseInt(earlyPayDiscountPct, 10) : null,
+      early_bird_deadline: earlyBirdDeadline || null,
+      early_pay_discount_pct_tier2: earlyPayDiscountPctTier2 ? parseInt(earlyPayDiscountPctTier2, 10) : null,
+      early_bird_deadline_tier2: earlyBirdDeadlineTier2 || null,
     })
     .select('id')
     .single()
@@ -307,7 +328,12 @@ export async function updateProgram(id: string, formData: FormData) {
     redirect(`/admin/programs/${id}?error=${encodeURIComponent(parsed.error)}`)
   }
 
-  const { name, type, level, day_of_week: dayOfWeek, start_time: startTime, end_time: endTime, max_capacity: maxCapacity, per_session_dollars: perSessionDollars, term_fee_dollars: termFeeDollars, description, status } = parsed.data
+  const { name, type, level, day_of_week: dayOfWeek, start_time: startTime, end_time: endTime, max_capacity: maxCapacity, per_session_dollars: perSessionDollars, term_fee_dollars: termFeeDollars, description, status, allowed_classifications: allowedClassifications, gender_restriction: genderRestriction, track_required: trackRequired, early_pay_discount_pct: earlyPayDiscountPct, early_bird_deadline: earlyBirdDeadline, early_pay_discount_pct_tier2: earlyPayDiscountPctTier2, early_bird_deadline_tier2: earlyBirdDeadlineTier2 } = parsed.data
+
+  const VALID_CLASSES = new Set(['blue', 'red', 'orange', 'green', 'yellow', 'advanced', 'elite'])
+  const parsedClassifications = allowedClassifications !== undefined && allowedClassifications !== null
+    ? allowedClassifications.split(',').map(s => s.trim()).filter(s => VALID_CLASSES.has(s))
+    : null
 
   const { error } = await supabase
     .from('programs')
@@ -323,6 +349,13 @@ export async function updateProgram(id: string, formData: FormData) {
       term_fee_cents: termFeeDollars ? Math.round(parseFloat(termFeeDollars) * 100) : null,
       description: description || null,
       status: status || undefined,
+      allowed_classifications: parsedClassifications,
+      gender_restriction: genderRestriction || null,
+      track_required: trackRequired || null,
+      early_pay_discount_pct: earlyPayDiscountPct ? parseInt(earlyPayDiscountPct, 10) : null,
+      early_bird_deadline: earlyBirdDeadline || null,
+      early_pay_discount_pct_tier2: earlyPayDiscountPctTier2 ? parseInt(earlyPayDiscountPctTier2, 10) : null,
+      early_bird_deadline_tier2: earlyBirdDeadlineTier2 || null,
     })
     .eq('id', id)
 

@@ -8,6 +8,7 @@ import { ImageHero } from '@/components/image-hero'
 import { WarmToast } from '@/components/warm-toast'
 import { Calendar, MapPin, DollarSign, Users, CheckCircle } from 'lucide-react'
 import { UnenrolButton } from './unenrol-button'
+import { isEligible } from '@/lib/utils/eligibility'
 
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 const DAY_PREFIXES = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
@@ -18,7 +19,8 @@ const LEVEL_BAR: Record<string, string> = {
   orange: 'bg-ball-orange',
   green: 'bg-ball-green',
   yellow: 'bg-ball-yellow',
-  elite: 'bg-primary',
+  advanced: 'bg-primary',
+  elite: 'bg-foreground',
 }
 
 function stripDayPrefix(name: string, type: string): string {
@@ -65,7 +67,7 @@ export default async function ParentProgramDetailPage({
     { data: upcomingSessions },
   ] = await Promise.all([
     supabase.from('programs').select('*, venues:venue_id(name, address)').eq('id', programId).single(),
-    supabase.from('players').select('id, first_name, last_name, ball_color, level, status').eq('family_id', familyId).eq('status', 'active').order('first_name'),
+    supabase.from('players').select('id, first_name, last_name, ball_color, level, status, gender, classifications, track').eq('family_id', familyId).eq('status', 'active').order('first_name'),
     supabase.from('program_roster').select('id, player_id, status').eq('program_id', programId),
     supabase.from('sessions').select('id, date, start_time, end_time, status')
       .eq('program_id', programId)
@@ -83,8 +85,14 @@ export default async function ParentProgramDetailPage({
   const totalEnrolled = roster?.filter(r => r.status === 'enrolled').length ?? 0
   const spotsLeft = program.max_capacity ? program.max_capacity - totalEnrolled : null
 
-  const eligiblePlayers = players?.filter(p => !enrolledPlayerIds.has(p.id)) ?? []
   const enrolledPlayers = players?.filter(p => enrolledPlayerIds.has(p.id)) ?? []
+  const eligiblePlayers = (players ?? []).filter(p => {
+    if (enrolledPlayerIds.has(p.id)) return false
+    return isEligible(
+      { gender: (p.gender as 'male' | 'female' | 'non_binary' | null) ?? null, classifications: (p.classifications as string[] | null) ?? [], track: p.track ?? null },
+      { day_of_week: program.day_of_week, allowed_classifications: program.allowed_classifications, gender_restriction: program.gender_restriction, track_required: program.track_required },
+    ).ok
+  })
 
   const displayName = stripDayPrefix(program.name, program.type)
   const levelBar = LEVEL_BAR[program.level] ?? 'bg-gradient-to-b from-primary to-secondary'
@@ -227,6 +235,8 @@ export default async function ParentProgramDetailPage({
             perSessionCents={program.per_session_cents}
             earlyPayDiscountPct={program.early_pay_discount_pct}
             earlyBirdDeadline={program.early_bird_deadline}
+            earlyPayDiscountPctTier2={program.early_pay_discount_pct_tier2}
+            earlyBirdDeadlineTier2={program.early_bird_deadline_tier2}
             remainingSessions={upcomingSessions?.length ?? null}
           />
         </div>

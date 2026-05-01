@@ -78,15 +78,25 @@ const LEVEL_CONFIG: Record<string, {
     ballColor: '#D4A20A',
     ballHighlight: '#EAB308',
   },
-  elite: {
-    label: 'Elite Squad',
-    ages: 'Ages 12+',
-    description: 'Competition-level training for advanced juniors — invitation-based.',
+  advanced: {
+    label: 'Advanced Squad',
+    ages: 'UTR 4.5+',
+    description: 'Performance squad for advanced juniors — invitation-based. Trains alongside Yellow and Elite squads on Thursdays.',
     color: 'text-[#2B5EA7]',
     bgLight: 'bg-[#2B5EA7]/10',
     border: 'border-[#2B5EA7]/30',
     ballColor: '#2B5EA7',
     ballHighlight: '#4A7EC7',
+  },
+  elite: {
+    label: 'Elite Squad',
+    ages: 'UTR 7.5+',
+    description: 'Competition-level training for elite juniors — invitation-based.',
+    color: 'text-[#1A2332]',
+    bgLight: 'bg-[#1A2332]/10',
+    border: 'border-[#1A2332]/30',
+    ballColor: '#1A2332',
+    ballHighlight: '#3A4352',
   },
 }
 
@@ -155,8 +165,8 @@ export function ProgramsSection({ programs }: { programs: Program[] }) {
     }
   }
 
-  // Known level order: blue, red, orange, green, yellow, elite. Everything else sorts to end.
-  const levelOrder = ['blue', 'red', 'orange', 'green', 'yellow', 'elite']
+  // Known level order: blue, red, orange, green, yellow, advanced, elite. Everything else sorts to end.
+  const levelOrder = ['blue', 'red', 'orange', 'green', 'yellow', 'advanced', 'elite']
   const sortedLevels = [...byLevel.entries()]
     // Only render buckets that have a LEVEL_CONFIG entry — unknowns (e.g. "competitive") skip the card view.
     .filter(([level]) => LEVEL_CONFIG[level])

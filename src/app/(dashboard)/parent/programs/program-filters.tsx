@@ -10,17 +10,20 @@ import { Badge } from '@/components/ui/badge'
 import { WeeklyCalendar, type CalendarEvent, type EnrolledPlayersMap } from '@/components/weekly-calendar'
 import { Calendar, Layers, Tag, ChevronRight, Users, Filter } from 'lucide-react'
 import { bookSession, markSessionAway, cancelSessionBooking } from './actions'
+import { isEligible } from '@/lib/utils/eligibility'
 
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
 const DAY_PREFIXES = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
 
 const LEVEL_ACCENTS: Record<string, { bar: string; bg: string; badge: string }> = {
-  red:    { bar: 'bg-ball-red',    bg: 'bg-ball-red/5',    badge: 'bg-ball-red/10 text-ball-red border-ball-red/20' },
-  orange: { bar: 'bg-ball-orange', bg: 'bg-ball-orange/5', badge: 'bg-ball-orange/10 text-ball-orange border-ball-orange/20' },
-  green:  { bar: 'bg-ball-green',  bg: 'bg-ball-green/5',  badge: 'bg-ball-green/10 text-ball-green border-ball-green/20' },
-  yellow: { bar: 'bg-ball-yellow', bg: 'bg-ball-yellow/5', badge: 'bg-ball-yellow/10 text-ball-yellow border-ball-yellow/20' },
-  blue:   { bar: 'bg-ball-blue',   bg: 'bg-ball-blue/5',   badge: 'bg-ball-blue/10 text-ball-blue border-ball-blue/20' },
+  red:      { bar: 'bg-ball-red',    bg: 'bg-ball-red/5',    badge: 'bg-ball-red/10 text-ball-red border-ball-red/20' },
+  orange:   { bar: 'bg-ball-orange', bg: 'bg-ball-orange/5', badge: 'bg-ball-orange/10 text-ball-orange border-ball-orange/20' },
+  green:    { bar: 'bg-ball-green',  bg: 'bg-ball-green/5',  badge: 'bg-ball-green/10 text-ball-green border-ball-green/20' },
+  yellow:   { bar: 'bg-ball-yellow', bg: 'bg-ball-yellow/5', badge: 'bg-ball-yellow/10 text-ball-yellow border-ball-yellow/20' },
+  blue:     { bar: 'bg-ball-blue',   bg: 'bg-ball-blue/5',   badge: 'bg-ball-blue/10 text-ball-blue border-ball-blue/20' },
+  advanced: { bar: 'bg-primary',     bg: 'bg-primary/5',     badge: 'bg-primary/10 text-primary border-primary/20' },
+  elite:    { bar: 'bg-foreground',  bg: 'bg-foreground/5',  badge: 'bg-foreground/10 text-foreground border-foreground/20' },
 }
 
 const LEVEL_COLORS: Record<string, string> = {
@@ -52,12 +55,14 @@ const LEVEL_HEX: Record<string, string> = {
 
 /** Button colors for level filter pills */
 const LEVEL_PILL_STYLES: Record<string, { active: string; inactive: string }> = {
-  red:    { active: 'bg-ball-red text-white shadow-sm',    inactive: 'bg-ball-red/15 text-ball-red hover:bg-ball-red/25' },
-  orange: { active: 'bg-ball-orange text-white shadow-sm', inactive: 'bg-ball-orange/15 text-ball-orange hover:bg-ball-orange/25' },
-  green:  { active: 'bg-ball-green text-white shadow-sm',  inactive: 'bg-ball-green/15 text-ball-green hover:bg-ball-green/25' },
-  yellow: { active: 'bg-ball-yellow text-black shadow-sm', inactive: 'bg-ball-yellow/15 text-ball-yellow hover:bg-ball-yellow/25' },
-  blue:   { active: 'bg-ball-blue text-white shadow-sm',   inactive: 'bg-ball-blue/15 text-ball-blue hover:bg-ball-blue/25' },
-  competitive: { active: 'bg-primary text-white shadow-sm', inactive: 'bg-primary/15 text-primary hover:bg-primary/25' },
+  red:      { active: 'bg-ball-red text-white shadow-sm',     inactive: 'bg-ball-red/15 text-ball-red hover:bg-ball-red/25' },
+  orange:   { active: 'bg-ball-orange text-white shadow-sm',  inactive: 'bg-ball-orange/15 text-ball-orange hover:bg-ball-orange/25' },
+  green:    { active: 'bg-ball-green text-white shadow-sm',   inactive: 'bg-ball-green/15 text-ball-green hover:bg-ball-green/25' },
+  yellow:   { active: 'bg-ball-yellow text-black shadow-sm',  inactive: 'bg-ball-yellow/15 text-ball-yellow hover:bg-ball-yellow/25' },
+  blue:     { active: 'bg-ball-blue text-white shadow-sm',    inactive: 'bg-ball-blue/15 text-ball-blue hover:bg-ball-blue/25' },
+  advanced: { active: 'bg-primary text-white shadow-sm',      inactive: 'bg-primary/15 text-primary hover:bg-primary/25' },
+  elite:    { active: 'bg-foreground text-background shadow-sm', inactive: 'bg-foreground/15 text-foreground hover:bg-foreground/25' },
+  competitive: { active: 'bg-primary text-white shadow-sm',   inactive: 'bg-primary/15 text-primary hover:bg-primary/25' },
 }
 
 const TYPE_PILL_STYLES: Record<string, { active: string; inactive: string }> = {
@@ -80,8 +85,21 @@ type Program = {
   term_fee_cents: number | null
   early_pay_discount_pct: number | null
   early_bird_deadline: string | null
+  early_pay_discount_pct_tier2: number | null
+  early_bird_deadline_tier2: string | null
   description: string | null
+  allowed_classifications: string[] | null
+  gender_restriction: string | null
+  track_required: string | null
   program_roster: { id: string; player_id: string; status: string }[]
+}
+
+type FamilyPlayer = {
+  id: string
+  name: string
+  gender: 'male' | 'female' | 'non_binary' | null
+  classifications: string[]
+  track: string | null
 }
 
 type Session = {
@@ -216,7 +234,7 @@ export function ParentProgramFilters({
   sessions: Session[]
   playerLevels: string[]
   familyPlayerIds: string[]
-  familyPlayers: { id: string; name: string }[]
+  familyPlayers: FamilyPlayer[]
   attendances: Attendance[]
 }) {
   const router = useRouter()
@@ -238,7 +256,7 @@ export function ParentProgramFilters({
   const playerLevelSet = useMemo(() => new Set(playerLevels), [playerLevels])
 
   // Single-colour levels only (filter out composites like "red-orange")
-  const LEVEL_ORDER = ['blue', 'red', 'orange', 'green', 'yellow', 'competitive']
+  const LEVEL_ORDER = ['blue', 'red', 'orange', 'green', 'yellow', 'advanced', 'elite', 'competitive']
   const SINGLE_LEVELS = new Set(LEVEL_ORDER)
 
   const levels = useMemo(() => {
@@ -267,7 +285,7 @@ export function ParentProgramFilters({
     return map
   }, [programs])
 
-  // Programs the family is enrolled in
+  // Programs the family is enrolled in (used for calendar event coloring + 'mine' filter)
   const enrolledProgramIds = useMemo(() => {
     const ids = new Set<string>()
     programs.forEach(p => {
@@ -366,6 +384,9 @@ export function ParentProgramFilters({
         if (!prog) return false
         if (!s.start_time || !s.end_time) return false
 
+        // Hide programs no family player can enrol in (gender/track/classification)
+        if (!eligibleProgramIds.has(prog.id)) return false
+
         // Apply type filter
         if (!calendarTypes.has(prog.type)) return false
 
@@ -432,11 +453,28 @@ export function ParentProgramFilters({
       })
   }, [sessions, programMap, calendarFilter, calendarTypes, enrolledProgramIds, recommendedProgramIds, sessionAttendanceMap, remainingSessionsMap])
 
-  // Apply "For you" filter globally — show only enrolled/recommended programs
-  const relevantPrograms = useMemo(() => {
-    if (calendarFilter === 'all') return programs
-    return programs.filter(p => enrolledProgramIds.has(p.id) || recommendedProgramIds.has(p.id))
-  }, [programs, calendarFilter, enrolledProgramIds, recommendedProgramIds])
+  // Eligible programs: at least one family player can enrol (passes gender/track/classification gates).
+  // Hard rule — applied regardless of "For you" toggle. Never show a program no kid can join.
+  const eligibleProgramIds = useMemo(() => {
+    const ids = new Set<string>()
+    for (const p of programs) {
+      const someoneEligible = familyPlayers.some(player =>
+        isEligible(
+          { gender: player.gender, classifications: player.classifications, track: player.track },
+          { day_of_week: p.day_of_week, allowed_classifications: p.allowed_classifications, gender_restriction: p.gender_restriction, track_required: p.track_required },
+        ).ok
+      )
+      if (someoneEligible) ids.add(p.id)
+    }
+    return ids
+  }, [programs, familyPlayers])
+
+  const eligiblePrograms = useMemo(() => programs.filter(p => eligibleProgramIds.has(p.id)), [programs, eligibleProgramIds])
+
+  // 'mine' vs 'all' both show eligible programs. Eligibility is itself the
+  // "for you" signal now that classifications include advanced/elite — every
+  // visible program is one a family player can actually enrol in.
+  const relevantPrograms = eligiblePrograms
 
   // Visible levels — in "For you" mode, only show levels players actually have
   const visibleLevels = useMemo(() => {

@@ -36,7 +36,9 @@ export function validateFormData<T extends z.ZodType>(
 
 export const familyStatusSchema = z.enum(['active', 'inactive', 'lead', 'archived'])
 export const playerStatusSchema = z.enum(['active', 'inactive', 'archived'])
-export const ballColorSchema = z.enum(['blue', 'red', 'orange', 'green', 'yellow', 'competitive'])
+export const ballColorSchema = z.enum(['blue', 'red', 'orange', 'green', 'yellow', 'competitive', 'advanced', 'elite'])
+export const classificationSchema = z.enum(['blue', 'red', 'orange', 'green', 'yellow', 'advanced', 'elite'])
+export const trackSchema = z.enum(['performance', 'participation'])
 export const sessionTypeSchema = z.enum(['group', 'private', 'makeup'])
 export const sessionStatusSchema = z.enum(['scheduled', 'completed', 'cancelled', 'rained_out'])
 export const attendanceStatusSchema = z.enum(['present', 'absent', 'noshow'])
@@ -147,6 +149,10 @@ export const updatePlayerFormSchema = z.object({
   dob: optionalString(),
   ball_color: ballColorSchema.optional().or(z.literal('')),
   level: ballColorSchema.optional().or(z.literal('')),
+  /** Comma-separated list of classifications (e.g. "red,orange,advanced"). Server splits + filters. */
+  classifications: optionalString(500),
+  track: trackSchema.optional().or(z.literal('')),
+  status: playerStatusSchema.optional().or(z.literal('')),
   medical_notes: optionalString(5000),
   physical_notes: optionalString(5000),
   current_focus: optionalString(2000),
@@ -168,6 +174,14 @@ export const createProgramFormSchema = z.object({
   per_session_dollars: optionalString(),
   term_fee_dollars: optionalString(),
   description: optionalString(5000),
+  /** Comma-separated list of classifications (e.g. "red,orange"). */
+  allowed_classifications: optionalString(500),
+  gender_restriction: z.enum(['', 'female', 'male']).optional(),
+  track_required: z.enum(['', 'performance', 'participation']).optional(),
+  early_pay_discount_pct: optionalString(),
+  early_bird_deadline: optionalString(),
+  early_pay_discount_pct_tier2: optionalString(),
+  early_bird_deadline_tier2: optionalString(),
 })
 
 export const updateProgramFormSchema = createProgramFormSchema.extend({

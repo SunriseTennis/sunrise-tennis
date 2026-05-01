@@ -21,10 +21,10 @@ export default async function ParentProgramsPage() {
   const familyId = userRole?.family_id
   if (!familyId) redirect('/parent')
 
-  // Get family's players to know their levels
+  // Get family's players to know their levels and eligibility
   const { data: players } = await supabase
     .from('players')
-    .select('id, first_name, ball_color, level, status')
+    .select('id, first_name, ball_color, level, status, gender, classifications, track')
     .eq('family_id', familyId)
     .eq('status', 'active')
     .order('first_name')
@@ -35,7 +35,7 @@ export default async function ParentProgramsPage() {
   // Get all active programs with roster
   const { data: programs } = await supabase
     .from('programs')
-    .select('id, name, type, level, day_of_week, start_time, end_time, max_capacity, per_session_cents, term_fee_cents, early_pay_discount_pct, early_bird_deadline, description, program_roster(id, player_id, status)')
+    .select('id, name, type, level, day_of_week, start_time, end_time, max_capacity, per_session_cents, term_fee_cents, early_pay_discount_pct, early_bird_deadline, early_pay_discount_pct_tier2, early_bird_deadline_tier2, description, allowed_classifications, gender_restriction, track_required, program_roster(id, player_id, status)')
     .eq('status', 'active')
     .order('day_of_week')
     .order('start_time')
@@ -66,7 +66,13 @@ export default async function ParentProgramsPage() {
             sessions={(sessions ?? []) as never}
             playerLevels={playerLevels}
             familyPlayerIds={playerIds}
-            familyPlayers={players?.map(p => ({ id: p.id, name: p.first_name })) ?? []}
+            familyPlayers={players?.map(p => ({
+              id: p.id,
+              name: p.first_name,
+              gender: (p.gender as 'male' | 'female' | 'non_binary' | null) ?? null,
+              classifications: (p.classifications as string[] | null) ?? [],
+              track: p.track ?? null,
+            })) ?? []}
             attendances={(attendances ?? []) as { session_id: string; player_id: string; status: string }[]}
           />
         </div>

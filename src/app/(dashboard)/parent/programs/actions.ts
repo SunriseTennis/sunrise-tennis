@@ -5,8 +5,10 @@ import { redirect } from 'next/navigation'
 import { createClient, getSessionUser } from '@/lib/supabase/server'
 import { sendPushToUser } from '@/lib/push/send'
 import { validateFormData, enrolFormSchema } from '@/lib/utils/validation'
-import { createCharge, getTermPrice, getSessionPrice, voidCharge, getExistingSessionCharge, formatChargeDescription } from '@/lib/utils/billing'
+import { createCharge, getTermPrice, voidCharge, getExistingSessionCharge, formatChargeDescription } from '@/lib/utils/billing'
 import { getTermLabel } from '@/lib/utils/school-terms'
+import { isEligible, getActiveEarlyBird } from '@/lib/utils/eligibility'
+import { getMorningSquadSessionPrice } from '@/lib/utils/morning-squad-pricing'
 
 async function getParentFamilyId(): Promise<{ userId: string; familyId: string } | null> {
   const supabase = await createClient()
@@ -45,7 +47,7 @@ export async function enrolInProgram(programId: string, familyId: string, formDa
   // Verify player belongs to this family
   const { data: player } = await supabase
     .from('players')
-    .select('id, first_name')
+    .select('id, first_name, gender, classifications, track')
     .eq('id', playerId)
     .eq('family_id', familyId)
     .single()
@@ -69,9 +71,20 @@ export async function enrolInProgram(programId: string, familyId: string, formDa
 
   // Check capacity and get program details
   const [{ data: program }, { count: enrolledCount }] = await Promise.all([
-    supabase.from('programs').select('max_capacity, name, type, term_fee_cents, per_session_cents, early_pay_discount_pct, early_bird_deadline').eq('id', programId).single(),
+    supabase.from('programs').select('max_capacity, name, type, day_of_week, term_fee_cents, per_session_cents, early_pay_discount_pct, early_bird_deadline, early_pay_discount_pct_tier2, early_bird_deadline_tier2, allowed_classifications, gender_restriction, track_required').eq('id', programId).single(),
     supabase.from('program_roster').select('*', { count: 'exact', head: true }).eq('program_id', programId).eq('status', 'enrolled'),
   ])
+
+  // Server-side eligibility gate (mirrors client filter, also blocks API-level abuse)
+  if (program) {
+    const eligibility = isEligible(
+      { gender: player.gender as 'male' | 'female' | 'non_binary' | null, classifications: player.classifications, track: player.track },
+      { day_of_week: program.day_of_week, allowed_classifications: program.allowed_classifications, gender_restriction: program.gender_restriction, track_required: program.track_required },
+    )
+    if (!eligibility.ok) {
+      redirect(`/parent/programs/${programId}?error=${encodeURIComponent(eligibility.message ?? 'Player is not eligible for this program')}`)
+    }
+  }
 
   if (program?.max_capacity && enrolledCount !== null && enrolledCount >= program.max_capacity) {
     redirect(`/parent/programs/${programId}?error=${encodeURIComponent('This program is full')}`)
@@ -109,29 +122,39 @@ export async function enrolInProgram(programId: string, familyId: string, formDa
   // Resolve pricing (family override > program default)
   let priceCents = 0
   let discountCents = 0
+  let activeDiscountPct = 0
 
   if (isTermEnrollment && effectivePaymentOption === 'pay_now') {
     // Term fee (may be overridden per family)
     const termPrice = await getTermPrice(supabase, familyId, programId, program?.type)
-    const sessionPrice = await getSessionPrice(supabase, familyId, programId, program?.type)
+    const sessionPrice = await getMorningSquadSessionPrice(
+      supabase, familyId, programId, program?.type, playerId,
+    )
 
     // Use term fee if set, otherwise per-session * remaining sessions
     priceCents = termPrice > 0 ? termPrice : sessionPrice * sessionsTotal
 
-    // Apply early-pay discount (only if before deadline)
-    const discountPct = program?.early_pay_discount_pct ?? 0
-    const deadline = program?.early_bird_deadline
-    const todayStr = new Date().toISOString().split('T')[0]
-    const deadlineActive = !deadline || todayStr <= deadline
-    if (discountPct > 0 && priceCents > 0 && deadlineActive) {
-      discountCents = Math.round(priceCents * (discountPct / 100))
+    // Apply tiered early-pay discount (15% tier 1, 10% tier 2, 0% expired)
+    const eb = getActiveEarlyBird({
+      early_pay_discount_pct: program?.early_pay_discount_pct ?? null,
+      early_bird_deadline: program?.early_bird_deadline ?? null,
+      early_pay_discount_pct_tier2: program?.early_pay_discount_pct_tier2 ?? null,
+      early_bird_deadline_tier2: program?.early_bird_deadline_tier2 ?? null,
+    })
+    if (eb.pct > 0 && priceCents > 0) {
+      discountCents = Math.round(priceCents * (eb.pct / 100))
+      activeDiscountPct = eb.pct
     }
   } else if (isTermEnrollment && effectivePaymentOption === 'pay_later') {
     // No charge now — charges created per-session via attendance
-    const sessionPrice = await getSessionPrice(supabase, familyId, programId, program?.type)
+    const sessionPrice = await getMorningSquadSessionPrice(
+      supabase, familyId, programId, program?.type, playerId,
+    )
     priceCents = sessionPrice * sessionsTotal
   } else if (bookingType === 'casual') {
-    priceCents = await getSessionPrice(supabase, familyId, programId, program?.type)
+    priceCents = await getMorningSquadSessionPrice(
+      supabase, familyId, programId, program?.type, playerId,
+    )
   }
   // trial = free, priceCents stays 0
 
@@ -162,9 +185,6 @@ export async function enrolInProgram(programId: string, familyId: string, formDa
   // Create charge for pay-now term enrollment
   if (isTermEnrollment && effectivePaymentOption === 'pay_now' && priceCents > 0 && booking) {
     const chargeAmount = priceCents - discountCents
-    const discountDesc = discountCents > 0
-      ? ` (${program?.early_pay_discount_pct}% early payment discount applied)`
-      : ''
 
     await createCharge(supabase, {
       familyId,
@@ -177,7 +197,7 @@ export async function enrolInProgram(programId: string, familyId: string, formDa
       description: formatChargeDescription({
         playerName: player.first_name,
         label: `${program?.name ?? 'Program'} - Term enrolment`,
-        suffix: discountCents > 0 ? `${program?.early_pay_discount_pct}% early-pay discount` : null,
+        suffix: discountCents > 0 ? `${activeDiscountPct}% early-pay discount` : null,
         term: getTermLabel(new Date()),
       }),
       amountCents: chargeAmount,
@@ -289,9 +309,10 @@ export async function bookSession(
     .eq('id', programId)
     .single()
 
-  const sessionPrice = await getSessionPrice(supabase, auth.familyId, programId, program?.type)
-
   for (const playerId of playerIds) {
+    const sessionPrice = await getMorningSquadSessionPrice(
+      supabase, auth.familyId, programId, program?.type, playerId,
+    )
     // Check not already attending
     const { data: existingAttendance } = await supabase
       .from('attendances')

@@ -9,6 +9,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { formatCurrency } from '@/lib/utils/currency'
 import { CheckCircle, Clock, Check } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
+import { getActiveEarlyBird } from '@/lib/utils/eligibility'
 
 export function EnrolForm({
   programId,
@@ -19,6 +20,8 @@ export function EnrolForm({
   perSessionCents,
   earlyPayDiscountPct,
   earlyBirdDeadline,
+  earlyPayDiscountPctTier2,
+  earlyBirdDeadlineTier2,
   remainingSessions,
 }: {
   programId: string
@@ -29,6 +32,8 @@ export function EnrolForm({
   perSessionCents?: number | null
   earlyPayDiscountPct?: number | null
   earlyBirdDeadline?: string | null
+  earlyPayDiscountPctTier2?: number | null
+  earlyBirdDeadlineTier2?: string | null
   remainingSessions?: number | null
 }) {
   const [selectedPlayerIds, setSelectedPlayerIds] = useState<string[]>(players.length === 1 ? [players[0].id] : [])
@@ -38,16 +43,21 @@ export function EnrolForm({
   const enrolWithIds = enrolInProgram.bind(null, programId, familyId)
 
   const showPaymentOptions = bookingType === 'term'
-  const todayStr = new Date().toISOString().split('T')[0]
-  const deadlineActive = !earlyBirdDeadline || todayStr <= earlyBirdDeadline
-  const hasDiscount = earlyPayDiscountPct && earlyPayDiscountPct > 0 && deadlineActive
+  const eb = getActiveEarlyBird({
+    early_pay_discount_pct: earlyPayDiscountPct,
+    early_bird_deadline: earlyBirdDeadline,
+    early_pay_discount_pct_tier2: earlyPayDiscountPctTier2,
+    early_bird_deadline_tier2: earlyBirdDeadlineTier2,
+  })
+  const hasDiscount = eb.pct > 0
+  const activeDiscountPct = eb.pct
 
   // Calculate prices — always from per-session × remaining × number of players
   const playerCount = Math.max(selectedPlayerIds.length, 1)
   const termPricePerPlayer = perSessionCents && remainingSessions ? perSessionCents * remainingSessions : null
   const termPrice = termPricePerPlayer ? termPricePerPlayer * playerCount : null
   const discountedPrice = termPrice && hasDiscount
-    ? Math.round(termPrice * (1 - earlyPayDiscountPct / 100))
+    ? Math.round(termPrice * (1 - activeDiscountPct / 100))
     : termPrice
 
   return (
@@ -143,7 +153,7 @@ export function EnrolForm({
                             {formatCurrency(termPrice)}
                           </span>
                           <span className="ml-1.5 text-xs font-medium text-success">
-                            {earlyPayDiscountPct}% off
+                            {activeDiscountPct}% off
                           </span>
                           {remainingSessions && (
                             <p className="text-xs text-muted-foreground">{remainingSessions} sessions remaining</p>

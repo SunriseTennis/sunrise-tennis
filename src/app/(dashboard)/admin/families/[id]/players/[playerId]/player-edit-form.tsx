@@ -1,18 +1,45 @@
 'use client'
 
+import { useState } from 'react'
 import { updatePlayer } from '../../../../actions'
 import type { Database } from '@/lib/supabase/types'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
+import { cn } from '@/lib/utils/cn'
 
 type Player = Database['public']['Tables']['players']['Row']
 
-const ballColors = ['red', 'orange', 'green', 'yellow', 'competitive']
+const ballColors = ['blue', 'red', 'orange', 'green', 'yellow']
+const ALL_CLASSIFICATIONS = ['blue', 'red', 'orange', 'green', 'yellow', 'advanced', 'elite'] as const
+
+type Classification = (typeof ALL_CLASSIFICATIONS)[number]
+
+const CLASS_PILL: Record<Classification, { active: string; inactive: string }> = {
+  blue:     { active: 'bg-ball-blue text-white border-ball-blue',       inactive: 'bg-ball-blue/10 text-ball-blue border-ball-blue/30' },
+  red:      { active: 'bg-ball-red text-white border-ball-red',         inactive: 'bg-ball-red/10 text-ball-red border-ball-red/30' },
+  orange:   { active: 'bg-ball-orange text-white border-ball-orange',   inactive: 'bg-ball-orange/10 text-ball-orange border-ball-orange/30' },
+  green:    { active: 'bg-ball-green text-white border-ball-green',     inactive: 'bg-ball-green/10 text-ball-green border-ball-green/30' },
+  yellow:   { active: 'bg-ball-yellow text-black border-ball-yellow',   inactive: 'bg-ball-yellow/10 text-yellow-700 border-ball-yellow/30' },
+  advanced: { active: 'bg-primary text-white border-primary',           inactive: 'bg-primary/10 text-primary border-primary/30' },
+  elite:    { active: 'bg-foreground text-background border-foreground', inactive: 'bg-foreground/10 text-foreground border-foreground/30' },
+}
 
 export function PlayerEditForm({ player, familyId }: { player: Player; familyId: string }) {
   const updateWithIds = updatePlayer.bind(null, player.id, familyId)
+
+  const initialClasses = (player.classifications as string[] | null) ?? []
+  const [selectedClasses, setSelectedClasses] = useState<Set<string>>(new Set(initialClasses))
+
+  function toggleClass(c: Classification) {
+    setSelectedClasses(prev => {
+      const next = new Set(prev)
+      if (next.has(c)) next.delete(c)
+      else next.add(c)
+      return next
+    })
+  }
 
   return (
     <details className="rounded-xl border border-border bg-card shadow-sm">
@@ -47,18 +74,60 @@ export function PlayerEditForm({ player, familyId }: { player: Player; familyId:
             <Input id="dob" name="dob" type="date" defaultValue={player.dob ?? ''} className="mt-1" />
           </div>
           <div>
-            <Label htmlFor="ball_color">Ball colour</Label>
+            <Label htmlFor="status">Status</Label>
+            <select id="status" name="status" defaultValue={player.status ?? 'active'} className="mt-1 block w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary">
+              <option value="active">Active</option>
+              <option value="inactive">Inactive</option>
+              <option value="archived">Archived</option>
+            </select>
+          </div>
+          <div>
+            <Label htmlFor="ball_color">Ball colour (display)</Label>
             <select id="ball_color" name="ball_color" defaultValue={player.ball_color ?? ''} className="mt-1 block w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary">
+              <option value="">Select...</option>
+              {ballColors.map((c) => <option key={c} value={c}>{c}</option>)}
+            </select>
+            <p className="mt-1 text-xs text-muted-foreground">Display label for cards/calendar. Eligibility is driven by classifications below.</p>
+          </div>
+          <div>
+            <Label htmlFor="level">Level (legacy)</Label>
+            <select id="level" name="level" defaultValue={player.level ?? ''} className="mt-1 block w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary">
               <option value="">Select...</option>
               {ballColors.map((c) => <option key={c} value={c}>{c}</option>)}
             </select>
           </div>
           <div>
-            <Label htmlFor="level">Level</Label>
-            <select id="level" name="level" defaultValue={player.level ?? ''} className="mt-1 block w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary">
-              <option value="">Select...</option>
-              {ballColors.map((c) => <option key={c} value={c}>{c}</option>)}
+            <Label htmlFor="track">Track <span className="text-xs text-muted-foreground">(admin-only)</span></Label>
+            <select id="track" name="track" defaultValue={player.track ?? 'participation'} className="mt-1 block w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary">
+              <option value="participation">Participation (no Thursday squads)</option>
+              <option value="performance">Performance (Thursday squads visible)</option>
             </select>
+          </div>
+          <div className="sm:col-span-2">
+            <Label>Classifications</Label>
+            <p className="mt-0.5 mb-2 text-xs text-muted-foreground">
+              Drives program eligibility. Multiple allowed. Advanced ≈ UTR 4.5+, Elite ≈ UTR 7.5+.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {ALL_CLASSIFICATIONS.map((c) => {
+                const active = selectedClasses.has(c)
+                const style = CLASS_PILL[c]
+                return (
+                  <button
+                    type="button"
+                    key={c}
+                    onClick={() => toggleClass(c)}
+                    className={cn(
+                      'rounded-full border px-3 py-1 text-xs font-medium capitalize transition-all',
+                      active ? style.active : style.inactive,
+                    )}
+                  >
+                    {c}
+                  </button>
+                )
+              })}
+            </div>
+            <input type="hidden" name="classifications" value={[...selectedClasses].join(',')} />
           </div>
           <div className="sm:col-span-2">
             <Label htmlFor="current_focus">Current focus (comma-separated)</Label>
