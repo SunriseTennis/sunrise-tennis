@@ -231,6 +231,79 @@ export async function updatePlayer(playerId: string, familyId: string, formData:
   redirect(`/admin/families/${familyId}/players/${playerId}`)
 }
 
+/**
+ * Inline-edit a single player from the admin players table. Accepts a partial
+ * patch — only fields present in the payload are written. Auths admin and
+ * filters classifications + track + status to known values.
+ *
+ * Used by `/admin/players` table cells that auto-save on change.
+ */
+export async function updatePlayerInline(
+  playerId: string,
+  patch: {
+    classifications?: string[]
+    track?: 'performance' | 'participation'
+    status?: 'active' | 'inactive' | 'archived'
+    ball_color?: string | null
+    gender?: 'male' | 'female' | 'non_binary' | null
+  },
+): Promise<{ error?: string }> {
+  await requireAdmin()
+  const supabase = await createClient()
+
+  const VALID_CLASSES = new Set(['blue', 'red', 'orange', 'green', 'yellow', 'advanced', 'elite'])
+  const VALID_BALL = new Set(['blue', 'red', 'orange', 'green', 'yellow', 'competitive'])
+  const VALID_GENDER = new Set(['male', 'female', 'non_binary'])
+
+  type PlayerUpdate = {
+    classifications?: string[]
+    track?: string
+    status?: string
+    ball_color?: string | null
+    gender?: string | null
+  }
+  const update: PlayerUpdate = {}
+
+  if (patch.classifications !== undefined) {
+    update.classifications = patch.classifications.filter(c => VALID_CLASSES.has(c))
+  }
+  if (patch.track !== undefined) {
+    if (patch.track !== 'performance' && patch.track !== 'participation') {
+      return { error: 'Invalid track' }
+    }
+    update.track = patch.track
+  }
+  if (patch.status !== undefined) {
+    if (!['active', 'inactive', 'archived'].includes(patch.status)) {
+      return { error: 'Invalid status' }
+    }
+    update.status = patch.status
+  }
+  if (patch.ball_color !== undefined) {
+    if (patch.ball_color !== null && !VALID_BALL.has(patch.ball_color)) {
+      return { error: 'Invalid ball colour' }
+    }
+    update.ball_color = patch.ball_color
+  }
+  if (patch.gender !== undefined) {
+    if (patch.gender !== null && !VALID_GENDER.has(patch.gender)) {
+      return { error: 'Invalid gender' }
+    }
+    update.gender = patch.gender
+  }
+
+  if (Object.keys(update).length === 0) return {}
+
+  const { error } = await supabase.from('players').update(update).eq('id', playerId)
+  if (error) {
+    console.error('updatePlayerInline failed:', error.message)
+    return { error: 'Update failed' }
+  }
+
+  revalidatePath('/admin/players')
+  return {}
+}
+
 // ── Invitations ────────────────────────────────────────────────────────
 
 export async function createInvitation(familyId: string, formData: FormData) {

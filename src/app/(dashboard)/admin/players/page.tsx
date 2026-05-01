@@ -8,8 +8,7 @@ export default async function PlayersPage() {
   const [{ data: players }, { data: rosterEntries }, { data: compEntries }] = await Promise.all([
     supabase
       .from('players')
-      .select('id, first_name, last_name, preferred_name, dob, ball_color, level, gender, status, media_consent, comp_interest, family_id, families:family_id(id, display_id, family_name)')
-      .eq('status', 'active')
+      .select('id, first_name, last_name, preferred_name, dob, ball_color, level, gender, status, classifications, track, media_consent, comp_interest, family_id, families:family_id(id, display_id, family_name)')
       .order('last_name'),
     supabase
       .from('program_roster')
@@ -62,7 +61,9 @@ export default async function PlayersPage() {
       ballColor: p.ball_color,
       level: p.level,
       gender: p.gender,
-      status: p.status,
+      status: (p.status as 'active' | 'inactive' | 'archived'),
+      classifications: (p.classifications as string[] | null) ?? [],
+      track: (p.track as 'performance' | 'participation' | null) ?? 'participation',
       mediaConsent: p.media_consent,
       compInterest: p.comp_interest,
       familyId: fam?.id ?? p.family_id,

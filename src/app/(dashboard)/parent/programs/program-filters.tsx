@@ -376,6 +376,25 @@ export function ParentProgramFilters({
     return map
   }, [sessions])
 
+  // Eligible programs: at least one family player can enrol (passes gender/track/classification gates).
+  // Hard rule — applied regardless of "For you" toggle. Never show a program no kid can join.
+  // MUST be declared before calendarEvents (which references it).
+  const eligibleProgramIds = useMemo(() => {
+    const ids = new Set<string>()
+    for (const p of programs) {
+      const someoneEligible = familyPlayers.some(player =>
+        isEligible(
+          { gender: player.gender, classifications: player.classifications, track: player.track },
+          { day_of_week: p.day_of_week, allowed_classifications: p.allowed_classifications, gender_restriction: p.gender_restriction, track_required: p.track_required },
+        ).ok
+      )
+      if (someoneEligible) ids.add(p.id)
+    }
+    return ids
+  }, [programs, familyPlayers])
+
+  const eligiblePrograms = useMemo(() => programs.filter(p => eligibleProgramIds.has(p.id)), [programs, eligibleProgramIds])
+
   // Build calendar events from sessions
   const calendarEvents: CalendarEvent[] = useMemo(() => {
     return sessions
@@ -452,24 +471,6 @@ export function ParentProgramFilters({
         }
       })
   }, [sessions, programMap, calendarFilter, calendarTypes, enrolledProgramIds, recommendedProgramIds, sessionAttendanceMap, remainingSessionsMap])
-
-  // Eligible programs: at least one family player can enrol (passes gender/track/classification gates).
-  // Hard rule — applied regardless of "For you" toggle. Never show a program no kid can join.
-  const eligibleProgramIds = useMemo(() => {
-    const ids = new Set<string>()
-    for (const p of programs) {
-      const someoneEligible = familyPlayers.some(player =>
-        isEligible(
-          { gender: player.gender, classifications: player.classifications, track: player.track },
-          { day_of_week: p.day_of_week, allowed_classifications: p.allowed_classifications, gender_restriction: p.gender_restriction, track_required: p.track_required },
-        ).ok
-      )
-      if (someoneEligible) ids.add(p.id)
-    }
-    return ids
-  }, [programs, familyPlayers])
-
-  const eligiblePrograms = useMemo(() => programs.filter(p => eligibleProgramIds.has(p.id)), [programs, eligibleProgramIds])
 
   // 'mine' vs 'all' both show eligible programs. Eligibility is itself the
   // "for you" signal now that classifications include advanced/elite — every
