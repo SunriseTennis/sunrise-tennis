@@ -82,7 +82,7 @@ export default async function ParentDashboard() {
     supabase.from('family_balance').select('balance_cents, confirmed_balance_cents, projected_balance_cents').eq('family_id', familyId).single(),
     supabase
       .from('program_roster')
-      .select('id, status, player_id, players!inner(id, first_name), programs:program_id(id, name, type, level, day_of_week, start_time, end_time, status)')
+      .select('id, status, player_id, players!inner(id, first_name), programs:program_id(id, name, type, level, day_of_week, start_time, end_time, status, allowed_classifications, gender_restriction, track_required)')
       .eq('status', 'enrolled')
       .in('player_id', familyPlayerIdList),
     supabase
@@ -427,10 +427,20 @@ export default async function ParentDashboard() {
           <div className="mt-3">
             <EnrolledCalendar
               playerOrder={players?.map(p => p.first_name) ?? []}
-              familyPlayers={players?.map(p => ({ id: p.id, name: p.first_name })) ?? []}
+              familyPlayers={(players ?? []).map(p => ({
+                id: p.id,
+                name: p.first_name,
+                gender: (p as { gender?: 'male' | 'female' | 'non_binary' | null }).gender ?? null,
+                classifications: (p as { classifications?: string[] | null }).classifications ?? [],
+                track: (p as { track?: string | null }).track ?? null,
+              }))}
               enrollments={(enrollments ?? []).map((enrollment) => {
                 const program = enrollment.programs as unknown as {
                   id: string; name: string; type: string; level: string; status: string
+                  day_of_week: number | null
+                  allowed_classifications: string[] | null
+                  gender_restriction: string | null
+                  track_required: string | null
                 } | null
                 const enrolledPlayer = enrollment.players as unknown as { id: string; first_name: string } | null
                 return {
@@ -441,6 +451,10 @@ export default async function ParentDashboard() {
                   programName: program?.name ?? '',
                   programType: program?.type ?? '',
                   programLevel: program?.level ?? null,
+                  programDayOfWeek: program?.day_of_week ?? null,
+                  programAllowedClassifications: program?.allowed_classifications ?? null,
+                  programGenderRestriction: program?.gender_restriction ?? null,
+                  programTrackRequired: program?.track_required ?? null,
                 }
               })}
               sessions={(enrolledSessions ?? []).map(s => ({

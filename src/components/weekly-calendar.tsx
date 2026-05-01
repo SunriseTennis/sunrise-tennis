@@ -217,6 +217,9 @@ export type EnrolledPlayersMap = Record<string, string[]>
 /** Map of sessionId → Set of enrolled/booked playerIds (overrides enrolledPlayersMap per session) */
 export type SessionEnrolledMap = Record<string, string[]>
 
+/** Map of programId → Set of family playerIds eligible to enrol/book that program */
+export type EligiblePlayersMap = Record<string, string[]>
+
 /** Popup container that auto-clamps to stay within calendar bounds */
 function PopupContainer({
   popupRef,
@@ -277,6 +280,7 @@ function PopupActions({
   players,
   enrolledPlayersMap,
   sessionEnrolledMap,
+  eligiblePlayersMap,
   selectedPlayerIds,
   setSelectedPlayerIds,
   actionLoading,
@@ -288,6 +292,7 @@ function PopupActions({
   players?: CalendarPlayer[]
   enrolledPlayersMap?: EnrolledPlayersMap
   sessionEnrolledMap?: SessionEnrolledMap
+  eligiblePlayersMap?: EligiblePlayersMap
   selectedPlayerIds: Set<string>
   setSelectedPlayerIds: (ids: Set<string>) => void
   actionLoading: boolean
@@ -316,8 +321,14 @@ function PopupActions({
   )
   // Term-enrolled players (in program_roster)
   const termEnrolledIds = new Set(enrolledPlayersMap?.[event.programId] ?? [])
+  // Players eligible to book this program (gender/track/classification gates).
+  // If the map is not provided, fall back to "everyone is eligible" — keeps
+  // legacy callers working until they pass a real map.
+  const eligibleIds = eligiblePlayersMap?.[event.programId]
+  const isEligibleForBooking = (pid: string) =>
+    eligibleIds === undefined ? true : eligibleIds.includes(pid)
   const enrolledPlayers = players.filter(p => enrolledPlayerIds.has(p.id))
-  const availablePlayers = players.filter(p => !enrolledPlayerIds.has(p.id))
+  const availablePlayers = players.filter(p => !enrolledPlayerIds.has(p.id) && isEligibleForBooking(p.id))
   const att = event.playerAttendance ?? {}
 
   // Check if session is coach-completed (has absent/noshow statuses)
@@ -468,6 +479,7 @@ export function WeeklyCalendar({
   players,
   enrolledPlayersMap,
   sessionEnrolledMap,
+  eligiblePlayersMap,
   onBookSession,
   onMarkAway,
   onCancelPrivate,
@@ -494,6 +506,9 @@ export function WeeklyCalendar({
   enrolledPlayersMap?: EnrolledPlayersMap
   /** Per-session enrolled/booked players (overrides enrolledPlayersMap) */
   sessionEnrolledMap?: SessionEnrolledMap
+  /** Per-program eligible playerIds. Players outside the set are hidden from
+   *  the casual-booking selector. Undefined map = everyone is eligible. */
+  eligiblePlayersMap?: EligiblePlayersMap
   /** Called when user books a session for selected players */
   onBookSession?: (sessionId: string, programId: string, playerIds: string[]) => Promise<{ error?: string }>
   /** Called when user marks a player as away for a session */
@@ -1228,6 +1243,7 @@ export function WeeklyCalendar({
               players={players}
               enrolledPlayersMap={enrolledPlayersMap}
               sessionEnrolledMap={sessionEnrolledMap}
+              eligiblePlayersMap={eligiblePlayersMap}
               selectedPlayerIds={selectedPlayerIds}
               setSelectedPlayerIds={setSelectedPlayerIds}
               actionLoading={actionLoading}

@@ -7,10 +7,10 @@ import { cn } from '@/lib/utils/cn'
 import { formatCurrency } from '@/lib/utils/currency'
 import { formatTime } from '@/lib/utils/dates'
 import { Badge } from '@/components/ui/badge'
-import { WeeklyCalendar, type CalendarEvent, type EnrolledPlayersMap } from '@/components/weekly-calendar'
-import { Calendar, Layers, Tag, ChevronRight, Users, Filter } from 'lucide-react'
+import { WeeklyCalendar, type CalendarEvent, type EnrolledPlayersMap, type EligiblePlayersMap } from '@/components/weekly-calendar'
+import { Calendar, Layers, Tag, ChevronRight, Users, Filter, Lock } from 'lucide-react'
 import { bookSession, markSessionAway, cancelSessionBooking } from './actions'
-import { isEligible } from '@/lib/utils/eligibility'
+import { isEligible, isStrictlyGated } from '@/lib/utils/eligibility'
 
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
@@ -135,10 +135,12 @@ function formatCalendarTitle(name: string): string {
 function ProgramCard({
   program,
   familyPlayerIds,
+  noEligiblePlayer,
   index,
 }: {
   program: Program
   familyPlayerIds: Set<string>
+  noEligiblePlayer: boolean
   index: number
 }) {
   const roster = program.program_roster ?? []
@@ -156,7 +158,7 @@ function ProgramCard({
   return (
     <Link
       href={`/parent/programs/${program.id}`}
-      className={`group relative block overflow-hidden rounded-xl border border-border ${accent.bg} p-5 shadow-card transition-all hover:shadow-elevated hover:scale-[1.01] animate-fade-up`}
+      className={`group relative block overflow-hidden rounded-xl border border-border ${accent.bg} p-5 shadow-card transition-all hover:shadow-elevated hover:scale-[1.01] animate-fade-up ${noEligiblePlayer ? 'opacity-70' : ''}`}
       style={{ animationDelay: `${index * 60}ms` }}
     >
       {/* Level color accent bar */}
@@ -190,6 +192,11 @@ function ProgramCard({
               <Badge variant="outline" className="bg-success-light text-success border-success/20 font-medium">Enrolled</Badge>
             ) : familyWaitlisted.length > 0 ? (
               <Badge variant="outline" className="bg-warning-light text-warning border-warning/20 font-medium">Waitlisted</Badge>
+            ) : noEligiblePlayer ? (
+              <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+                <Lock className="size-3" />
+                Not for your players
+              </span>
             ) : isFull ? (
               <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-700">Waitlist available</span>
             ) : (
@@ -376,24 +383,59 @@ export function ParentProgramFilters({
     return map
   }, [sessions])
 
-  // Eligible programs: at least one family player can enrol (passes gender/track/classification gates).
-  // Hard rule — applied regardless of "For you" toggle. Never show a program no kid can join.
-  // MUST be declared before calendarEvents (which references it).
-  const eligibleProgramIds = useMemo(() => {
-    const ids = new Set<string>()
+  // Per-program eligible-player map. Drives the booking modal's player picker
+  // and the "For you" / "Not for your players" indicators.
+  const eligiblePlayersByProgram = useMemo(() => {
+    const map: Record<string, string[]> = {}
     for (const p of programs) {
-      const someoneEligible = familyPlayers.some(player =>
-        isEligible(
+      const eligible: string[] = []
+      for (const player of familyPlayers) {
+        const ok = isEligible(
           { gender: player.gender, classifications: player.classifications, track: player.track },
           { day_of_week: p.day_of_week, allowed_classifications: p.allowed_classifications, gender_restriction: p.gender_restriction, track_required: p.track_required },
         ).ok
-      )
-      if (someoneEligible) ids.add(p.id)
+        if (ok) eligible.push(player.id)
+      }
+      map[p.id] = eligible
     }
-    return ids
+    return map
   }, [programs, familyPlayers])
 
-  const eligiblePrograms = useMemo(() => programs.filter(p => eligibleProgramIds.has(p.id)), [programs, eligibleProgramIds])
+  // Programs at least one family player can enrol in. Used for the "For you"
+  // toggle and the "Not for your players" badge in the "All" view.
+  const eligibleProgramIds = useMemo(() => {
+    const ids = new Set<string>()
+    for (const p of programs) {
+      if ((eligiblePlayersByProgram[p.id] ?? []).length > 0) ids.add(p.id)
+    }
+    return ids
+  }, [programs, eligiblePlayersByProgram])
+
+  // Strict-hide programs — kept hidden in the "All" view too. These are
+  // programs with a track gate (currently morning squads + Thursday
+  // performance squads). A red-ball family will simply never see morning
+  // squads, even when browsing all of the catalogue.
+  const strictHiddenProgramIds = useMemo(() => {
+    const ids = new Set<string>()
+    for (const p of programs) {
+      if (eligibleProgramIds.has(p.id)) continue
+      if (isStrictlyGated({ day_of_week: p.day_of_week, allowed_classifications: p.allowed_classifications, gender_restriction: p.gender_restriction, track_required: p.track_required })) {
+        ids.add(p.id)
+      }
+    }
+    return ids
+  }, [programs, eligibleProgramIds])
+
+  // Programs to show in "All" view: everything except strict-hide.
+  // Programs to show in "For you" view: only ones a family player can enrol in.
+  const visibleAllPrograms = useMemo(
+    () => programs.filter(p => !strictHiddenProgramIds.has(p.id)),
+    [programs, strictHiddenProgramIds],
+  )
+  const visibleEligiblePrograms = useMemo(
+    () => programs.filter(p => eligibleProgramIds.has(p.id)),
+    [programs, eligibleProgramIds],
+  )
 
   // Build calendar events from sessions
   const calendarEvents: CalendarEvent[] = useMemo(() => {
@@ -403,13 +445,14 @@ export function ParentProgramFilters({
         if (!prog) return false
         if (!s.start_time || !s.end_time) return false
 
-        // Hide programs no family player can enrol in (gender/track/classification)
-        if (!eligibleProgramIds.has(prog.id)) return false
+        // Strict-hide: morning squads + Thursday performance squads stay
+        // hidden when no family player is eligible, even in "All" view.
+        if (strictHiddenProgramIds.has(prog.id)) return false
 
         // Apply type filter
         if (!calendarTypes.has(prog.type)) return false
 
-        // Apply "For you" filter
+        // "For you" filter further narrows to enrolled or recommended.
         if (calendarFilter === 'mine') {
           return enrolledProgramIds.has(s.program_id) || recommendedProgramIds.has(s.program_id)
         }
@@ -472,10 +515,11 @@ export function ParentProgramFilters({
       })
   }, [sessions, programMap, calendarFilter, calendarTypes, enrolledProgramIds, recommendedProgramIds, sessionAttendanceMap, remainingSessionsMap])
 
-  // 'mine' vs 'all' both show eligible programs. Eligibility is itself the
-  // "for you" signal now that classifications include advanced/elite — every
-  // visible program is one a family player can actually enrol in.
-  const relevantPrograms = eligiblePrograms
+  // "All" view shows the full catalogue minus strict-hide. "For you" narrows
+  // to programs with at least one eligible family player. Cards in "All" mode
+  // that no family player can enrol in get a "Not for your players" badge so
+  // the affordance is honest — useful for planning ahead across terms.
+  const relevantPrograms = calendarFilter === 'mine' ? visibleEligiblePrograms : visibleAllPrograms
 
   // Visible levels — in "For you" mode, only show levels players actually have
   const visibleLevels = useMemo(() => {
@@ -501,7 +545,15 @@ export function ParentProgramFilters({
     if (items.length === 0) return <p className="mt-4 text-center text-sm text-muted-foreground">No programs match.</p>
     return (
       <div className="grid gap-3 sm:grid-cols-2">
-        {items.map((p, i) => <ProgramCard key={p.id} program={p} familyPlayerIds={playerIds} index={i} />)}
+        {items.map((p, i) => (
+          <ProgramCard
+            key={p.id}
+            program={p}
+            familyPlayerIds={playerIds}
+            noEligiblePlayer={!eligibleProgramIds.has(p.id)}
+            index={i}
+          />
+        ))}
       </div>
     )
   }
@@ -516,7 +568,15 @@ export function ParentProgramFilters({
           <div key={g.key}>
             <h3 className="mb-2 text-sm font-semibold capitalize text-foreground">{labelMap?.[g.key] ?? g.key}</h3>
             <div className="grid gap-3 sm:grid-cols-2">
-              {g.items.map((p, i) => <ProgramCard key={p.id} program={p} familyPlayerIds={playerIds} index={i} />)}
+              {g.items.map((p, i) => (
+                <ProgramCard
+                  key={p.id}
+                  program={p}
+                  familyPlayerIds={playerIds}
+                  noEligiblePlayer={!eligibleProgramIds.has(p.id)}
+                  index={i}
+                />
+              ))}
             </div>
           </div>
         ))}
@@ -603,6 +663,7 @@ export function ParentProgramFilters({
               players={familyPlayers}
               enrolledPlayersMap={enrolledPlayersMap}
               sessionEnrolledMap={sessionEnrolledMap}
+              eligiblePlayersMap={eligiblePlayersByProgram as EligiblePlayersMap}
               hideCapacity
               onBookSession={async (sid, pid, pids) => {
                 const r = await bookSession(sid, pid, pids)

@@ -280,10 +280,11 @@ export async function bookSession(
     return { error: 'Too many requests. Please wait a moment.' }
   }
 
-  // Verify all players belong to this family
+  // Verify all players belong to this family — pull eligibility fields too
+  // so we can gate per-player against the program's gender/track/classification.
   const { data: players } = await supabase
     .from('players')
-    .select('id, first_name')
+    .select('id, first_name, gender, classifications, track')
     .eq('family_id', auth.familyId)
     .in('id', playerIds)
 
@@ -305,9 +306,24 @@ export async function bookSession(
 
   const { data: program } = await supabase
     .from('programs')
-    .select('name, type, per_session_cents')
+    .select('name, type, per_session_cents, day_of_week, allowed_classifications, gender_restriction, track_required')
     .eq('id', programId)
     .single()
+
+  // Server-side eligibility gate: the client filter hides ineligible players
+  // but anyone hitting this RPC directly must still be blocked. Mirrors the
+  // gate on `enrolInProgram`.
+  if (program) {
+    for (const p of players) {
+      const result = isEligible(
+        { gender: p.gender as 'male' | 'female' | 'non_binary' | null, classifications: p.classifications, track: p.track },
+        { day_of_week: program.day_of_week, allowed_classifications: program.allowed_classifications, gender_restriction: program.gender_restriction, track_required: program.track_required },
+      )
+      if (!result.ok) {
+        return { error: `${p.first_name}: ${result.message ?? 'not eligible for this program'}` }
+      }
+    }
+  }
 
   for (const playerId of playerIds) {
     const sessionPrice = await getMorningSquadSessionPrice(

@@ -137,6 +137,16 @@ export function isEligible(
   return OK
 }
 
+/**
+ * Returns true when a program should be hard-hidden from a family if no
+ * player is eligible. Used so that morning squads + Thursday performance
+ * squads stay invisible in "All" view for families they will never apply to,
+ * while the rest of the catalogue stays browseable.
+ */
+export function isStrictlyGated(program: ProgramEligibilityFields): boolean {
+  return Boolean(program.track_required)
+}
+
 // ── Early-bird tiers ──────────────────────────────────────────────────────────
 
 export interface EarlyBirdInputs {

@@ -1,10 +1,11 @@
 'use client'
 
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { WeeklyCalendar, type CalendarEvent, type CalendarPlayer, type EnrolledPlayersMap } from '@/components/weekly-calendar'
+import { WeeklyCalendar, type CalendarEvent, type CalendarPlayer, type EnrolledPlayersMap, type EligiblePlayersMap } from '@/components/weekly-calendar'
 import { markSessionAway, cancelSessionBooking, bookSession } from './programs/actions'
 import { cancelPrivateFromOverview } from './overview-actions'
+import { isEligible } from '@/lib/utils/eligibility'
 import { Users, Layers } from 'lucide-react'
 
 // Brand palette colors for players (from the sunrise gradient)
@@ -79,6 +80,18 @@ type Enrollment = {
   programName: string
   programType: string
   programLevel: string | null
+  /** Eligibility fields needed to filter the casual-booking player picker.
+   *  Optional so callers that don't need booking gating can omit them. */
+  programDayOfWeek?: number | null
+  programAllowedClassifications?: string[] | null
+  programGenderRestriction?: string | null
+  programTrackRequired?: string | null
+}
+
+type FamilyPlayerEligibility = CalendarPlayer & {
+  gender?: 'male' | 'female' | 'non_binary' | null
+  classifications?: string[] | null
+  track?: string | null
 }
 
 type SessionData = {
@@ -126,7 +139,7 @@ export function EnrolledCalendar({
   privateBookings?: PrivateBooking[]
   attendances?: AttendanceRecord[]
   playerOrder: string[]
-  familyPlayers?: CalendarPlayer[]
+  familyPlayers?: FamilyPlayerEligibility[]
   onMarkAway?: (sessionId: string, playerId: string) => Promise<{ error?: string }>
   onCancelPrivate?: (bookingId: string) => Promise<{ error?: string }>
   nextJumpDate?: string
@@ -159,6 +172,36 @@ export function EnrolledCalendar({
       enrolledPlayersMapData[e.programId] = [e.playerId]
     }
   }
+
+  // Build per-program eligibility map so the booking modal can hide players
+  // that fail gender/track/classification gates. Keyed off the first
+  // enrollment per program — every enrollment for a given program shares
+  // the same gating fields. Players already enrolled stay visible via the
+  // separate `enrolledPlayersMap` path.
+  const eligiblePlayersMapData: EligiblePlayersMap = useMemo(() => {
+    const seen = new Set<string>()
+    const map: EligiblePlayersMap = {}
+    for (const e of enrollments) {
+      if (seen.has(e.programId)) continue
+      seen.add(e.programId)
+      const program = {
+        day_of_week: e.programDayOfWeek ?? null,
+        allowed_classifications: e.programAllowedClassifications ?? null,
+        gender_restriction: e.programGenderRestriction ?? null,
+        track_required: e.programTrackRequired ?? null,
+      }
+      const eligible: string[] = []
+      for (const player of familyPlayers ?? []) {
+        const ok = isEligible(
+          { gender: player.gender ?? null, classifications: player.classifications ?? [], track: player.track ?? null },
+          program,
+        ).ok
+        if (ok) eligible.push(player.id)
+      }
+      map[e.programId] = eligible
+    }
+    return map
+  }, [enrollments, familyPlayers])
 
   // Build attendance maps for per-session data
   const sessionAttendanceMap = new Map<string, Record<string, string>>()
@@ -347,6 +390,7 @@ export function EnrolledCalendar({
         players={familyPlayers}
         enrolledPlayersMap={enrolledPlayersMapData}
         sessionEnrolledMap={sessionEnrolledMapData}
+        eligiblePlayersMap={eligiblePlayersMapData}
         hideCapacity
         nextJumpDate={nextJumpDate}
         nextJumpLabel={nextJumpLabel}
