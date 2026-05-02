@@ -45,7 +45,7 @@ export default async function ParentPaymentsPage({
   const [balanceRes, paymentsRes, chargesRes, vouchersRes, playersRes, familyRes] = await Promise.all([
     supabase.from('family_balance').select('balance_cents, confirmed_balance_cents, projected_balance_cents').eq('family_id', familyId).single(),
     supabase.from('payments').select('*, payment_allocations(amount_cents, charge_id, charges:charge_id(description, session_id, sessions:session_id(date, status)))').eq('family_id', familyId).neq('status', 'voided').neq('status', 'pending').order('created_at', { ascending: false }).limit(100),
-    supabase.from('charges').select('id, type, source_type, description, amount_cents, status, program_id, session_id, player_id, created_at, sessions:session_id(date, status), players:player_id(first_name)').eq('family_id', familyId).in('status', ['pending', 'confirmed', 'paid', 'credited']).order('created_at', { ascending: false }).limit(150),
+    supabase.from('charges').select('id, type, source_type, description, amount_cents, status, program_id, session_id, player_id, created_at, sessions:session_id(date, status), players:player_id(first_name), payment_allocations(amount_cents)').eq('family_id', familyId).in('status', ['pending', 'confirmed', 'paid', 'credited']).order('created_at', { ascending: false }).limit(150),
     supabase.from('vouchers').select('id, child_first_name, child_surname, amount_cents, status, submitted_at, rejection_reason, voucher_number, submission_method').eq('family_id', familyId).order('submitted_at', { ascending: false }).limit(20),
     supabase.from('players').select('id, first_name, last_name, dob, gender').eq('family_id', familyId).eq('status', 'active').order('first_name'),
     supabase.from('families').select('primary_contact, address, family_name').eq('id', familyId).single(),
@@ -77,12 +77,20 @@ export default async function ParentPaymentsPage({
     const session = c.sessions as unknown as { date: string; status: string } | null
     const player = c.players as unknown as { first_name: string } | null
     const info = c.program_id ? programInfo[c.program_id] : null
+    const allocations = (c.payment_allocations ?? []) as unknown as { amount_cents: number }[]
+    const paid_cents = allocations.reduce((sum, a) => sum + (a.amount_cents ?? 0), 0)
+    // Positive charges: outstanding = amount - allocated. Negative (credits) pass through unchanged.
+    const outstanding_cents = c.amount_cents > 0
+      ? Math.max(0, c.amount_cents - paid_cents)
+      : c.amount_cents
     return {
       id: c.id,
       type: c.type,
       source_type: c.source_type,
       description: c.description,
       amount_cents: c.amount_cents,
+      paid_cents,
+      outstanding_cents,
       status: c.status,
       program_id: c.program_id,
       session_id: c.session_id,

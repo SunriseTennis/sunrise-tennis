@@ -234,7 +234,16 @@ function ConfirmStep({ amountDollars }: { amountDollars: string }) {
 
   return (
     <form onSubmit={handleSubmit}>
-      <PaymentElement options={{ layout: 'tabs' }} />
+      <PaymentElement
+        options={{
+          layout: 'tabs',
+          // Disable Stripe Link — saving cards cross-merchant is unsupported
+          // until the proper merchant-attached saved-card layer is built
+          // (see Apps/Plans/08-saved-cards.md). Apple Pay / Google Pay
+          // remain auto since they tokenize per-transaction, not stored.
+          wallets: { link: 'never' },
+        }}
+      />
       {error && (
         <div className="mt-3 flex items-center gap-2 rounded-lg border border-danger/20 bg-danger-light px-4 py-3 text-sm text-danger">
           <AlertCircle className="size-4 shrink-0" />

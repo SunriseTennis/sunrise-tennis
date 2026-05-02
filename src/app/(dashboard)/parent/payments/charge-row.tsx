@@ -12,7 +12,13 @@ export type ChargeBadge = 'due' | 'scheduled' | 'paid'
 export interface ChargeRowData {
   id: string
   description: string
+  /** Original gross charge amount. Used for "of $Y" partial-payment context. */
   amountCents: number
+  /** Sum of payment allocations applied to this charge (>= 0). */
+  paidCents?: number
+  /** Remaining balance: amountCents - paidCents (clamped >= 0). When omitted,
+   *  legacy behaviour treats amountCents as the displayed value. */
+  outstandingCents?: number
   playerName: string | null
   date: string | null
   badge: ChargeBadge
@@ -48,6 +54,15 @@ export function ChargeRow({
   const displayDate = charge.date ? formatDateFriendly(charge.date) : null
   const isPaid = charge.badge === 'paid'
 
+  // Resolve display amount: outstanding (remaining) when available, otherwise gross.
+  const displayCents = charge.outstandingCents ?? charge.amountCents
+  const isPartiallyPaid =
+    !isPaid &&
+    typeof charge.paidCents === 'number' &&
+    charge.paidCents > 0 &&
+    typeof charge.outstandingCents === 'number' &&
+    charge.outstandingCents > 0
+
   // Use props-based expand/collapse when provided (accordion mode)
   const expanded = isExpanded ?? false
   const handleToggle = onToggle ?? (() => {})
@@ -75,6 +90,11 @@ export function ChargeRow({
             )}>
               {BADGE_LABELS[charge.badge]}
             </span>
+            {isPartiallyPaid && (
+              <span className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-800">
+                Partly paid
+              </span>
+            )}
             {displayDate && (
               <span className="text-xs text-muted-foreground tabular-nums">{displayDate}</span>
             )}
@@ -82,16 +102,21 @@ export function ChargeRow({
           {!compact && (
             <p className="mt-1 text-sm text-foreground line-clamp-1">{charge.description}</p>
           )}
+          {isPartiallyPaid && (
+            <p className="mt-1 text-xs text-muted-foreground tabular-nums">
+              {formatCurrency(charge.paidCents!)} paid of {formatCurrency(charge.amountCents)}
+            </p>
+          )}
         </div>
         <div className="flex items-center gap-1.5 shrink-0">
           <span className={cn(
             'tabular-nums font-semibold',
             isPaid ? 'text-muted-foreground line-through' :
-            charge.amountCents < 0 ? 'text-success' :
+            displayCents < 0 ? 'text-success' :
             charge.badge === 'due' ? 'text-amber-700' :
             'text-foreground',
           )}>
-            {formatCurrency(charge.amountCents)}
+            {formatCurrency(displayCents)}
           </span>
           {!isPaid && (
             <ChevronDown className={cn('size-3.5 text-muted-foreground transition-transform', expanded && 'rotate-180')} />
@@ -123,7 +148,7 @@ export function ChargeRow({
           {charge.badge === 'due' && payment && (
             <button
               type="button"
-              onClick={() => payment.requestPayment(charge.amountCents, charge.description)}
+              onClick={() => payment.requestPayment(displayCents, charge.description)}
               className="inline-flex items-center gap-1.5 rounded-lg border border-primary/30 bg-primary/5 px-3 py-1.5 text-xs font-medium text-primary shadow-sm hover:bg-primary/10 transition-all"
             >
               <CreditCard className="size-3" />

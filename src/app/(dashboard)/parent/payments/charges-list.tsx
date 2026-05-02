@@ -14,6 +14,11 @@ interface Charge {
   source_type: string
   description: string
   amount_cents: number
+  /** Sum of payment allocations applied to this charge (cents, always >= 0). */
+  paid_cents: number
+  /** Remaining balance after allocations: amount_cents - paid_cents (clamped >= 0).
+   *  Credits (negative amount_cents) pass through unchanged. */
+  outstanding_cents: number
   status: string
   program_id: string | null
   session_id: string | null
@@ -39,6 +44,8 @@ function toRowData(c: Charge): ChargeRowData {
     id: c.id,
     description: c.description,
     amountCents: c.amount_cents,
+    paidCents: c.paid_cents,
+    outstandingCents: c.outstanding_cents,
     playerName: c.player_name ?? null,
     date: c.session_date ?? c.created_at ?? null,
     badge: classifyBadge(c),
@@ -108,7 +115,7 @@ function buildGroups(charges: Charge[]): { playerGroups: PlayerGroup[]; dueTotal
         const dateB = b.session_date ?? b.created_at ?? ''
         return dateA.localeCompare(dateB)
       })
-      const subtotalCents = sCharges.reduce((sum, c) => sum + c.amount_cents, 0)
+      const subtotalCents = sCharges.reduce((sum, c) => sum + c.outstanding_cents, 0)
       let dueCount = 0
       let scheduledCount = 0
       for (const c of sCharges) {
@@ -121,13 +128,13 @@ function buildGroups(charges: Charge[]): { playerGroups: PlayerGroup[]; dueTotal
       return { key, label, charges: sCharges, subtotalCents, dueCount, scheduledCount }
     })
 
-    const subtotalCents = playerCharges.reduce((sum, c) => sum + c.amount_cents, 0)
+    const subtotalCents = playerCharges.reduce((sum, c) => sum + c.outstanding_cents, 0)
 
     for (const c of playerCharges) {
       if (c.session_date && c.session_date > today && c.session_status === 'scheduled') {
-        scheduledTotalCents += c.amount_cents
+        scheduledTotalCents += c.outstanding_cents
       } else {
-        dueTotalCents += c.amount_cents
+        dueTotalCents += c.outstanding_cents
       }
     }
 
@@ -145,9 +152,12 @@ export function ChargesList({ charges }: { charges: Charge[] }) {
   const payment = usePayment()
 
   const active = charges.filter(c => c.status !== 'voided')
-  const positive = active.filter(c => c.amount_cents > 0 && c.status !== 'paid' && c.status !== 'credited')
+  // A charge is "still owing" only when it has a positive remaining balance.
+  // outstanding_cents handles partial-payment + webhook-race cases where
+  // status is still 'confirmed' but allocations cover the full amount.
+  const positive = active.filter(c => c.amount_cents > 0 && c.outstanding_cents > 0 && c.status !== 'paid' && c.status !== 'credited')
   const credits = active.filter(c => c.amount_cents < 0)
-  const paid = active.filter(c => c.status === 'paid' || c.status === 'credited')
+  const paid = active.filter(c => c.status === 'paid' || c.status === 'credited' || (c.amount_cents > 0 && c.outstanding_cents === 0))
 
   const { playerGroups, dueTotalCents, scheduledTotalCents, totalCents } = buildGroups(positive)
 
