@@ -8,6 +8,14 @@ export const LEVEL_COLORS: Record<string, string> = {
   competitive: 'bg-primary/15 border-primary/30',
 }
 
+// Distinct palette for privates so they read separately from groups in admin
+// calendars: shared = purple, Maxim solo = black, other coach solo = pink default.
+export const PRIVATE_COLORS = {
+  shared: 'bg-purple-200 border-purple-400 text-purple-900',
+  maxim: 'bg-neutral-900 border-neutral-900 text-white',
+  other: 'bg-pink-200 border-pink-400 text-pink-900',
+} as const
+
 export type SessionData = {
   id: string
   programId: string | null
@@ -21,6 +29,9 @@ export type SessionData = {
   bookedCount: number
   leadCoach: string
   assistantCoaches: string[]
+  privatePlayers?: { firstName: string; lastName: string }[]
+  isShared?: boolean
+  isMaximPrivate?: boolean
 }
 
 export type ProgramInfo = {
@@ -49,12 +60,13 @@ export function sessionsToCalendarEvents(
     // Optionally hide all cancelled sessions (for overview calendar)
     .filter(s => !opts?.hideCancelled || s.status !== 'cancelled')
     .map(s => {
+      const isPrivate = s.sessionType === 'private'
       const program = s.programId ? programMap.get(s.programId) : null
       const enrolled = program?.program_roster?.[0]?.count ?? 0
       const capacity = program?.max_capacity
-      const capacityLabel = capacity ? `${s.bookedCount || enrolled}/${capacity}` : undefined
+      const capacityLabel = !isPrivate && capacity ? `${s.bookedCount || enrolled}/${capacity}` : undefined
       let capacityColor: 'green' | 'amber' | 'red' | 'blue' | undefined
-      if (capacity) {
+      if (!isPrivate && capacity) {
         const ratio = (s.bookedCount || enrolled) / capacity
         if (ratio > 1) capacityColor = 'blue'
         else if (ratio >= 1) capacityColor = 'red'
@@ -64,6 +76,38 @@ export function sessionsToCalendarEvents(
 
       const eventDate = new Date(s.date + 'T12:00:00')
       const dayOfWeek = eventDate.getDay()
+
+      // ── Private session branch ──────────────────────────────────────
+      if (isPrivate) {
+        const players = s.privatePlayers ?? []
+        const isShared = !!s.isShared || players.length >= 2
+        const isMaxim = !!s.isMaximPrivate
+        const playerLabel = players.length > 0
+          ? players.map(p => p.firstName).join(' / ')
+          : 'Private'
+        const color = isShared
+          ? PRIVATE_COLORS.shared
+          : isMaxim
+            ? PRIVATE_COLORS.maxim
+            : PRIVATE_COLORS.other
+
+        return {
+          id: s.id,
+          title: playerLabel,
+          subtitle: s.coachName ? `${s.coachName.split(' ')[0]}${isShared ? ' · shared' : ''}` : (isShared ? 'Shared private' : 'Private'),
+          dayOfWeek,
+          startTime: s.startTime!,
+          endTime: s.endTime!,
+          color,
+          date: s.date,
+          sessionId: s.id,
+          programId: undefined,
+          sessionStatus: s.status,
+          coachName: s.coachName,
+          bookedCount: players.length,
+          assistantCoaches: s.assistantCoaches,
+        } satisfies CalendarEvent
+      }
 
       return {
         id: s.id,

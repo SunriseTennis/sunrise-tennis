@@ -145,7 +145,7 @@ export default async function AdminDashboard({
 
   // Count booked players per session
   const sessionIds = (calendarSessions ?? []).map(s => s.id)
-  let attendanceCounts: Record<string, number> = {}
+  const attendanceCounts: Record<string, number> = {}
   if (sessionIds.length > 0) {
     const { data: counts } = await supabase
       .from('attendances')
@@ -158,10 +158,37 @@ export default async function AdminDashboard({
     }
   }
 
+  // Fetch private bookings for any private sessions in the calendar window so
+  // each private session can be labelled with player names + coach-is-owner.
+  const privateSessionIds = (calendarSessions ?? [])
+    .filter(s => (s.session_type ?? '') === 'private')
+    .map(s => s.id)
+  const privateBookingsBySession = new Map<string, { firstName: string; lastName: string }[]>()
+  const ownerFlagBySession = new Map<string, boolean>()
+  if (privateSessionIds.length > 0) {
+    const { data: privBookings } = await supabase
+      .from('bookings')
+      .select(`session_id, players:player_id(first_name, last_name), sessions:session_id(coaches:coach_id(is_owner))`)
+      .in('session_id', privateSessionIds)
+      .eq('booking_type', 'private')
+      .neq('status', 'cancelled')
+    for (const pb of privBookings ?? []) {
+      if (!pb.session_id) continue
+      const list = privateBookingsBySession.get(pb.session_id) ?? []
+      const player = pb.players as unknown as { first_name: string; last_name: string } | null
+      if (player) list.push({ firstName: player.first_name, lastName: player.last_name })
+      privateBookingsBySession.set(pb.session_id, list)
+      const sess = pb.sessions as unknown as { coaches: { is_owner: boolean | null } | null } | null
+      if (sess?.coaches?.is_owner) ownerFlagBySession.set(pb.session_id, true)
+    }
+  }
+
   const serializedSessions = (calendarSessions ?? []).map(s => {
     const coach = s.coaches as unknown as { name: string } | null
     const venue = s.venues as unknown as { name: string } | null
     const programCoachInfo = s.program_id ? coachMap[s.program_id] : null
+    const privatePlayers = privateBookingsBySession.get(s.id) ?? []
+    const isPrivate = (s.session_type ?? '') === 'private'
     return {
       id: s.id,
       programId: s.program_id,
@@ -172,9 +199,12 @@ export default async function AdminDashboard({
       sessionType: (s as Record<string, unknown>).session_type as string | null,
       coachName: coach?.name ?? programCoachInfo?.lead ?? '',
       venueName: venue?.name ?? '',
-      bookedCount: attendanceCounts[s.id] ?? 0,
+      bookedCount: isPrivate ? privatePlayers.length : (attendanceCounts[s.id] ?? 0),
       leadCoach: programCoachInfo?.lead ?? coach?.name ?? '',
       assistantCoaches: programCoachInfo?.assistants ?? [],
+      privatePlayers: isPrivate ? privatePlayers : undefined,
+      isShared: isPrivate && privatePlayers.length >= 2,
+      isMaximPrivate: isPrivate && (ownerFlagBySession.get(s.id) ?? false),
     }
   })
 

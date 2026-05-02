@@ -223,6 +223,7 @@ export type Database = {
           session_id: string | null
           sessions_charged: number | null
           sessions_total: number | null
+          shared_with_booking_id: string | null
           standing_parent_id: string | null
           status: string
         }
@@ -250,6 +251,7 @@ export type Database = {
           session_id?: string | null
           sessions_charged?: number | null
           sessions_total?: number | null
+          shared_with_booking_id?: string | null
           standing_parent_id?: string | null
           status?: string
         }
@@ -277,6 +279,7 @@ export type Database = {
           session_id?: string | null
           sessions_charged?: number | null
           sessions_total?: number | null
+          shared_with_booking_id?: string | null
           standing_parent_id?: string | null
           status?: string
         }
@@ -321,6 +324,13 @@ export type Database = {
             columns: ["session_id"]
             isOneToOne: false
             referencedRelation: "sessions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bookings_shared_with_booking_id_fkey"
+            columns: ["shared_with_booking_id"]
+            isOneToOne: false
+            referencedRelation: "bookings"
             referencedColumns: ["id"]
           },
           {
@@ -2454,9 +2464,17 @@ export type Database = {
         }
         Returns: number
       }
+      admin_void_private_series: {
+        Args: { p_include_completed?: boolean; p_parent_booking_id: string }
+        Returns: Json
+      }
       allocate_payment_to_charges: {
         Args: { target_payment_id: string }
         Returns: undefined
+      }
+      apply_coach_availability_changes: {
+        Args: { p_coach_id: string; p_delete_ids?: string[]; p_inserts?: Json }
+        Returns: Json
       }
       claim_invitation: { Args: { p_token: string }; Returns: Json }
       create_booking_notification: {
@@ -2596,14 +2614,6 @@ export type Database = {
       set_coach_availability_bulk: {
         Args: { p_blocks: Json; p_coach_id: string; p_days: number[] }
         Returns: number
-      }
-      apply_coach_availability_changes: {
-        Args: {
-          p_coach_id: string
-          p_delete_ids?: string[]
-          p_inserts?: Json
-        }
-        Returns: Json
       }
     }
     Enums: {

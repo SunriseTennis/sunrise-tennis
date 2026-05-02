@@ -7,7 +7,6 @@ import { PaymentOptions } from './payment-options'
 import { ChargesList } from './charges-list'
 import { VoucherForm, VoucherHistory } from './voucher-form'
 import { BalanceHero } from './balance-hero'
-import { OverdueBanner } from './overdue-banner'
 import { PaymentHistory } from './payment-history'
 import { PaymentProvider } from './payment-context'
 
@@ -107,19 +106,6 @@ export default async function ParentPaymentsPage({
   const confirmedBalanceCents = balance?.confirmed_balance_cents ?? 0
   const totalBalanceCents = balance?.balance_cents ?? 0
 
-  // Check for overdue: confirmed balance negative means money owed for completed sessions
-  const isOverdue = confirmedBalanceCents < 0
-  let oldestUnpaidDate: string | null = null
-  if (isOverdue) {
-    // Find the oldest confirmed charge that hasn't been fully allocated
-    const oldestConfirmed = (enrichedCharges)
-      .filter(c => c.status === 'confirmed' && c.amount_cents > 0)
-      .sort((a, b) => (a.session_date ?? a.created_at ?? '').localeCompare(b.session_date ?? b.created_at ?? ''))
-    if (oldestConfirmed.length > 0) {
-      oldestUnpaidDate = oldestConfirmed[0].session_date ?? oldestConfirmed[0].created_at ?? null
-    }
-  }
-
   // Build payment data with allocations for the history component
   const paymentRows = (payments ?? []).map((payment) => {
     const allocations = (payment.payment_allocations ?? []) as unknown as {
@@ -151,14 +137,6 @@ export default async function ParentPaymentsPage({
         )}
         {success && (
           <WarmToast variant="success">{decodeURIComponent(success)}</WarmToast>
-        )}
-
-        {/* ── Overdue Banner ── */}
-        {isOverdue && (
-          <OverdueBanner
-            amountCents={confirmedBalanceCents}
-            oldestChargeDate={oldestUnpaidDate}
-          />
         )}
 
         {/* ── Balance Hero ── */}

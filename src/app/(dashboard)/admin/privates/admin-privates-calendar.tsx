@@ -7,24 +7,8 @@ import { X, Eye, Users, Clock, DollarSign } from 'lucide-react'
 import { formatTime } from '@/lib/utils/dates'
 import { formatCurrency } from '@/lib/utils/currency'
 
-type Booking = {
-  id: string
-  familyId: string
-  playerId: string
-  playerName: string
-  familyDisplayId: string
-  familyName: string
-  coachId: string
-  coachName: string
-  date: string
-  startTime: string
-  endTime: string
-  sessionStatus: string
-  status: string
-  approvalStatus: string
-  priceCents: number
-  durationMinutes: number
-}
+// Imports the canonical Booking shape from the parent view.
+import type { Booking } from './private-views'
 
 // Reuse Ocean-Dawn coach palette: 5 distinct colors with dot indicator. Index by sorted coach id.
 const COACH_COLORS = [
@@ -45,21 +29,33 @@ function bookingsToEvents(bookings: Booking[]): { events: CalendarEvent[]; coach
   const coachColorByName: Record<string, string> = {}
   uniqueCoachNames.forEach((name, i) => { coachColorByName[name] = COACH_COLORS[i % COACH_COLORS.length] })
 
-  const events: CalendarEvent[] = visible.map(b => {
+  // Dedupe shared privates: only render one event per session_id.
+  const seenSessionIds = new Set<string>()
+
+  const events: CalendarEvent[] = visible.flatMap(b => {
+    if (b.sessionId) {
+      if (seenSessionIds.has(b.sessionId)) return []
+      seenSessionIds.add(b.sessionId)
+    }
     const eventDate = new Date(b.date + 'T12:00:00')
-    return {
+    const playerLabel = b.partnerFirstName
+      ? `${b.playerFirstName} / ${b.partnerFirstName}`
+      : (b.playerFirstName || b.playerName.split(' ')[0])
+    return [{
       id: b.id,
-      title: `${b.playerName.split(' ')[0]} · ${b.coachName.split(' ')[0]}`,
+      title: `${playerLabel} · ${b.coachName.split(' ')[0]}`,
       dayOfWeek: eventDate.getDay(),
       startTime: b.startTime,
       endTime: b.endTime,
-      color: coachColorByName[b.coachName] ?? 'bg-primary/15 border-primary/30',
+      color: b.partnerFirstName
+        ? 'bg-purple-200 border-purple-400'
+        : coachColorByName[b.coachName] ?? 'bg-primary/15 border-primary/30',
       date: b.date,
       bookingId: b.id,
       sessionStatus: b.sessionStatus,
       coachName: b.coachName,
       priceCents: b.priceCents,
-    }
+    }]
   })
 
   return { events, coachColorByName }

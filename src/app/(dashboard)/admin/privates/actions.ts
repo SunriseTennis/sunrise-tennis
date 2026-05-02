@@ -693,8 +693,9 @@ async function createSharedPrivateInstance(args: {
   halfPrice: number
   adminUserId: string | null
   isStanding: boolean
-  parentBookingId: string | null
-}): Promise<{ ok: true; bookingId: string } | { ok: false; error: string }> {
+  parentBookingIdA: string | null
+  parentBookingIdB: string | null
+}): Promise<{ ok: true; bookingIdA: string; bookingIdB: string } | { ok: false; error: string }> {
   const { supabase } = args
   const { data: session } = await supabase
     .from('sessions')
@@ -706,31 +707,59 @@ async function createSharedPrivateInstance(args: {
     .single()
   if (!session) return { ok: false, error: 'Failed to create session' }
 
-  const { data: booking } = await supabase
+  // Booking A — family 1's view of this shared session.
+  const { data: bookingA } = await supabase
     .from('bookings')
     .insert({
       family_id: args.familyId1, player_id: args.player1.id,
-      second_player_id: args.player2.id, second_family_id: args.familyId2,
       session_id: session.id, booking_type: 'private',
       status: 'confirmed', approval_status: 'approved', auto_approved: true,
       approved_by: args.adminUserId, approved_at: new Date().toISOString(),
-      price_cents: args.totalPriceCents, duration_minutes: args.durationMinutes,
+      price_cents: args.halfPrice, duration_minutes: args.durationMinutes,
       booked_by: args.adminUserId,
       is_standing: args.isStanding,
-      standing_parent_id: args.parentBookingId,
+      standing_parent_id: args.parentBookingIdA,
     })
     .select('id')
     .single()
-  if (!booking) {
+  if (!bookingA) {
     await supabase.from('sessions').delete().eq('id', session.id)
-    return { ok: false, error: 'Failed to create booking' }
+    return { ok: false, error: 'Failed to create booking (family 1)' }
   }
+
+  // Booking B — family 2's view, linked to A.
+  const { data: bookingB } = await supabase
+    .from('bookings')
+    .insert({
+      family_id: args.familyId2, player_id: args.player2.id,
+      session_id: session.id, booking_type: 'private',
+      status: 'confirmed', approval_status: 'approved', auto_approved: true,
+      approved_by: args.adminUserId, approved_at: new Date().toISOString(),
+      price_cents: args.halfPrice, duration_minutes: args.durationMinutes,
+      booked_by: args.adminUserId,
+      is_standing: args.isStanding,
+      standing_parent_id: args.parentBookingIdB,
+      shared_with_booking_id: bookingA.id,
+    })
+    .select('id')
+    .single()
+  if (!bookingB) {
+    await supabase.from('bookings').delete().eq('id', bookingA.id)
+    await supabase.from('sessions').delete().eq('id', session.id)
+    return { ok: false, error: 'Failed to create booking (family 2)' }
+  }
+
+  // Close the loop: A points back at B.
+  await supabase
+    .from('bookings')
+    .update({ shared_with_booking_id: bookingB.id })
+    .eq('id', bookingA.id)
 
   const { createCharge, formatChargeDescription } = await import('@/lib/utils/billing')
   await createCharge(supabase, {
     familyId: args.familyId1, playerId: args.player1.id,
     type: 'private', sourceType: 'enrollment',
-    sessionId: session.id, bookingId: booking.id,
+    sessionId: session.id, bookingId: bookingA.id,
     description: formatChargeDescription({
       playerName: args.player1.first_name,
       label: `Shared private w/ ${args.coachName} (+ ${args.player2.first_name})`,
@@ -741,7 +770,7 @@ async function createSharedPrivateInstance(args: {
   await createCharge(supabase, {
     familyId: args.familyId2, playerId: args.player2.id,
     type: 'private', sourceType: 'enrollment',
-    sessionId: session.id, bookingId: booking.id,
+    sessionId: session.id, bookingId: bookingB.id,
     description: formatChargeDescription({
       playerName: args.player2.first_name,
       label: `Shared private w/ ${args.coachName} (+ ${args.player1.first_name})`,
@@ -750,7 +779,7 @@ async function createSharedPrivateInstance(args: {
     amountCents: args.halfPrice, status: 'confirmed', createdBy: args.adminUserId,
   })
 
-  return { ok: true, bookingId: booking.id }
+  return { ok: true, bookingIdA: bookingA.id, bookingIdB: bookingB.id }
 }
 
 export async function adminCreateSharedPrivate(formData: FormData) {
@@ -803,7 +832,8 @@ export async function adminCreateSharedPrivate(formData: FormData) {
     coachId, coachName, date, startTime, endTime, durationMinutes,
     totalPriceCents, halfPrice, adminUserId,
     isStanding: scheduleMode === 'standing',
-    parentBookingId: null,
+    parentBookingIdA: null,
+    parentBookingIdB: null,
   })
   if (!first.ok) redirect(`/admin/privates/bookings?error=${encodeURIComponent(first.error)}`)
 
@@ -821,7 +851,8 @@ export async function adminCreateSharedPrivate(formData: FormData) {
         coachId, coachName, date: futureDate, startTime, endTime, durationMinutes,
         totalPriceCents, halfPrice, adminUserId,
         isStanding: true,
-        parentBookingId: first.bookingId,
+        parentBookingIdA: first.bookingIdA,
+        parentBookingIdB: first.bookingIdB,
       })
       if (inst.ok) count++
     }
@@ -833,4 +864,370 @@ export async function adminCreateSharedPrivate(formData: FormData) {
     ? `${count}+weekly+shared+sessions+booked`
     : 'Shared+private+booked'
   redirect(`/admin/privates/bookings?success=${msg}`)
+}
+
+// ── Admin: Cancel / Modify / Void a Private Series ─────────────────────
+
+/**
+ * Resolve the full id-set of bookings + sessions in a series, including
+ * paired-shared rows. Returns booking ids, session ids, and the families
+ * touched (for revalidate + balance recompute).
+ */
+async function resolvePrivateSeriesIds(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  parentBookingId: string,
+): Promise<{ bookingIds: string[]; sessionIds: string[]; familyIds: string[] }> {
+  // The "series" is: the parent booking + every booking with standing_parent_id = parent
+  // + every booking paired (shared_with_booking_id) with any of the above.
+  const { data: chainRows } = await supabase
+    .from('bookings')
+    .select('id, family_id, session_id, shared_with_booking_id')
+    .or(`id.eq.${parentBookingId},standing_parent_id.eq.${parentBookingId}`)
+
+  const seedIds = new Set<string>()
+  const sessionIds = new Set<string>()
+  const familyIds = new Set<string>()
+  for (const r of chainRows ?? []) {
+    seedIds.add(r.id)
+    if (r.session_id) sessionIds.add(r.session_id)
+    familyIds.add(r.family_id)
+    if (r.shared_with_booking_id) seedIds.add(r.shared_with_booking_id)
+  }
+
+  if (seedIds.size > 0) {
+    const { data: pairs } = await supabase
+      .from('bookings')
+      .select('id, family_id, session_id, shared_with_booking_id')
+      .in('id', [...seedIds])
+    for (const r of pairs ?? []) {
+      seedIds.add(r.id)
+      if (r.session_id) sessionIds.add(r.session_id)
+      familyIds.add(r.family_id)
+    }
+  }
+
+  return {
+    bookingIds: [...seedIds],
+    sessionIds: [...sessionIds],
+    familyIds: [...familyIds],
+  }
+}
+
+/**
+ * Cancel every still-scheduled session in a private series. Voids the matching
+ * charges (full credit) and notifies each family.
+ */
+export async function cancelPrivateSeries(formData: FormData) {
+  await requireAdmin()
+  const supabase = await createClient()
+
+  const parentBookingId = formData.get('parent_booking_id') as string
+  if (!parentBookingId) redirect('/admin/privates?error=Booking+is+required')
+
+  const { bookingIds, sessionIds, familyIds } = await resolvePrivateSeriesIds(supabase, parentBookingId)
+  if (bookingIds.length === 0) redirect('/admin/privates?error=Series+not+found')
+
+  // Only act on sessions that are still scheduled.
+  const { data: scheduledSessions } = await supabase
+    .from('sessions')
+    .select('id')
+    .in('id', sessionIds)
+    .eq('status', 'scheduled')
+
+  const scheduledIds = (scheduledSessions ?? []).map(s => s.id)
+  if (scheduledIds.length === 0) {
+    redirect('/admin/privates?error=No+scheduled+sessions+to+cancel')
+  }
+
+  // Mark sessions cancelled
+  await supabase
+    .from('sessions')
+    .update({ status: 'cancelled', cancellation_reason: 'Cancelled by admin (series)' })
+    .in('id', scheduledIds)
+
+  // Cancel matching bookings
+  await supabase
+    .from('bookings')
+    .update({ status: 'cancelled', cancellation_type: 'admin' })
+    .in('id', bookingIds)
+    .in('session_id', scheduledIds)
+
+  // Void charges for those sessions
+  const { voidCharge } = await import('@/lib/utils/billing')
+  const { data: chargesToVoid } = await supabase
+    .from('charges')
+    .select('id, family_id')
+    .in('booking_id', bookingIds)
+    .in('session_id', scheduledIds)
+    .in('status', ['pending', 'confirmed'])
+
+  for (const c of chargesToVoid ?? []) {
+    await voidCharge(supabase, c.id, c.family_id)
+  }
+
+  // Notify each affected family
+  const { notifyFamily } = await import('@/lib/notifications/notify')
+  for (const familyId of familyIds) {
+    await notifyFamily(familyId, {
+      title: 'Private Lessons Cancelled',
+      body: `${scheduledIds.length} upcoming private session${scheduledIds.length === 1 ? '' : 's'} cancelled. Full credit applied.`,
+      url: '/parent/bookings',
+      type: 'rain_cancel',
+    }).catch(() => undefined)
+  }
+
+  revalidatePath('/admin/privates')
+  revalidatePath('/admin')
+  redirect(`/admin/privates?success=Cancelled+${scheduledIds.length}+session(s)`)
+}
+
+/**
+ * Modify coach OR player on a private series, optionally only from a date forward.
+ */
+export async function modifyPrivateSeries(formData: FormData) {
+  await requireAdmin()
+  const supabase = await createClient()
+
+  const parentBookingId = formData.get('parent_booking_id') as string
+  const newCoachId = (formData.get('new_coach_id') as string) || ''
+  const newPlayerId = (formData.get('new_player_id') as string) || ''
+  const fromDate = (formData.get('from_date') as string) || new Date().toISOString().split('T')[0]
+
+  if (!parentBookingId) redirect('/admin/privates?error=Booking+is+required')
+  if (!newCoachId && !newPlayerId) redirect('/admin/privates?error=Pick+a+coach+or+player+to+change')
+
+  const { bookingIds, sessionIds } = await resolvePrivateSeriesIds(supabase, parentBookingId)
+
+  // Limit scope to sessions on/after fromDate that are still scheduled.
+  const { data: futureSessions } = await supabase
+    .from('sessions')
+    .select('id, date, coach_id')
+    .in('id', sessionIds)
+    .eq('status', 'scheduled')
+    .gte('date', fromDate)
+
+  const futureIds = (futureSessions ?? []).map(s => s.id)
+  if (futureIds.length === 0) redirect('/admin/privates?error=No+future+sessions+from+that+date')
+
+  if (newCoachId) {
+    await supabase.from('sessions').update({ coach_id: newCoachId }).in('id', futureIds)
+    // Recompute coach earnings down the line on session complete; nothing to do now.
+  }
+
+  if (newPlayerId) {
+    // Player change applies to the booking row whose family owns the new player.
+    const { data: newPlayer } = await supabase
+      .from('players')
+      .select('id, family_id, first_name')
+      .eq('id', newPlayerId)
+      .single()
+    if (!newPlayer) redirect('/admin/privates?error=Player+not+found')
+
+    // Find the booking row in the series belonging to that family
+    const { data: targetBookings } = await supabase
+      .from('bookings')
+      .select('id, family_id')
+      .in('id', bookingIds)
+      .in('session_id', futureIds)
+      .eq('family_id', newPlayer.family_id)
+
+    if (!targetBookings || targetBookings.length === 0) {
+      redirect('/admin/privates?error=Selected+player%27s+family+is+not+on+this+series')
+    }
+
+    const targetIds = targetBookings.map(b => b.id)
+    await supabase.from('bookings').update({ player_id: newPlayerId }).in('id', targetIds)
+    // Update charges' player + description prefix to match new player name
+    const { data: charges } = await supabase
+      .from('charges')
+      .select('id, description')
+      .in('booking_id', targetIds)
+      .in('session_id', futureIds)
+
+    for (const c of charges ?? []) {
+      const desc = (c.description ?? '').replace(/^([^—]+) —/, `${newPlayer.first_name} —`)
+      await supabase.from('charges').update({ player_id: newPlayerId, description: desc }).eq('id', c.id)
+    }
+  }
+
+  revalidatePath('/admin/privates')
+  redirect(`/admin/privates?success=Updated+${futureIds.length}+session(s)`)
+}
+
+/**
+ * Void a private booking series. Hard-deletes via the admin_void_private_series RPC.
+ * For test data cleanup. Includes completed sessions when include_completed=true.
+ */
+export async function voidPrivateSeries(formData: FormData) {
+  await requireAdmin()
+  const supabase = await createClient()
+
+  const parentBookingId = formData.get('parent_booking_id') as string
+  const includeCompleted = formData.get('include_completed') === 'on'
+  const confirmString = (formData.get('confirm') as string) ?? ''
+
+  if (!parentBookingId) redirect('/admin/privates?error=Booking+is+required')
+  if (confirmString.trim().toUpperCase() !== 'DELETE') {
+    redirect('/admin/privates?error=Type+DELETE+to+confirm+void')
+  }
+
+  const { error } = await supabase.rpc('admin_void_private_series', {
+    p_parent_booking_id: parentBookingId,
+    p_include_completed: includeCompleted,
+  })
+
+  if (error) {
+    console.error('voidPrivateSeries failed:', error.message)
+    redirect(`/admin/privates?error=${encodeURIComponent('Void failed')}`)
+  }
+
+  revalidatePath('/admin/privates')
+  revalidatePath('/admin')
+  redirect('/admin/privates?success=Series+voided')
+}
+
+// ── Admin / Coach: Convert Shared → Solo for one session ───────────────
+
+/**
+ * One player no-shows / cancels late on a shared private. The session still
+ * runs as a solo with the remaining player, who pays the full private rate.
+ * The cancelled family's charge is voided (full credit) and a top-up charge
+ * is added to the remaining family for the rate difference.
+ */
+export async function convertSharedToSolo(formData: FormData) {
+  // Admin OR the coach assigned to the session may call this.
+  const supabase = await createClient()
+  const { getSessionUser } = await import('@/lib/supabase/server')
+  const user = await getSessionUser()
+  if (!user) redirect('/login')
+
+  const sessionId = formData.get('session_id') as string
+  const removingPlayerIdRaw = formData.get('removing_player_id') as string
+  const knownPrimaryPlayerId = (formData.get('primary_player_id') as string) || ''
+  const reason = (formData.get('reason') as string) || 'Partner cancelled'
+
+  if (!sessionId || !removingPlayerIdRaw) {
+    redirect('/admin/privates?error=Session+and+player+are+required')
+  }
+
+  const { data: session } = await supabase
+    .from('sessions')
+    .select('id, date, coach_id, duration_minutes, status, coaches:coach_id(name, user_id)')
+    .eq('id', sessionId)
+    .single()
+  if (!session) redirect('/admin/privates?error=Session+not+found')
+  if (session.status !== 'scheduled') {
+    redirect('/admin/privates?error=Only+scheduled+sessions+can+be+converted')
+  }
+
+  // Authorisation: admin OR the coach owning this session.
+  const { data: adminCheck } = await supabase
+    .from('user_roles')
+    .select('role')
+    .eq('user_id', user.id)
+    .eq('role', 'admin')
+    .limit(1)
+    .maybeSingle()
+  const sessionCoach = session.coaches as unknown as { user_id: string | null } | null
+  const isCoachOfSession = sessionCoach?.user_id === user.id
+  if (!adminCheck && !isCoachOfSession) {
+    redirect('/coach/privates?error=Not+allowed')
+  }
+
+  const { data: rows } = await supabase
+    .from('bookings')
+    .select('id, family_id, player_id, price_cents, players!bookings_player_id_fkey(first_name)')
+    .eq('session_id', sessionId)
+    .eq('booking_type', 'private')
+
+  const bookings = (rows ?? []) as Array<{
+    id: string
+    family_id: string
+    player_id: string
+    price_cents: number
+    players: { first_name: string } | null
+  }>
+
+  if (bookings.length !== 2) {
+    redirect('/admin/privates?error=Not+a+shared+session')
+  }
+
+  // Resolve "__partner__" sentinel: the partner is the booking whose player_id
+  // is not the known primary's. If the form sends a real player_id, use it directly.
+  let resolvedRemovingPlayerId = removingPlayerIdRaw
+  if (removingPlayerIdRaw === '__partner__') {
+    const partner = bookings.find(b => b.player_id !== knownPrimaryPlayerId)
+    if (!partner) redirect('/admin/privates?error=Could+not+resolve+partner')
+    resolvedRemovingPlayerId = partner.player_id
+  }
+
+  const removing = bookings.find(b => b.player_id === resolvedRemovingPlayerId)
+  const remaining = bookings.find(b => b.player_id !== resolvedRemovingPlayerId)
+  if (!removing || !remaining) redirect('/admin/privates?error=Player+not+on+this+session')
+
+  // Cancel the removing booking
+  await supabase
+    .from('bookings')
+    .update({ status: 'cancelled', cancellation_type: 'no_show' })
+    .eq('id', removing.id)
+
+  // Void the removing family's charge
+  const { voidCharge, createCharge, formatChargeDescription } = await import('@/lib/utils/billing')
+  const { data: removingCharge } = await supabase
+    .from('charges')
+    .select('id')
+    .eq('booking_id', removing.id)
+    .eq('session_id', sessionId)
+    .in('status', ['pending', 'confirmed'])
+    .single()
+  if (removingCharge) {
+    await voidCharge(supabase, removingCharge.id, removing.family_id)
+  }
+
+  // Top-up the remaining family. Full price = 2 * each-side; top-up = remaining.price_cents.
+  // (price_cents on the booking row is the half-rate per the new schema; doubling it = full solo rate.)
+  const topUpCents = remaining.price_cents
+
+  await createCharge(supabase, {
+    familyId: remaining.family_id,
+    playerId: remaining.player_id,
+    type: 'private',
+    sourceType: 'enrollment',
+    sessionId,
+    bookingId: remaining.id,
+    description: formatChargeDescription({
+      playerName: remaining.players?.first_name,
+      label: `Solo private rate (partner cancelled)`,
+      date: session.date,
+    }),
+    amountCents: topUpCents,
+    status: 'confirmed',
+    createdBy: user.id,
+  })
+
+  // Notify the remaining family
+  const { notifyFamily } = await import('@/lib/notifications/notify')
+  await notifyFamily(remaining.family_id, {
+    title: 'Shared Private Became a Solo',
+    body: `Partner cancelled — your ${session.date} session is now a solo at the full private rate. Top-up charge added.`,
+    url: '/parent/bookings',
+    type: 'announcement',
+  }).catch(() => undefined)
+
+  // Notify the removing family
+  await notifyFamily(removing.family_id, {
+    title: 'Booking Cancelled',
+    body: `Your shared private on ${session.date} was cancelled. Full credit applied. Reason: ${reason}.`,
+    url: '/parent/bookings',
+    type: 'rain_cancel',
+  }).catch(() => undefined)
+
+  revalidatePath('/admin/privates')
+  revalidatePath('/admin')
+  revalidatePath('/coach/privates')
+  revalidatePath(`/coach/privates/${sessionId}`)
+  const successPath = adminCheck
+    ? '/admin/privates?success=Converted+to+solo'
+    : `/coach/privates/${sessionId}?success=Converted+to+solo`
+  redirect(successPath)
 }

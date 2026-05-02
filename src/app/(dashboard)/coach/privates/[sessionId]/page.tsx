@@ -4,8 +4,23 @@ import { PageHeader } from '@/components/page-header'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { StatusBadge } from '@/components/status-badge'
+import { UserMinus } from 'lucide-react'
 import { formatDate, formatTime } from '@/lib/utils/dates'
 import { completePrivateSession, createLessonNote } from '../../actions'
+import { convertSharedToSolo } from '@/app/(dashboard)/admin/privates/actions'
+
+function ConvertButton({ sessionId, removingPlayerId }: { sessionId: string; removingPlayerId: string }) {
+  return (
+    <form action={convertSharedToSolo} className="inline">
+      <input type="hidden" name="session_id" value={sessionId} />
+      <input type="hidden" name="removing_player_id" value={removingPlayerId} />
+      <input type="hidden" name="reason" value="Coach: partner cancelled" />
+      <Button type="submit" size="sm" variant="ghost" className="h-7 gap-1 text-xs text-amber-700 hover:bg-amber-50">
+        <UserMinus className="size-3" /> Mark cancelled
+      </Button>
+    </form>
+  )
+}
 
 export default async function CoachPrivateSessionPage({
   params,
@@ -32,21 +47,37 @@ export default async function CoachPrivateSessionPage({
 
   if (!session) notFound()
 
-  const { data: booking } = await supabase
+  const { data: bookingsRaw } = await supabase
     .from('bookings')
     .select(`
-      id, player_id, family_id, price_cents, duration_minutes,
+      id, player_id, family_id, price_cents, duration_minutes, status,
       players:player_id(id, first_name, last_name, ball_color, dob),
       families:family_id(family_name, primary_contact)
     `)
     .eq('session_id', sessionId)
     .eq('booking_type', 'private')
-    .single()
 
-  const player = booking?.players as unknown as { id: string; first_name: string; last_name: string; ball_color: string | null; dob: string | null } | null
-  const family = booking?.families as unknown as { family_name: string; primary_contact: { name?: string; phone?: string } | null } | null
+  type BookingRow = {
+    id: string
+    player_id: string
+    family_id: string
+    price_cents: number | null
+    duration_minutes: number | null
+    status: string
+    players: { id: string; first_name: string; last_name: string; ball_color: string | null; dob: string | null } | null
+    families: { family_name: string; primary_contact: { name?: string; phone?: string } | null } | null
+  }
+  const bookings = (bookingsRaw ?? []) as unknown as BookingRow[]
+  // Surface non-cancelled players for the attendance + note workflow
+  const activeBookings = bookings.filter(b => b.status !== 'cancelled')
+  const isShared = activeBookings.length >= 2
 
-  // Get past lesson notes for this player with this coach
+  // For backward compatibility, treat the first booking as the "primary" view
+  const primaryBooking = activeBookings[0] ?? null
+  const player = primaryBooking?.players ?? null
+  const family = primaryBooking?.families ?? null
+
+  // Past notes follow the primary player (each player has their own history elsewhere).
   const { data: pastNotes } = player ? await supabase
     .from('lesson_notes')
     .select('id, focus, progress, notes, drills_used, created_at, sessions:session_id(date)')
@@ -55,13 +86,18 @@ export default async function CoachPrivateSessionPage({
     .order('created_at', { ascending: false })
     .limit(5) : { data: null }
 
-  // Get existing note for this session
-  const { data: existingNote } = player ? await supabase
+  // Existing notes for THIS session, keyed by player_id
+  const playerIds = activeBookings.map(b => b.players?.id).filter((x): x is string => !!x)
+  const { data: existingNotesAll } = playerIds.length > 0 ? await supabase
     .from('lesson_notes')
-    .select('id, focus, progress, notes, drills_used')
+    .select('id, player_id, focus, progress, notes, drills_used')
     .eq('session_id', sessionId)
-    .eq('player_id', player.id)
-    .single() : { data: null }
+    .in('player_id', playerIds) : { data: null }
+  const existingNotesByPlayer = new Map<string, { id: string; focus: string | null; progress: string | null; notes: string | null; drills_used: string[] | null }>()
+  for (const n of (existingNotesAll ?? [])) {
+    if (n.player_id) existingNotesByPlayer.set(n.player_id, n)
+  }
+  const existingNote = player ? existingNotesByPlayer.get(player.id) ?? null : null
 
   return (
     <div className="max-w-2xl space-y-6">
@@ -97,34 +133,46 @@ export default async function CoachPrivateSessionPage({
           </div>
           <div className="flex justify-between text-sm">
             <span className="text-muted-foreground">Duration</span>
-            <span className="font-medium">{session.duration_minutes ?? booking?.duration_minutes}min</span>
+            <span className="font-medium">{session.duration_minutes ?? primaryBooking?.duration_minutes}min</span>
           </div>
         </CardContent>
       </Card>
 
       {/* Player info */}
-      {player && family && (
+      {activeBookings.length > 0 && (
         <Card>
           <CardContent className="p-4">
-            <h3 className="text-sm font-semibold">Player</h3>
-            <div className="mt-2 space-y-1">
-              <p className="text-sm font-medium">{player.first_name} {player.last_name}</p>
-              {player.ball_color && (
-                <p className="text-xs capitalize text-muted-foreground">{player.ball_color} ball</p>
-              )}
-              {player.dob && (
-                <p className="text-xs text-muted-foreground">DOB: {formatDate(player.dob)}</p>
-              )}
-              <div className="mt-2 border-t border-border pt-2">
-                <p className="text-xs text-muted-foreground">
-                  Parent: {family.primary_contact?.name ?? family.family_name}
-                </p>
-                {family.primary_contact?.phone && (
-                  <p className="text-xs text-muted-foreground">
-                    Phone: <a href={`tel:${family.primary_contact.phone}`} className="text-primary hover:underline">{family.primary_contact.phone}</a>
-                  </p>
-                )}
-              </div>
+            <h3 className="text-sm font-semibold">{isShared ? 'Players (shared)' : 'Player'}</h3>
+            <div className="mt-2 space-y-3">
+              {activeBookings.map((b, idx) => {
+                const p = b.players
+                const f = b.families
+                if (!p) return null
+                return (
+                  <div key={b.id} className={idx > 0 ? 'border-t border-border pt-3' : ''}>
+                    <div className="flex items-center justify-between">
+                      <p className="text-sm font-medium">{p.first_name} {p.last_name}</p>
+                      {isShared && session.status === 'scheduled' && (
+                        <ConvertButton sessionId={sessionId} removingPlayerId={p.id} />
+                      )}
+                    </div>
+                    {p.ball_color && (
+                      <p className="text-xs capitalize text-muted-foreground">{p.ball_color} ball</p>
+                    )}
+                    {p.dob && (
+                      <p className="text-xs text-muted-foreground">DOB: {formatDate(p.dob)}</p>
+                    )}
+                    {f && (
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {f.primary_contact?.name ?? f.family_name}
+                        {f.primary_contact?.phone && (
+                          <> &middot; <a href={`tel:${f.primary_contact.phone}`} className="text-primary hover:underline">{f.primary_contact.phone}</a></>
+                        )}
+                      </p>
+                    )}
+                  </div>
+                )
+              })}
             </div>
           </CardContent>
         </Card>

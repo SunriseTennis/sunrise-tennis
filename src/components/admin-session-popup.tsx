@@ -74,9 +74,11 @@ export function AdminSessionPopup({ event, onClose }: { event: CalendarEvent; on
 
       <div className="mt-4 space-y-2">
         <div className="flex gap-2">
-          {event.sessionId && event.programId && (
+          {event.sessionId && (
             <Link
-              href={`/admin/programs/${event.programId}/sessions/${event.sessionId}`}
+              href={event.programId
+                ? `/admin/programs/${event.programId}/sessions/${event.sessionId}`
+                : `/admin/sessions/${event.sessionId}`}
               className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-[#2B5EA7] px-3 py-2 text-sm font-medium text-white shadow-sm transition-all hover:brightness-110"
             >
               <Eye className="size-3.5" />
@@ -93,7 +95,7 @@ export function AdminSessionPopup({ event, onClose }: { event: CalendarEvent; on
             </Link>
           )}
         </div>
-        {event.sessionStatus === 'scheduled' && event.sessionId && event.programId && (
+        {event.sessionStatus === 'scheduled' && event.sessionId && (
           <>
             <button
               onClick={handleComplete}
@@ -113,7 +115,9 @@ export function AdminSessionPopup({ event, onClose }: { event: CalendarEvent; on
                 {isPending ? 'Cancelling...' : 'Cancel'}
               </button>
               <Link
-                href={`/admin/programs/${event.programId}/sessions/${event.sessionId}?rainout=1`}
+                href={event.programId
+                  ? `/admin/programs/${event.programId}/sessions/${event.sessionId}?rainout=1`
+                  : `/admin/sessions/${event.sessionId}?rainout=1`}
                 className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-blue-300 bg-blue-50 px-3 py-2 text-sm font-medium text-blue-700 transition-all hover:bg-blue-100"
               >
                 <CloudRain className="size-3.5" />

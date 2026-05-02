@@ -24,14 +24,15 @@ export default async function CoachPrivatesPage({
     .from('bookings')
     .select(`
       id, player_id, family_id, status, approval_status,
-      price_cents, duration_minutes, booked_at,
+      price_cents, duration_minutes, booked_at, session_id,
+      shared_with_booking_id,
       sessions:session_id(id, date, start_time, end_time, status),
       players:player_id(first_name, last_name, ball_color),
       families:family_id(family_name, primary_contact)
     `)
     .eq('booking_type', 'private')
     .order('booked_at', { ascending: false })
-    .limit(50)
+    .limit(100)
 
   // Filter to only this coach's sessions (RLS handles it but let's be explicit)
   const coachBookings = (bookings ?? []).filter(b => {
@@ -39,15 +40,36 @@ export default async function CoachPrivatesPage({
     return session != null
   })
 
-  const pending = coachBookings.filter(b => b.approval_status === 'pending')
-  const upcoming = coachBookings.filter(b => {
-    const session = b.sessions as unknown as { date: string; start_time: string; status: string }
-    return b.approval_status === 'approved' &&
+  // Group by session_id so shared privates surface once with both players.
+  type BookingRow = (typeof coachBookings)[number]
+  const sessionGroups = new Map<string, BookingRow[]>()
+  for (const b of coachBookings) {
+    if (!b.session_id) continue
+    const list = sessionGroups.get(b.session_id) ?? []
+    list.push(b)
+    sessionGroups.set(b.session_id, list)
+  }
+
+  const groupedRows = [...sessionGroups.values()]
+    .map(group => {
+      // Stable order: bookings within a group sorted by family_id
+      group.sort((a, b) => a.family_id.localeCompare(b.family_id))
+      return {
+        primary: group[0],
+        partner: group[1] ?? null,
+        isShared: group.length >= 2,
+      }
+    })
+
+  const pending = groupedRows.filter(g => g.primary.approval_status === 'pending')
+  const upcoming = groupedRows.filter(g => {
+    const session = g.primary.sessions as unknown as { date: string; start_time: string; status: string }
+    return g.primary.approval_status === 'approved' &&
       session.status === 'scheduled' &&
       new Date(`${session.date}T${session.start_time}`) > new Date()
   })
-  const completed = coachBookings.filter(b => {
-    const session = b.sessions as unknown as { status: string }
+  const completed = groupedRows.filter(g => {
+    const session = g.primary.sessions as unknown as { status: string }
     return session.status === 'completed'
   }).slice(0, 10)
 
@@ -89,9 +111,11 @@ export default async function CoachPrivatesPage({
             Pending Requests ({pending.length})
           </h2>
           <div className="space-y-2">
-            {pending.map((b, i) => {
+            {pending.map((g, i) => {
+              const b = g.primary
               const session = b.sessions as unknown as { date: string; start_time: string; end_time: string }
               const player = b.players as unknown as { first_name: string; last_name: string; ball_color: string }
+              const partnerPlayer = g.partner?.players as unknown as { first_name: string; last_name: string } | null
               const family = b.families as unknown as { family_name: string; primary_contact: { name?: string; phone?: string } | null }
               return (
                 <div key={b.id} className="animate-fade-up rounded-xl border border-orange-200 bg-orange-50/50 p-4 shadow-card" style={{ animationDelay: `${120 + i * 60}ms` }}>
@@ -99,7 +123,15 @@ export default async function CoachPrivatesPage({
                     <div>
                       <p className="text-sm font-medium text-deep-navy">
                         {player?.first_name} {player?.last_name}
-                        {player?.ball_color && <span className="ml-1 text-xs capitalize text-slate-blue">({player.ball_color})</span>}
+                        {partnerPlayer && (
+                          <span className="text-slate-blue"> / {partnerPlayer.first_name} {partnerPlayer.last_name}</span>
+                        )}
+                        {player?.ball_color && !partnerPlayer && (
+                          <span className="ml-1 text-xs capitalize text-slate-blue">({player.ball_color})</span>
+                        )}
+                        {g.isShared && (
+                          <span className="ml-2 rounded-full bg-purple-100 px-2 py-0.5 text-[10px] font-medium text-purple-800">Shared</span>
+                        )}
                       </p>
                       <p className="text-xs text-slate-blue">
                         {formatDate(session.date)} &middot; {formatTime(session.start_time)} &ndash; {formatTime(session.end_time)} &middot; {b.duration_minutes}min
@@ -136,13 +168,23 @@ export default async function CoachPrivatesPage({
         ) : (
           <div className="overflow-hidden rounded-xl border border-[#F0B8B0]/60 bg-[#FFFBF7] shadow-card">
             <div className="divide-y divide-[#F0B8B0]/30">
-              {upcoming.map((b) => {
+              {upcoming.map((g) => {
+                const b = g.primary
                 const session = b.sessions as unknown as { id: string; date: string; start_time: string; end_time: string }
                 const player = b.players as unknown as { first_name: string; last_name: string; ball_color: string }
+                const partnerPlayer = g.partner?.players as unknown as { first_name: string; last_name: string } | null
                 return (
                   <Link key={b.id} href={`/coach/privates/${session.id}`} className="flex items-center justify-between px-4 py-3 transition-colors hover:bg-[#FFF6ED]">
                     <div>
-                      <p className="text-sm font-medium text-deep-navy">{player?.first_name} {player?.last_name}</p>
+                      <p className="text-sm font-medium text-deep-navy">
+                        {player?.first_name} {player?.last_name}
+                        {partnerPlayer && (
+                          <span className="text-slate-blue"> / {partnerPlayer.first_name} {partnerPlayer.last_name}</span>
+                        )}
+                        {g.isShared && (
+                          <span className="ml-2 rounded-full bg-purple-100 px-2 py-0.5 text-[10px] font-medium text-purple-800">Shared</span>
+                        )}
+                      </p>
                       <p className="text-xs text-slate-blue">
                         {formatDate(session.date)} &middot; {formatTime(session.start_time)} &ndash; {formatTime(session.end_time)}
                       </p>
@@ -162,13 +204,20 @@ export default async function CoachPrivatesPage({
           <h2 className="mb-2 text-lg font-semibold text-deep-navy">Recently Completed</h2>
           <div className="overflow-hidden rounded-xl border border-[#F0B8B0]/60 bg-[#FFFBF7] shadow-card">
             <div className="divide-y divide-[#F0B8B0]/30">
-              {completed.map((b) => {
+              {completed.map((g) => {
+                const b = g.primary
                 const session = b.sessions as unknown as { id: string; date: string; start_time: string; end_time: string }
                 const player = b.players as unknown as { first_name: string; last_name: string }
+                const partnerPlayer = g.partner?.players as unknown as { first_name: string; last_name: string } | null
                 return (
                   <Link key={b.id} href={`/coach/privates/${session.id}`} className="flex items-center justify-between px-4 py-3 opacity-70 transition-all hover:bg-[#FFF6ED] hover:opacity-100">
                     <div>
-                      <p className="text-sm font-medium text-deep-navy">{player?.first_name} {player?.last_name}</p>
+                      <p className="text-sm font-medium text-deep-navy">
+                        {player?.first_name} {player?.last_name}
+                        {partnerPlayer && (
+                          <span className="text-slate-blue"> / {partnerPlayer.first_name} {partnerPlayer.last_name}</span>
+                        )}
+                      </p>
                       <p className="text-xs text-slate-blue">
                         {formatDate(session.date)} &middot; {b.duration_minutes}min
                       </p>

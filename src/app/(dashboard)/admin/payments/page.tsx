@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { formatCurrency } from '@/lib/utils/currency'
 import { formatDate } from '@/lib/utils/dates'
 import { RecordPaymentForm } from './record-payment-form'
+import { BulkPricingForm } from './bulk-pricing-form'
 import { ConfirmPaymentButton } from './confirm-payment-button'
 import { VoidPaymentButton } from './void-payment-button'
 import { StatusBadge } from '@/components/status-badge'
@@ -44,9 +45,10 @@ export default async function AdminPaymentsPage({
     query = query.neq('status', 'pending')
   }
 
-  const [{ data: payments }, { data: families }] = await Promise.all([
+  const [{ data: payments }, { data: families }, { data: coaches }] = await Promise.all([
     query,
     supabase.from('families').select('id, display_id, family_name').eq('status', 'active').order('family_name'),
+    supabase.from('coaches').select('id, name, is_owner').eq('status', 'active').order('name'),
   ])
 
   // Compute total received amount for hero
@@ -187,6 +189,11 @@ export default async function AdminPaymentsPage({
       {/* ── Record Payment Form ── */}
       <section className="animate-fade-up" style={{ animationDelay: '240ms' }}>
         <RecordPaymentForm families={families ?? []} />
+      </section>
+
+      {/* ── Bulk Grandfathered Pricing ── */}
+      <section className="animate-fade-up" style={{ animationDelay: '320ms' }}>
+        <BulkPricingForm families={families ?? []} coaches={coaches ?? []} />
       </section>
     </div>
   )

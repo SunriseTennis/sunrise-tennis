@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef } from 'react'
 import { createBrowserClient } from '@supabase/ssr'
-import { Bell, Check, X } from 'lucide-react'
+import { Bell, Check } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils/cn'
 
@@ -88,15 +88,6 @@ export function NotificationBell() {
     setNotifications((prev) =>
       prev.map((n) => (n.id === recipientId ? { ...n, read_at: new Date().toISOString() } : n)),
     )
-  }
-
-  async function deleteNotification(recipientId: string) {
-    await supabase
-      .from('notification_recipients')
-      .delete()
-      .eq('id', recipientId)
-
-    setNotifications((prev) => prev.filter((n) => n.id !== recipientId))
   }
 
   async function markAllRead() {
@@ -186,9 +177,9 @@ export function NotificationBell() {
                     )}
                   </button>
 
-                  {/* Action icons */}
-                  <div className="flex shrink-0 items-center gap-0.5 pt-0.5">
-                    {!n.read_at && (
+                  {/* Mark-as-read action */}
+                  {!n.read_at && (
+                    <div className="flex shrink-0 items-center pt-0.5">
                       <button
                         onClick={(e) => { e.stopPropagation(); markSingleRead(n.id) }}
                         className="rounded p-1 text-muted-foreground/50 transition-colors hover:bg-muted hover:text-foreground"
@@ -196,15 +187,8 @@ export function NotificationBell() {
                       >
                         <Check className="size-3.5" />
                       </button>
-                    )}
-                    <button
-                      onClick={(e) => { e.stopPropagation(); deleteNotification(n.id) }}
-                      className="rounded p-1 text-muted-foreground/50 transition-colors hover:bg-danger-light hover:text-danger"
-                      title="Remove"
-                    >
-                      <X className="size-3.5" />
-                    </button>
-                  </div>
+                    </div>
+                  )}
                 </div>
               ))
             )}

@@ -92,7 +92,7 @@ export function NotificationFeed({
   initialNotifications: Notification[]
 }) {
   const [notifications, setNotifications] = useState(initialNotifications)
-  const [filter, setFilter] = useState<'all' | 'unread'>('all')
+  const [filter, setFilter] = useState<'unread' | 'read'>('unread')
   const router = useRouter()
 
   const supabase = createBrowserClient(
@@ -101,7 +101,10 @@ export function NotificationFeed({
   )
 
   const unreadCount = notifications.filter((n) => !n.readAt).length
-  const filtered = filter === 'unread' ? notifications.filter((n) => !n.readAt) : notifications
+  const readCount = notifications.length - unreadCount
+  const filtered = filter === 'unread'
+    ? notifications.filter((n) => !n.readAt)
+    : notifications.filter((n) => n.readAt)
   const groups = groupByDate(filtered)
 
   async function markAsRead(id: string, url?: string | null) {
@@ -140,17 +143,6 @@ export function NotificationFeed({
       <div className="flex items-center justify-between">
         <div className="flex gap-1.5">
           <button
-            onClick={() => setFilter('all')}
-            className={cn(
-              'rounded-full px-3 py-1 text-xs font-medium transition-colors',
-              filter === 'all'
-                ? 'bg-primary text-primary-foreground'
-                : 'bg-[#FFF6ED] text-slate-blue hover:bg-[#FFE8D6]',
-            )}
-          >
-            All
-          </button>
-          <button
             onClick={() => setFilter('unread')}
             className={cn(
               'rounded-full px-3 py-1 text-xs font-medium transition-colors',
@@ -161,8 +153,19 @@ export function NotificationFeed({
           >
             Unread {unreadCount > 0 && `(${unreadCount})`}
           </button>
+          <button
+            onClick={() => setFilter('read')}
+            className={cn(
+              'rounded-full px-3 py-1 text-xs font-medium transition-colors',
+              filter === 'read'
+                ? 'bg-primary text-primary-foreground'
+                : 'bg-[#FFF6ED] text-slate-blue hover:bg-[#FFE8D6]',
+            )}
+          >
+            Read {readCount > 0 && `(${readCount})`}
+          </button>
         </div>
-        {unreadCount > 0 && (
+        {filter === 'unread' && unreadCount > 0 && (
           <Button variant="ghost" size="sm" onClick={markAllRead} className="text-xs text-primary">
             <CheckCheck className="mr-1 size-3.5" />
             Mark all read
@@ -174,7 +177,7 @@ export function NotificationFeed({
       {groups.length === 0 ? (
         <div className="overflow-hidden rounded-xl border border-[#F0B8B0]/60 bg-[#FFFBF7] shadow-card">
           <p className="px-4 py-8 text-center text-sm text-slate-blue">
-            {filter === 'unread' ? 'All caught up!' : 'No notifications yet'}
+            {filter === 'unread' ? 'All caught up!' : 'No read notifications yet'}
           </p>
         </div>
       ) : (

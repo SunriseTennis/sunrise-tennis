@@ -453,6 +453,62 @@ export async function voidPaymentAction(paymentId: string) {
   redirect('/admin/payments?success=' + encodeURIComponent('Payment voided'))
 }
 
+// ── Bulk Grandfathered Pricing ────────────────────────────────────────
+
+export async function addBulkFamilyPricing(formData: FormData) {
+  await requireAdmin()
+  const supabase = await createClient()
+
+  const familyIdsRaw = (formData.get('family_ids') as string) ?? ''
+  const familyIds = familyIdsRaw.split(',').map(s => s.trim()).filter(Boolean)
+  const programType = (formData.get('program_type') as string) || 'private'
+  const coachIdRaw = (formData.get('coach_id') as string) || ''
+  const perSessionDollarsRaw = (formData.get('per_session_dollars') as string) || ''
+  const validUntil = (formData.get('valid_until') as string) || null
+  const notes = (formData.get('notes') as string) || 'Grandfathered rate'
+
+  if (familyIds.length === 0) {
+    redirect('/admin/payments?error=' + encodeURIComponent('Pick at least one family'))
+  }
+
+  if (!perSessionDollarsRaw) {
+    redirect('/admin/payments?error=' + encodeURIComponent('Set the rate'))
+  }
+
+  const perSessionCents = Math.round(parseFloat(perSessionDollarsRaw) * 100)
+  if (isNaN(perSessionCents) || perSessionCents <= 0) {
+    redirect('/admin/payments?error=' + encodeURIComponent('Rate must be a positive number'))
+  }
+
+  const effectiveCoachId = (programType === 'private' && coachIdRaw) ? coachIdRaw : null
+  const today = new Date().toISOString().split('T')[0]
+
+  const rows = familyIds.map(familyId => ({
+    family_id: familyId,
+    program_id: null as string | null,
+    program_type: programType,
+    coach_id: effectiveCoachId,
+    per_session_cents: perSessionCents,
+    term_fee_cents: null,
+    notes,
+    valid_from: today,
+    valid_until: validUntil,
+  }))
+
+  const { error } = await supabase.from('family_pricing').insert(rows)
+
+  if (error) {
+    console.error('Bulk pricing insert failed:', error.message)
+    redirect('/admin/payments?error=' + encodeURIComponent('Failed to add bulk pricing — check that no family already has this override.'))
+  }
+
+  for (const familyId of familyIds) {
+    revalidatePath(`/admin/families/${familyId}`)
+  }
+  revalidatePath('/admin/payments')
+  redirect('/admin/payments?success=' + encodeURIComponent(`Grandfathered ${familyIds.length} ${familyIds.length === 1 ? 'family' : 'families'}`))
+}
+
 // ── Waive a Charge ────────────────────────────────────────────────────
 
 export async function waiveChargeAction(chargeId: string, reason?: string) {

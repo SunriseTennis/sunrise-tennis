@@ -51,7 +51,7 @@ export function UnenrolButton({
       {/* Confirmation modal */}
       {showConfirm && (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 backdrop-blur-sm">
-          <div className="w-full max-w-md animate-slide-up rounded-t-2xl sm:rounded-2xl bg-popover p-6 shadow-xl">
+          <div className="w-full max-w-md max-h-[85vh] overflow-y-auto animate-slide-up rounded-t-2xl sm:rounded-2xl bg-popover p-6 shadow-xl">
             <div className="flex items-center justify-between">
               <h3 className="text-lg font-semibold text-foreground">Unenrol {playerName}?</h3>
               <button

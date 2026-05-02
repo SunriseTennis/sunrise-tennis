@@ -422,6 +422,50 @@ export async function getEligibleParentUserIds(
   return (roles ?? []).map(r => r.user_id)
 }
 
+// ── Shared-private partner enrichment ──────────────────────────────────
+
+/**
+ * Returns a map of bookingId → partner first name for any shared-private
+ * bookings in the input. Lets parent/coach UIs label the booking as
+ * "Shared with Maxim (+ Sanders)" without each call site re-doing the join.
+ */
+export async function getSharedPartners(
+  supabase: Supabase,
+  bookingIds: string[],
+): Promise<Map<string, string>> {
+  if (bookingIds.length === 0) return new Map()
+
+  const { data: pairs } = await supabase
+    .from('bookings')
+    .select('id, shared_with_booking_id')
+    .in('id', bookingIds)
+    .not('shared_with_booking_id', 'is', null)
+
+  const partnerIds = (pairs ?? [])
+    .map(p => p.shared_with_booking_id as string)
+    .filter(Boolean)
+
+  if (partnerIds.length === 0) return new Map()
+
+  const { data: partners } = await supabase
+    .from('bookings')
+    .select('id, players:player_id(first_name)')
+    .in('id', partnerIds)
+
+  const partnerMap = new Map<string, string>()
+  for (const p of partners ?? []) {
+    const player = p.players as unknown as { first_name: string } | null
+    if (player?.first_name) partnerMap.set(p.id, player.first_name)
+  }
+
+  const result = new Map<string, string>()
+  for (const pair of pairs ?? []) {
+    const partnerName = partnerMap.get(pair.shared_with_booking_id as string)
+    if (partnerName) result.set(pair.id, partnerName)
+  }
+  return result
+}
+
 // ── Helpers ────────────────────────────────────────────────────────────
 
 function timeToMinutes(time: string): number {
