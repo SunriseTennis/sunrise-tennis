@@ -67,6 +67,10 @@ export interface CalendarEvent {
   assistantCoaches?: string[]
   /** Inline style override (e.g. for gradient backgrounds) */
   colorStyle?: React.CSSProperties
+  /** For shared private events: partner player's first name */
+  partnerFirstName?: string
+  /** For shared private events: partner player's last name */
+  partnerLastName?: string
 }
 
 function parseTime(time: string): number {
@@ -614,7 +618,10 @@ export function WeeklyCalendar({
     return addDays(m, weekOffset * 7)
   }, [weekOffset])
 
-  const sunday = useMemo(() => addDays(monday, 6), [monday])
+  // End-of-week boundary for inclusive Sunday comparison. Without an exclusive
+  // upper bound, events dated `YYYY-MM-DDT12:00:00` on Sunday fail a `<= sunday`
+  // check (which would be midnight start-of-Sunday).
+  const weekEndExclusive = useMemo(() => addDays(monday, 7), [monday])
 
   const weekDates = useMemo(() =>
     DAYS.map((_, i) => addDays(monday, i)),
@@ -625,12 +632,12 @@ export function WeeklyCalendar({
     return events.filter(e => {
       if (e.date) {
         const eventDate = new Date(e.date + 'T12:00:00')
-        return eventDate >= monday && eventDate <= sunday
+        return eventDate >= monday && eventDate < weekEndExclusive
       }
       // Non-date events (recurring) show every week
       return true
     })
-  }, [events, monday, sunday])
+  }, [events, monday, weekEndExclusive])
 
   const { minHour, maxHour } = useMemo(() => {
     if (weekEvents.length === 0) return { minHour: HOUR_START, maxHour: HOUR_END }
@@ -1164,11 +1171,18 @@ export function WeeklyCalendar({
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0 flex-1">
                 <h3 className="font-semibold text-foreground leading-tight">{popupEvent.title}</h3>
-                {popupEvent.programType && (
-                  <span className="mt-1 inline-block rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium capitalize text-muted-foreground">
-                    {popupEvent.programType}
-                  </span>
-                )}
+                <div className="mt-1 flex flex-wrap gap-1">
+                  {popupEvent.programType && (
+                    <span className="inline-block rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium capitalize text-muted-foreground">
+                      {popupEvent.programType}
+                    </span>
+                  )}
+                  {popupEvent.programType === 'private' && popupEvent.partnerFirstName && (
+                    <span className="inline-block rounded-full bg-purple-100 px-2 py-0.5 text-[10px] font-medium text-purple-800">
+                      Shared
+                    </span>
+                  )}
+                </div>
               </div>
               <button
                 onClick={() => { setPopupEvent(null); setPopupPos(null) }}
@@ -1193,6 +1207,11 @@ export function WeeklyCalendar({
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
                   <Users className="size-3.5 shrink-0" />
                   <span>{popupEvent.playerNames.join(', ')}</span>
+                </div>
+              )}
+              {popupEvent.programType === 'private' && popupEvent.partnerFirstName && (
+                <div className="flex items-center gap-2 text-xs text-purple-800 pl-[22px]">
+                  <span>with {popupEvent.partnerFirstName} {popupEvent.partnerLastName ?? ''}</span>
                 </div>
               )}
               {popupEvent.priceCents != null && popupEvent.priceCents > 0 && (
@@ -1232,9 +1251,21 @@ export function WeeklyCalendar({
               </div>
             )}
 
+            {/* Open lesson detail (parent privates) */}
+            {popupEvent.bookingId && popupEvent.programType === 'private' && (
+              <div className="mt-3">
+                <a
+                  href={`/parent/bookings/${popupEvent.bookingId}`}
+                  className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-[#2B5EA7] px-4 py-2 text-sm font-medium text-white transition-all hover:brightness-110"
+                >
+                  Open lesson
+                </a>
+              </div>
+            )}
+
             {/* Cancel private booking */}
             {onCancelPrivate && popupEvent.bookingId && popupEvent.programType === 'private' && (
-              <div className="mt-3">
+              <div className="mt-2">
                 <button
                   disabled={actionLoading}
                   onClick={async () => {

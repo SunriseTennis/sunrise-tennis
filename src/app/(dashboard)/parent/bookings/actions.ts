@@ -211,7 +211,7 @@ export async function cancelPrivateBooking(formData: FormData) {
   // Get the booking and verify ownership
   const { data: booking } = await supabase
     .from('bookings')
-    .select('id, family_id, session_id, price_cents, status')
+    .select('id, family_id, session_id, price_cents, status, shared_with_booking_id')
     .eq('id', booking_id)
     .single()
 
@@ -318,20 +318,36 @@ export async function cancelPrivateBooking(formData: FormData) {
     })
     .eq('id', booking_id)
 
-  // Update session
-  await supabase
-    .from('sessions')
-    .update({ status: 'cancelled', cancellation_reason: 'Parent cancelled' })
-    .eq('id', booking.session_id!)
+  // For paired (shared) privates, never cancel the underlying session here —
+  // the partner family's booking still owns it. Only cancel the session when
+  // this is the last non-cancelled booking on it.
+  let sessionFreed = false
+  {
+    const { count: remaining } = await supabase
+      .from('bookings')
+      .select('id', { count: 'exact', head: true })
+      .eq('session_id', booking.session_id!)
+      .neq('id', booking_id)
+      .neq('status', 'cancelled')
 
-  // If this was a standing slot cancelled with 24hr+ notice, notify eligible players
+    if ((remaining ?? 0) === 0) {
+      await supabase
+        .from('sessions')
+        .update({ status: 'cancelled', cancellation_reason: 'Parent cancelled' })
+        .eq('id', booking.session_id!)
+      sessionFreed = true
+    }
+  }
+
+  // If this was a standing slot cancelled with 24hr+ notice AND no partner is
+  // still on the session, notify eligible players that the slot is free.
   const { data: bookingFull } = await supabase
     .from('bookings')
     .select('is_standing')
     .eq('id', booking_id)
     .single()
 
-  if (bookingFull?.is_standing && !isLate && session.coach_id) {
+  if (sessionFreed && bookingFull?.is_standing && !isLate && session.coach_id) {
     try {
       const eligibleUserIds = await getEligibleParentUserIds(supabase, session.coach_id)
       for (const uid of eligibleUserIds) {
@@ -340,6 +356,29 @@ export async function cancelPrivateBooking(formData: FormData) {
           title: 'Private Slot Available',
           body: `A private lesson slot is available on ${session.date} at ${formatTime12(session.start_time!)}`,
           url: '/parent/bookings',
+        })
+      }
+    } catch { /* non-blocking */ }
+  }
+
+  // Heads-up to partner family if their booking still stands.
+  if (!sessionFreed && booking.shared_with_booking_id) {
+    try {
+      const { notifyFamily } = await import('@/lib/notifications/notify')
+      const { data: partner } = await supabase
+        .from('bookings')
+        .select('family_id, sessions:session_id(date, start_time, coaches:coach_id(name))')
+        .eq('id', booking.shared_with_booking_id)
+        .neq('status', 'cancelled')
+        .single()
+      if (partner?.family_id) {
+        const partnerSession = partner.sessions as unknown as { date: string; start_time: string | null; coaches: { name: string } | null } | null
+        const coach = partnerSession?.coaches?.name?.split(' ')[0] ?? 'your coach'
+        await notifyFamily(partner.family_id, {
+          title: 'Shared private — partner cancelled',
+          body: `Your shared private with ${coach} on ${partnerSession?.date ?? ''} is now solo. Admin will adjust the rate after the session.`,
+          url: '/parent/bookings',
+          type: 'booking',
         })
       }
     } catch { /* non-blocking */ }

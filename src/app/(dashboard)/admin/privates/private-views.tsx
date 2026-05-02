@@ -82,24 +82,17 @@ type Series = {
   durationMinutes: number
   startTime: string
   dayOfWeek: number | null
-  pricePerSessionCents: number
+  pricePerSessionCents: number  // total for the session (sum of both halves when shared)
+  totalCents: number            // sum of every booking's price across the whole series
   bookings: Booking[]
 }
 
 const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
-function getSeriesKey(b: Booking): string {
-  // Group standing chains together; one-offs stay solo. Shared rows on the
-  // same chain still group together because each family's row has the same
-  // standing_parent_id.
-  if (b.standingParentId) return `standing:${b.standingParentId}`
-  if (b.isStanding) return `standing:${b.id}`
-  // For shared one-offs, pair them via the canonical (smaller) booking id.
-  if (b.sharedWithBookingId) {
-    const a = b.id, c = b.sharedWithBookingId
-    return `shared:${a < c ? a : c}`
-  }
-  return `solo:${b.id}`
+function chainKey(b: Booking): string {
+  // The standing-chain key for a single family. Standing children point at
+  // their parent; standing parents point at themselves; one-offs at themselves.
+  return b.standingParentId ?? b.id
 }
 
 function dayOfWeekFor(dateString: string): number | null {
@@ -108,48 +101,114 @@ function dayOfWeekFor(dateString: string): number | null {
   return d.getDay()
 }
 
+// Union-find over chain keys: any two chains that share a session
+// (i.e. any booking has shared_with_booking_id pointing into the other) get
+// merged into a single series.
 function buildSeries(bookings: Booking[]): Series[] {
-  const groups = new Map<string, Booking[]>()
+  // First pass: bucket by single-family chain key.
+  const chains = new Map<string, Booking[]>()
   for (const b of bookings) {
-    const key = getSeriesKey(b)
-    const list = groups.get(key) ?? []
+    const k = chainKey(b)
+    const list = chains.get(k) ?? []
     list.push(b)
-    groups.set(key, list)
+    chains.set(k, list)
+  }
+
+  // Union-find roots over chain keys.
+  const parent = new Map<string, string>()
+  const find = (k: string): string => {
+    let cur = k
+    while (parent.get(cur) && parent.get(cur) !== cur) cur = parent.get(cur)!
+    return cur
+  }
+  const union = (a: string, b: string) => {
+    const ra = find(a), rb = find(b)
+    if (ra === rb) return
+    // Pick the smaller key as canonical so the result is deterministic.
+    const [keep, drop] = ra < rb ? [ra, rb] : [rb, ra]
+    parent.set(drop, keep)
+  }
+  // Initialise
+  for (const k of chains.keys()) parent.set(k, k)
+
+  // Second pass: merge any two chains whose bookings share a session via
+  // shared_with_booking_id.
+  const idToChainKey = new Map<string, string>()
+  for (const [ck, list] of chains) for (const b of list) idToChainKey.set(b.id, ck)
+  for (const [ck, list] of chains) {
+    for (const b of list) {
+      if (!b.sharedWithBookingId) continue
+      const partnerChain = idToChainKey.get(b.sharedWithBookingId)
+      if (partnerChain && partnerChain !== ck) union(ck, partnerChain)
+    }
+  }
+
+  // Re-bucket by union-find root.
+  const merged = new Map<string, Booking[]>()
+  for (const [ck, list] of chains) {
+    const root = find(ck)
+    const acc = merged.get(root) ?? []
+    for (const b of list) acc.push(b)
+    merged.set(root, acc)
   }
 
   const series: Series[] = []
-  for (const [key, list] of groups) {
-    // Sort each group by date
-    list.sort((a, b) => (a.date ?? '').localeCompare(b.date ?? ''))
-
-    // For shared groups, both families' rows are present. For "primary", pick
-    // the row whose family_id sorts first deterministically.
-    const sharedByFamily = new Map<string, Booking>()
+  for (const [, list] of merged) {
+    // Distinct families in the merged group.
+    const families = new Map<string, Booking>()
     for (const b of list) {
-      const existing = sharedByFamily.get(b.familyId)
+      const existing = families.get(b.familyId)
       if (!existing || (b.date ?? '') < (existing.date ?? '')) {
-        sharedByFamily.set(b.familyId, b)
+        families.set(b.familyId, b)
       }
     }
-
-    const distinctFamilies = [...sharedByFamily.values()].sort((a, b) => a.familyId.localeCompare(b.familyId))
+    const distinctFamilies = [...families.values()].sort((a, b) => a.familyId.localeCompare(b.familyId))
     const primary = distinctFamilies[0]
     const partner = distinctFamilies[1] ?? null
-    const isShared = list.some(b => b.sharedWithBookingId !== null) || distinctFamilies.length > 1
+    const isShared = distinctFamilies.length > 1 || list.some(b => b.sharedWithBookingId !== null)
 
-    // Find the parent booking id used for series-level actions: prefer the
-    // standing parent, otherwise the canonical booking in the group from primary's family.
-    let parentBookingId = primary.standingParentId ?? primary.id
-    if (key.startsWith('standing:')) {
-      parentBookingId = key.split(':')[1]
+    // Pick a parent_booking_id for series-level actions. Prefer a row that has
+    // standing_parent_id IS NULL AND is_standing = true (i.e. an actual chain
+    // parent). For one-offs / non-standing pairs, the booking from primary's
+    // family with the earliest date suffices.
+    const standingParents = list.filter(b => !b.standingParentId && b.isStanding)
+    let parentBookingId =
+      standingParents.find(b => b.familyId === primary.familyId)?.id ??
+      standingParents[0]?.id ??
+      primary.id
+
+    // Per-session price = SUM of all family bookings on that session.
+    // Use the earliest scheduled session as a representative for the series
+    // price (handles different family halves cleanly).
+    const bySession = new Map<string, Booking[]>()
+    for (const b of list) {
+      const sid = b.sessionId ?? `solo-${b.id}`
+      const arr = bySession.get(sid) ?? []
+      arr.push(b)
+      bySession.set(sid, arr)
     }
+    const samplePrice = (() => {
+      // Find the first scheduled session and sum its bookings' prices.
+      const sample = [...bySession.values()].find(arr => arr.some(b => b.sessionStatus === 'scheduled'))
+        ?? [...bySession.values()][0]
+      return (sample ?? []).reduce((sum, b) => sum + (b.priceCents ?? 0), 0)
+    })()
 
-    // Per-session price (a single instance of the series). For shared, this is
-    // the family's half. For solo, it's the full rate.
-    const pricePerSessionCents = list.find(b => b.priceCents > 0)?.priceCents ?? 0
+    // Display "bookings": one entry per real-world session. We pick a
+    // representative row per session_id (preferring primary family's row so
+    // status icons stay consistent with what admin already saw).
+    const repBookings: Booking[] = []
+    for (const arr of bySession.values()) {
+      arr.sort((a, b) => (a.familyId === primary.familyId ? -1 : 1))
+      repBookings.push(arr[0])
+    }
+    repBookings.sort((a, b) => (a.date ?? '').localeCompare(b.date ?? ''))
+
+    // Total = sum across every booking (both families, every session).
+    const totalCents = list.reduce((sum, b) => sum + (b.priceCents ?? 0), 0)
 
     series.push({
-      key,
+      key: parentBookingId,
       parentBookingId,
       primaryFamilyName: primary.familyName,
       primaryFamilyDisplayId: primary.familyDisplayId,
@@ -164,9 +223,9 @@ function buildSeries(bookings: Booking[]): Series[] {
       durationMinutes: primary.durationMinutes,
       startTime: primary.startTime,
       dayOfWeek: dayOfWeekFor(primary.date),
-      pricePerSessionCents,
-      // Only keep the primary family's bookings in the list shown — partner rows are inferred.
-      bookings: list.filter(b => b.familyId === primary.familyId),
+      pricePerSessionCents: samplePrice,
+      totalCents,
+      bookings: repBookings,
     })
   }
 
@@ -197,6 +256,17 @@ export function PrivateViews({
   const series = useMemo(() => buildSeries(bookings.filter(b => b.approvalStatus === 'approved')), [bookings])
 
   const [tab, setTab] = useState<Tab>(hasPending ? 'pending' : 'series')
+
+  // Calendar-tab convert flow: when admin clicks "Convert to solo" in the
+  // calendar popup, find the matching series and open its convert modal.
+  const [calendarConvertSession, setCalendarConvertSession] = useState<{
+    sessionId: string
+    series: Series
+  } | null>(null)
+  const onCalendarConvert = (sessionId: string) => {
+    const matching = series.find(s => s.bookings.some(b => b.sessionId === sessionId && b.sharedWithBookingId))
+    if (matching) setCalendarConvertSession({ sessionId, series: matching })
+  }
 
   const tabs: { key: Tab; label: string; icon: typeof List; badge?: number }[] = [
     { key: 'pending', label: 'Pending', icon: AlertCircle, badge: pendingBookings.length || undefined },
@@ -257,7 +327,16 @@ export function PrivateViews({
 
       {tab === 'calendar' && (
         <div className="mt-4">
-          <AdminPrivatesCalendar bookings={bookings} />
+          <AdminPrivatesCalendar bookings={bookings} onConvert={onCalendarConvert} />
+          {calendarConvertSession && (
+            <ConvertToSoloModal
+              sessionId={calendarConvertSession.sessionId}
+              series={calendarConvertSession.series}
+              removingPlayerId={null}
+              setRemovingPlayerId={() => undefined}
+              onClose={() => setCalendarConvertSession(null)}
+            />
+          )}
         </div>
       )}
 
@@ -334,7 +413,7 @@ function SeriesAccordion({
   const completed = series.bookings.filter(b => b.sessionStatus === 'completed')
   const cancelled = series.bookings.filter(b => b.sessionStatus === 'cancelled')
 
-  const totalCents = series.bookings.reduce((sum, b) => sum + (b.priceCents ?? 0), 0)
+  const totalCents = series.totalCents
 
   const playerLabel = series.isShared && series.partnerPlayerFirstName
     ? `${series.primaryPlayerFirstName} / ${series.partnerPlayerFirstName}`

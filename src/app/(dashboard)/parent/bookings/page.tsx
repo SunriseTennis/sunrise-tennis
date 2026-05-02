@@ -67,6 +67,7 @@ export default async function ParentBookingsPage({
       .select(`
         id, player_id, session_id, booking_type, status, approval_status,
         price_cents, duration_minutes, booked_at, cancellation_type,
+        shared_with_booking_id,
         sessions:session_id(date, start_time, end_time, coach_id, status,
           coaches:coach_id(name)
         )
@@ -111,6 +112,22 @@ export default async function ParentBookingsPage({
   ])
 
   const confirmedCreditCents = Math.max(0, balance?.confirmed_balance_cents ?? 0)
+
+  // Resolve partner-family info for shared bookings.
+  type PartnerSummary = {
+    booking_id: string
+    partner_first_name: string
+    partner_last_name: string
+    partner_family_name: string
+  }
+  const sharedBookingIds = (bookings ?? [])
+    .filter(b => b.shared_with_booking_id)
+    .map(b => b.id)
+  const { data: partnerRows } = sharedBookingIds.length > 0
+    ? await supabase.rpc('private_partner_summary', { booking_ids: sharedBookingIds })
+    : { data: [] as PartnerSummary[] }
+  const partnerByBookingId = new Map<string, PartnerSummary>()
+  for (const r of (partnerRows ?? []) as PartnerSummary[]) partnerByBookingId.set(r.booking_id, r)
 
   // Build per-coach override map. Per-coach rows win over coach_id IS NULL rows.
   // Treats per_session_cents as the per-30min rate for privates.
@@ -235,6 +252,7 @@ export default async function ParentBookingsPage({
         confirmedCreditCents={confirmedCreditCents}
         privateRateOverrides={Object.fromEntries(privateOverrideMap)}
         allPrivatesOverride={allPrivatesOverride}
+        partnerByBookingId={Object.fromEntries(partnerByBookingId)}
       />
       </div>
 
@@ -243,6 +261,7 @@ export default async function ParentBookingsPage({
       <MyBookings
         bookings={(bookings ?? []) as never[]}
         playerMap={Object.fromEntries(playerMap)}
+        partnerByBookingId={Object.fromEntries(partnerByBookingId)}
       />
       </div>
 

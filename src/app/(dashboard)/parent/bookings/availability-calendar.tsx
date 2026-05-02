@@ -50,6 +50,7 @@ interface ExistingBooking {
   price_cents: number | null
   duration_minutes: number | null
   cancellation_type: string | null
+  shared_with_booking_id?: string | null
   sessions: {
     date: string
     start_time: string | null
@@ -58,6 +59,12 @@ interface ExistingBooking {
     status: string
     coaches: { name: string } | null
   } | null
+}
+
+interface PartnerSummary {
+  partner_first_name: string
+  partner_last_name: string
+  partner_family_name: string
 }
 
 interface PrivateOverride {
@@ -81,6 +88,8 @@ interface Props {
   privateRateOverrides?: Record<string, PrivateOverride>
   /** Family-wide all-privates override (applies when no per-coach row exists). */
   allPrivatesOverride?: PrivateOverride | null
+  /** Partner-summary lookup for shared private bookings (booking_id → partner). */
+  partnerByBookingId?: Record<string, PartnerSummary>
 }
 
 type ActiveTab = 'yours' | 'availabilities'
@@ -434,6 +443,7 @@ export function AvailabilityCalendar({
   confirmedCreditCents = 0,
   privateRateOverrides = {},
   allPrivatesOverride = null,
+  partnerByBookingId = {},
 }: Props) {
   const [activeTab, setActiveTab] = useState<ActiveTab>('yours')
   const [viewMode, setViewMode] = useState<ViewMode>('week')
@@ -798,7 +808,12 @@ export function AvailabilityCalendar({
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4" onClick={() => setViewPopup(null)}>
           <div className="w-full max-w-md animate-slide-up rounded-2xl bg-popover p-5 shadow-elevated" style={{ maxHeight: '85vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
             <div className="flex items-start justify-between">
-              <h3 className="text-sm font-semibold text-foreground">Private Lesson</h3>
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <h3 className="text-sm font-semibold text-foreground">Private Lesson</h3>
+                {partnerByBookingId[viewPopup.id] && (
+                  <span className="rounded-full bg-purple-100 px-2 py-0.5 text-[10px] font-medium text-purple-800">Shared</span>
+                )}
+              </div>
               <button type="button" onClick={() => setViewPopup(null)} className="rounded-lg p-1 text-muted-foreground hover:bg-muted/50 hover:text-foreground"><X className="size-4" /></button>
             </div>
 
@@ -815,6 +830,14 @@ export function AvailabilityCalendar({
                 <span className="text-muted-foreground">Player</span>
                 <span className="font-medium">{playerMap[viewPopup.player_id] ?? 'Unknown'}</span>
               </div>
+              {partnerByBookingId[viewPopup.id] && (
+                <div className="flex justify-between text-xs">
+                  <span className="text-muted-foreground">Shared with</span>
+                  <span className="font-medium text-purple-800">
+                    {partnerByBookingId[viewPopup.id].partner_first_name} {partnerByBookingId[viewPopup.id].partner_last_name}
+                  </span>
+                </div>
+              )}
               <div className="flex justify-between text-xs">
                 <span className="text-muted-foreground">Coach</span>
                 <span className="font-medium">{viewPopup.sessions?.coaches?.name?.split(' ')[0] ?? 'Unknown'}</span>
@@ -834,15 +857,22 @@ export function AvailabilityCalendar({
               {viewPopup.price_cents != null && (
                 <div className="border-t border-border pt-1.5">
                   <div className="flex justify-between text-xs font-semibold">
-                    <span>Price</span>
+                    <span>Price{partnerByBookingId[viewPopup.id] ? ' (your half)' : ''}</span>
                     <span>${(viewPopup.price_cents / 100).toFixed(2)}</span>
                   </div>
                 </div>
               )}
             </div>
 
+            <a
+              href={`/parent/bookings/${viewPopup.id}`}
+              className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-lg bg-[#2B5EA7] px-4 py-2 text-sm font-medium text-white transition-all hover:brightness-110"
+            >
+              Open lesson
+            </a>
+
             {viewPopup.status !== 'cancelled' && viewPopup.approval_status !== 'declined' && (
-              <form action={cancelPrivateBooking} className="mt-3">
+              <form action={cancelPrivateBooking} className="mt-2">
                 <input type="hidden" name="booking_id" value={viewPopup.id} />
                 <CancelButton />
               </form>

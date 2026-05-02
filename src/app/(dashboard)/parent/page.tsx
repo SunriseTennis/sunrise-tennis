@@ -94,7 +94,7 @@ export default async function ParentDashboard() {
       .limit(4),
     supabase
       .from('bookings')
-      .select('id, player_id, duration_minutes, approval_status, sessions:session_id(date, start_time, end_time, status, coaches:coach_id(name)), players:player_id(first_name)')
+      .select('id, player_id, duration_minutes, approval_status, shared_with_booking_id, sessions:session_id(date, start_time, end_time, status, coaches:coach_id(name)), players:player_id(first_name)')
       .eq('family_id', familyId)
       .eq('booking_type', 'private')
       .in('status', ['confirmed', 'pending'])
@@ -176,24 +176,72 @@ export default async function ParentDashboard() {
   const balanceCents = balance?.confirmed_balance_cents ?? balance?.balance_cents ?? 0
   const firstName = contact?.name?.split(' ')[0] ?? 'Parent'
 
-  // Compute next session from enrolled sessions
+  // Resolve partner-family info for shared private bookings on the overview
+  type OverviewPartnerSummary = {
+    booking_id: string
+    partner_first_name: string
+    partner_last_name: string
+    partner_family_name: string
+  }
+  const sharedOverviewIds = (privateBookings ?? [])
+    .filter(b => (b as unknown as { shared_with_booking_id?: string | null }).shared_with_booking_id)
+    .map(b => b.id)
+  const { data: overviewPartnerRows } = sharedOverviewIds.length > 0
+    ? await supabase.rpc('private_partner_summary', { booking_ids: sharedOverviewIds })
+    : { data: [] as OverviewPartnerSummary[] }
+  const overviewPartnerByBookingId = new Map<string, OverviewPartnerSummary>()
+  for (const r of (overviewPartnerRows ?? []) as OverviewPartnerSummary[]) overviewPartnerByBookingId.set(r.booking_id, r)
+
+  // Compute next session from enrolled sessions AND private bookings
   const now = new Date()
   const todayStr = now.toISOString().split('T')[0]
   const currentTime = now.toTimeString().slice(0, 5)
-  const nextSession = enrolledSessions
-    .filter(s => s.date > todayStr || (s.date === todayStr && (s.start_time ?? '') > currentTime))
-    .sort((a, b) => `${a.date}${a.start_time}`.localeCompare(`${b.date}${b.start_time}`))[0] ?? null
 
-  // Find program name for next session
-  const nextSessionProgram = nextSession
-    ? (enrollments ?? []).find(e => {
-        const prog = e.programs as unknown as { id: string; name: string } | null
-        return prog?.id === nextSession.program_id
-      })
+  type NextSessionCandidate = {
+    date: string
+    start_time: string | null
+    program_id: string | null
+    programName: string
+    href: string
+  }
+  const candidates: NextSessionCandidate[] = []
+
+  for (const s of enrolledSessions) {
+    if (!(s.date > todayStr || (s.date === todayStr && (s.start_time ?? '') > currentTime))) continue
+    const enrolment = (enrollments ?? []).find(e => {
+      const prog = e.programs as unknown as { id: string } | null
+      return prog?.id === s.program_id
+    })
+    const programName = (enrolment?.programs as unknown as { name: string } | null)?.name ?? 'Session'
+    candidates.push({
+      date: s.date,
+      start_time: s.start_time,
+      program_id: s.program_id,
+      programName,
+      href: '/parent/programs',
+    })
+  }
+
+  for (const b of (privateBookings ?? [])) {
+    const session = b.sessions as unknown as { date: string; start_time: string | null; status: string; coaches: { name: string } | null } | null
+    if (!session?.date || !session.start_time || session.status !== 'scheduled') continue
+    if (!(session.date > todayStr || (session.date === todayStr && session.start_time > currentTime))) continue
+    candidates.push({
+      date: session.date,
+      start_time: session.start_time,
+      program_id: null,
+      programName: `Private w/ ${(session.coaches?.name ?? 'Coach').split(' ')[0]}`,
+      href: `/parent/bookings/${b.id}`,
+    })
+  }
+
+  candidates.sort((a, b) => `${a.date}${a.start_time ?? ''}`.localeCompare(`${b.date}${b.start_time ?? ''}`))
+  const nextCandidate = candidates[0] ?? null
+  const nextSession = nextCandidate
+    ? { date: nextCandidate.date, start_time: nextCandidate.start_time, program_id: nextCandidate.program_id }
     : null
-  const nextProgramName = nextSessionProgram
-    ? (nextSessionProgram.programs as unknown as { name: string })?.name
-    : null
+  const nextProgramName = nextCandidate?.programName ?? null
+  const nextSessionHref = nextCandidate?.href ?? '/parent/programs'
 
   // Format next session date
   const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
@@ -278,7 +326,7 @@ export default async function ParentDashboard() {
       {/* ── Next Session Strip ── */}
       {nextSessionLabel && nextProgramName && (
         <Link
-          href={nextSessionProgram ? `/parent/programs/${(nextSessionProgram.programs as unknown as { id: string })?.id}` : '/parent/programs'}
+          href={nextSessionHref}
           className="animate-fade-up flex items-center gap-3 rounded-xl border border-border bg-card px-4 py-3 shadow-card transition-all hover:shadow-elevated press-scale"
           style={{ animationDelay: '40ms' }}
         >
@@ -469,6 +517,7 @@ export default async function ParentDashboard() {
                 const session = b.sessions as unknown as { date: string; start_time: string; end_time: string; status: string; coaches: { name: string } | null } | null
                 const player = b.players as unknown as { first_name: string } | null
                 const dayOfWeek = session?.date ? new Date(session.date + 'T12:00:00').getDay() : null
+                const partner = overviewPartnerByBookingId.get(b.id)
                 return {
                   id: b.id,
                   playerName: player?.first_name ?? '',
@@ -479,6 +528,9 @@ export default async function ParentDashboard() {
                   date: session?.date ?? null,
                   sessionId: (b as unknown as { session_id: string }).session_id ?? null,
                   approvalStatus: (b as unknown as { approval_status: string | null }).approval_status ?? null,
+                  partnerFirstName: partner?.partner_first_name ?? null,
+                  partnerLastName: partner?.partner_last_name ?? null,
+                  partnerFamilyName: partner?.partner_family_name ?? null,
                 }
               })}
               nextJumpDate={nextSession?.date}

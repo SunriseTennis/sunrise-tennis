@@ -33,7 +33,7 @@ export async function cancelPrivateFromOverview(
 
   const { data: booking } = await supabase
     .from('bookings')
-    .select('id, family_id, session_id, price_cents, status')
+    .select('id, family_id, session_id, price_cents, status, shared_with_booking_id')
     .eq('id', bookingId)
     .single()
 
@@ -51,12 +51,25 @@ export async function cancelPrivateFromOverview(
     .update({ status: 'cancelled', cancellation_type: 'parent_24h' })
     .eq('id', bookingId)
 
-  // Cancel session
+  // For paired (shared) privates, never cancel the underlying session here —
+  // the partner family's booking still owns it. Only cancel the session when
+  // this is the last non-cancelled booking on it.
+  let cancelledSession = false
   if (booking.session_id) {
-    await supabase
-      .from('sessions')
-      .update({ status: 'cancelled', cancellation_reason: 'Parent cancelled' })
-      .eq('id', booking.session_id)
+    const { count: remaining } = await supabase
+      .from('bookings')
+      .select('id', { count: 'exact', head: true })
+      .eq('session_id', booking.session_id)
+      .neq('id', bookingId)
+      .neq('status', 'cancelled')
+
+    if ((remaining ?? 0) === 0) {
+      await supabase
+        .from('sessions')
+        .update({ status: 'cancelled', cancellation_reason: 'Parent cancelled' })
+        .eq('id', booking.session_id)
+      cancelledSession = true
+    }
   }
 
   // Void charge
@@ -69,6 +82,29 @@ export async function cancelPrivateFromOverview(
 
   if (charge) {
     await voidCharge(supabase, charge.id, familyId)
+  }
+
+  // Heads-up to partner family if their booking still stands.
+  if (!cancelledSession && booking.shared_with_booking_id) {
+    try {
+      const { notifyFamily } = await import('@/lib/notifications/notify')
+      const { data: partner } = await supabase
+        .from('bookings')
+        .select('family_id, sessions:session_id(date, start_time, coaches:coach_id(name))')
+        .eq('id', booking.shared_with_booking_id)
+        .neq('status', 'cancelled')
+        .single()
+      if (partner?.family_id) {
+        const session = partner.sessions as unknown as { date: string; start_time: string | null; coaches: { name: string } | null } | null
+        const coach = session?.coaches?.name?.split(' ')[0] ?? 'your coach'
+        await notifyFamily(partner.family_id, {
+          title: 'Shared private — partner cancelled',
+          body: `Your shared private with ${coach} on ${session?.date ?? ''} is now solo. Admin will adjust the rate after the session.`,
+          url: '/parent/bookings',
+          type: 'booking',
+        })
+      }
+    } catch { /* non-blocking */ }
   }
 
   revalidatePath('/parent')

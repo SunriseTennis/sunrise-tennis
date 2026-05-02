@@ -112,6 +112,9 @@ type PrivateBooking = {
   date?: string | null
   sessionId?: string | null
   approvalStatus?: string | null
+  partnerFirstName?: string | null
+  partnerLastName?: string | null
+  partnerFamilyName?: string | null
 }
 
 type AttendanceRecord = {
@@ -298,21 +301,27 @@ export function EnrolledCalendar({
       const statusLabel = b.approvalStatus === 'pending' ? ' · Pending'
         : b.approvalStatus === 'approved' ? ' · Confirmed'
         : ''
+      const isShared = !!b.partnerFirstName
+      const subtitle = isShared
+        ? `${b.playerName} / ${b.partnerFirstName}${statusLabel}`
+        : `${b.playerName}${statusLabel}`
       return {
         id: b.id,
         title: b.programName,
-        subtitle: `${b.playerName}${statusLabel}`,
+        subtitle,
         dayOfWeek: b.dayOfWeek ?? 0,
         startTime: b.startTime!,
         endTime: b.endTime!,
         color: colorMode === 'player'
           ? (playerColorMap.get(b.playerName) ?? PLAYER_PALETTE[0])
-          : PRIVATE_TYPE_COLOR,
+          : (isShared ? 'bg-purple-200 border-purple-400 text-purple-900' : PRIVATE_TYPE_COLOR),
         programType: 'private',
-        playerNames: [b.playerName],
+        playerNames: isShared ? [b.playerName, `${b.partnerFirstName ?? ''}`.trim()] : [b.playerName],
         date: b.date ?? undefined,
         bookingId: b.id,
         sessionId: b.sessionId ?? undefined,
+        partnerFirstName: b.partnerFirstName ?? undefined,
+        partnerLastName: b.partnerLastName ?? undefined,
       }
     })
 

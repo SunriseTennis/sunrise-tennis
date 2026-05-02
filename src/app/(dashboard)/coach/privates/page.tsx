@@ -32,7 +32,7 @@ export default async function CoachPrivatesPage({
     `)
     .eq('booking_type', 'private')
     .order('booked_at', { ascending: false })
-    .limit(100)
+    .limit(200)
 
   // Filter to only this coach's sessions (RLS handles it but let's be explicit)
   const coachBookings = (bookings ?? []).filter(b => {
@@ -67,10 +67,19 @@ export default async function CoachPrivatesPage({
     return g.primary.approval_status === 'approved' &&
       session.status === 'scheduled' &&
       new Date(`${session.date}T${session.start_time}`) > new Date()
+  }).sort((a, b) => {
+    const sa = a.primary.sessions as unknown as { date: string; start_time: string }
+    const sb = b.primary.sessions as unknown as { date: string; start_time: string }
+    return `${sa.date}T${sa.start_time}`.localeCompare(`${sb.date}T${sb.start_time}`)
   })
   const completed = groupedRows.filter(g => {
     const session = g.primary.sessions as unknown as { status: string }
     return session.status === 'completed'
+  }).sort((a, b) => {
+    const sa = a.primary.sessions as unknown as { date: string; start_time: string }
+    const sb = b.primary.sessions as unknown as { date: string; start_time: string }
+    // Completed: most recent first
+    return `${sb.date}T${sb.start_time}`.localeCompare(`${sa.date}T${sa.start_time}`)
   }).slice(0, 10)
 
   return (
