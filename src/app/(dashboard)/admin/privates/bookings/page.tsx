@@ -98,10 +98,14 @@ export default async function AdminPrivateBookingsPage({
           primary_contact: f.primary_contact as { name?: string } | null,
           players: ((f as unknown as { players: { id: string; first_name: string; last_name: string }[] }).players ?? []),
         }))}
-        coaches={(coaches ?? []).map(c => ({
-          id: c.id, name: c.name,
-          rate: (c.hourly_rate as { private_rate_cents?: number } | null)?.private_rate_cents ?? 0,
-        }))}
+        coaches={(coaches ?? []).map(c => {
+          const hr = c.hourly_rate as { client_private_rate_cents?: number; private_rate_cents?: number } | null
+          return {
+            id: c.id, name: c.name,
+            // Family-charge rate; fallback to coach pay rate if not backfilled.
+            rate: hr?.client_private_rate_cents ?? hr?.private_rate_cents ?? 0,
+          }
+        })}
       />
 
       <SharedPrivateForm
@@ -110,10 +114,13 @@ export default async function AdminPrivateBookingsPage({
           primary_contact: f.primary_contact as { name?: string } | null,
           players: ((f as unknown as { players: { id: string; first_name: string; last_name: string }[] }).players ?? []),
         }))}
-        coaches={(coaches ?? []).map(c => ({
-          id: c.id, name: c.name,
-          rate: (c.hourly_rate as { private_rate_cents?: number } | null)?.private_rate_cents ?? 0,
-        }))}
+        coaches={(coaches ?? []).map(c => {
+          const hr = c.hourly_rate as { client_private_rate_cents?: number; private_rate_cents?: number } | null
+          return {
+            id: c.id, name: c.name,
+            rate: hr?.client_private_rate_cents ?? hr?.private_rate_cents ?? 0,
+          }
+        })}
       />
 
       <div>

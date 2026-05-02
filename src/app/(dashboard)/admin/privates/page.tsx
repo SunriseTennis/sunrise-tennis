@@ -78,10 +78,15 @@ export default async function AdminPrivatesPage({
     players: ((f as unknown as { players: { id: string; first_name: string; last_name: string }[] }).players ?? []),
   }))
 
-  const serializedCoaches = (coaches ?? []).map(c => ({
-    id: c.id, name: c.name,
-    rate: (c.hourly_rate as { private_rate_cents?: number } | null)?.private_rate_cents ?? 0,
-  }))
+  const serializedCoaches = (coaches ?? []).map(c => {
+    const hr = c.hourly_rate as { client_private_rate_cents?: number; private_rate_cents?: number } | null
+    return {
+      id: c.id, name: c.name,
+      // Family-charge rate (what parents pay), with fallback to coach pay rate
+      // for older rows that haven't been backfilled yet.
+      rate: hr?.client_private_rate_cents ?? hr?.private_rate_cents ?? 0,
+    }
+  })
 
   return (
     <div className="space-y-6">
