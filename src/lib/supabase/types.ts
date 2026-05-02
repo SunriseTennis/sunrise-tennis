@@ -2597,6 +2597,14 @@ export type Database = {
         Args: { p_blocks: Json; p_coach_id: string; p_days: number[] }
         Returns: number
       }
+      apply_coach_availability_changes: {
+        Args: {
+          p_coach_id: string
+          p_delete_ids?: string[]
+          p_inserts?: Json
+        }
+        Returns: Json
+      }
     }
     Enums: {
       [_ in never]: never

@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent } from '@/components/ui/card'
 import { Textarea } from '@/components/ui/textarea'
+import { TimePicker12h } from '@/components/ui/time-picker-12h'
 import { Plus } from 'lucide-react'
 
 type Mode = 'single' | 'range'
@@ -122,14 +123,18 @@ export function RangeExceptionForm({ coachId, onAdd }: Props) {
           </Label>
 
           {!allDay && (
-            <div className="grid grid-cols-2 gap-2">
+            <div className="flex flex-wrap items-end gap-3">
               <div>
-                <Label htmlFor="exc_start_time" className="text-xs">From</Label>
-                <Input id="exc_start_time" name="start_time" type="time" className="mt-1 h-8 text-sm" />
+                <Label className="text-xs">From</Label>
+                <div className="mt-1">
+                  <TimePicker12h name="start_time" variant="compact" />
+                </div>
               </div>
               <div>
-                <Label htmlFor="exc_end_time" className="text-xs">To</Label>
-                <Input id="exc_end_time" name="end_time" type="time" className="mt-1 h-8 text-sm" />
+                <Label className="text-xs">To</Label>
+                <div className="mt-1">
+                  <TimePicker12h name="end_time" variant="compact" />
+                </div>
               </div>
             </div>
           )}

@@ -5,6 +5,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { TimePicker12h } from '@/components/ui/time-picker-12h'
 import { Search, X } from 'lucide-react'
 import { adminBookPrivate } from '../actions'
 
@@ -40,6 +41,7 @@ export function AdminBookForm({ families, coaches, alwaysExpanded = false }: Pro
   const [search, setSearch] = useState('')
   const [selectedFamily, setSelectedFamily] = useState<Family | null>(null)
   const [selectedPlayerId, setSelectedPlayerId] = useState('')
+  const [scheduleMode, setScheduleMode] = useState<'one_off' | 'standing'>('one_off')
 
   // Sort coaches by price descending, then name
   const sortedCoaches = useMemo(() =>
@@ -91,6 +93,7 @@ export function AdminBookForm({ families, coaches, alwaysExpanded = false }: Pro
           Book a private lesson on behalf of a parent. Auto-confirmed.
         </p>
         <form action={adminBookPrivate} className="mt-4 grid gap-3 sm:grid-cols-2">
+          <input type="hidden" name="schedule_mode" value={scheduleMode} />
           {/* Family search */}
           <div className="relative">
             <Label htmlFor="family_search" className="text-xs">Family</Label>
@@ -173,23 +176,60 @@ export function AdminBookForm({ families, coaches, alwaysExpanded = false }: Pro
           </div>
 
           <div>
-            <Label htmlFor="date" className="text-xs">Date</Label>
+            <Label htmlFor="date" className="text-xs">{scheduleMode === 'standing' ? 'First date' : 'Date'}</Label>
             <Input id="date" name="date" type="date" required className="mt-1" />
           </div>
           <div>
-            <Label htmlFor="start_time" className="text-xs">Start Time</Label>
-            <Input id="start_time" name="start_time" type="time" required className="mt-1" />
+            <Label htmlFor="start_time" className="text-xs">Start time</Label>
+            <div className="mt-1">
+              <TimePicker12h id="start_time" name="start_time" required />
+            </div>
           </div>
           <div>
             <Label htmlFor="duration" className="text-xs">Duration</Label>
-            <select id="duration" name="duration_minutes" required className="mt-1 block w-full rounded-md border border-input bg-background px-3 py-2 text-sm">
+            <select id="duration" name="duration_minutes" required defaultValue="30" className="mt-1 block w-full rounded-md border border-input bg-background px-3 py-2 text-sm">
               <option value="30">30 minutes</option>
               <option value="45">45 minutes</option>
               <option value="60">60 minutes</option>
             </select>
           </div>
+
+          <div className="sm:col-span-2">
+            <Label className="text-xs">Schedule</Label>
+            <div className="mt-1 grid gap-2 sm:grid-cols-2">
+              <Label className="flex cursor-pointer items-start gap-2 rounded-lg border border-border p-2.5 transition-colors hover:bg-muted/30 has-[:checked]:border-primary/30 has-[:checked]:bg-primary/5">
+                <input
+                  type="radio"
+                  name="_schedule"
+                  value="one_off"
+                  checked={scheduleMode === 'one_off'}
+                  onChange={() => setScheduleMode('one_off')}
+                  className="mt-0.5 size-4 border-border text-primary focus:ring-primary"
+                />
+                <div>
+                  <span className="text-sm font-medium text-foreground">One-off</span>
+                  <p className="text-xs text-muted-foreground">Single session.</p>
+                </div>
+              </Label>
+              <Label className="flex cursor-pointer items-start gap-2 rounded-lg border border-border p-2.5 transition-colors hover:bg-muted/30 has-[:checked]:border-primary/30 has-[:checked]:bg-primary/5">
+                <input
+                  type="radio"
+                  name="_schedule"
+                  value="standing"
+                  checked={scheduleMode === 'standing'}
+                  onChange={() => setScheduleMode('standing')}
+                  className="mt-0.5 size-4 border-border text-primary focus:ring-primary"
+                />
+                <div>
+                  <span className="text-sm font-medium text-foreground">Weekly (rest of term)</span>
+                  <p className="text-xs text-muted-foreground">Books every week on the same day at the same time until term ends.</p>
+                </div>
+              </Label>
+            </div>
+          </div>
+
           <div className="sm:col-span-2 flex gap-2">
-            <Button type="submit" size="sm">Book & Confirm</Button>
+            <Button type="submit" size="sm">{scheduleMode === 'standing' ? 'Book Weekly' : 'Book & Confirm'}</Button>
             {!alwaysExpanded && (
               <Button type="button" variant="ghost" size="sm" onClick={() => { setShowForm(false); handleClearFamily() }}>Cancel</Button>
             )}

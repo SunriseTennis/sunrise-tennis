@@ -105,7 +105,11 @@ export default async function AdminPrivateBookingsPage({
       />
 
       <SharedPrivateForm
-        families={(families ?? []).map(f => ({ id: f.id, display_id: f.display_id, family_name: f.family_name }))}
+        families={(families ?? []).map(f => ({
+          id: f.id, display_id: f.display_id, family_name: f.family_name,
+          primary_contact: f.primary_contact as { name?: string } | null,
+          players: ((f as unknown as { players: { id: string; first_name: string; last_name: string }[] }).players ?? []),
+        }))}
         coaches={(coaches ?? []).map(c => ({
           id: c.id, name: c.name,
           rate: (c.hourly_rate as { private_rate_cents?: number } | null)?.private_rate_cents ?? 0,

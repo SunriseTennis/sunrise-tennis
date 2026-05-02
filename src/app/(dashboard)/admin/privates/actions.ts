@@ -55,13 +55,6 @@ export async function adminRemoveAvailability(availabilityId: string) {
   redirect('/admin/privates/availability')
 }
 
-// Form-data wrapper for v2 bulk editor remove buttons.
-export async function adminRemoveAvailabilityFromForm(formData: FormData) {
-  const id = formData.get('id') as string
-  if (!id) redirect('/admin/privates/availability?error=Missing+id')
-  await adminRemoveAvailability(id)
-}
-
 export async function adminAddException(formData: FormData) {
   await requireAdmin()
   const supabase = await createClient()
@@ -130,38 +123,38 @@ export async function adminRemoveExceptionGroup(formData: FormData) {
   redirect('/admin/privates/availability')
 }
 
-// ── Admin: Bulk Coach Availability ─────────────────────────────────────
+// ── Admin: Stage-and-Save Availability ─────────────────────────────────
 
-export async function adminSetCoachAvailabilityBulk(formData: FormData) {
+export async function adminApplyCoachAvailabilityChanges(formData: FormData) {
   await requireAdmin()
   const supabase = await createClient()
 
   const coachId = formData.get('coach_id') as string
   if (!coachId) redirect('/admin/privates/availability?error=Coach+is+required')
 
-  const days = formData.getAll('day').map(v => parseInt(v as string, 10)).filter(n => !isNaN(n))
-  const blocks: { start: string; end: string }[] = []
-  let i = 0
-  while (true) {
-    const s = formData.get(`block_start_${i}`)
-    const e = formData.get(`block_end_${i}`)
-    if (!s || !e) break
-    blocks.push({ start: s as string, end: e as string })
-    i++
+  const deletesRaw = (formData.get('deletes') as string) ?? ''
+  const insertsRaw = (formData.get('inserts') as string) ?? '[]'
+  const deleteIds = deletesRaw.split(',').filter(Boolean)
+  let inserts: { day: number; start: string; end: string }[] = []
+  try {
+    inserts = JSON.parse(insertsRaw)
+    if (!Array.isArray(inserts)) inserts = []
+  } catch {
+    inserts = []
   }
 
-  if (days.length === 0 || blocks.length === 0) {
-    redirect(`/admin/privates/availability?coach_id=${coachId}&error=Pick+at+least+one+day+and+one+time+block`)
+  if (deleteIds.length === 0 && inserts.length === 0) {
+    redirect(`/admin/privates/availability?coach_id=${coachId}`)
   }
 
-  const { error } = await supabase.rpc('set_coach_availability_bulk', {
+  const { error } = await supabase.rpc('apply_coach_availability_changes', {
     p_coach_id: coachId,
-    p_days: days,
-    p_blocks: blocks,
+    p_delete_ids: deleteIds,
+    p_inserts: inserts,
   })
 
   if (error) {
-    redirect(`/admin/privates/availability?coach_id=${coachId}&error=${encodeURIComponent(error.message ?? 'Failed to apply')}`)
+    redirect(`/admin/privates/availability?coach_id=${coachId}&error=${encodeURIComponent(error.message ?? 'Failed to save')}`)
   }
 
   revalidatePath('/admin/privates/availability')
@@ -546,8 +539,69 @@ export async function recordCoachPayment(formData: FormData) {
 
 // ── Admin: Book Private on Behalf ──────────────────────────────────────
 
+async function createPrivateInstance(args: {
+  supabase: Awaited<ReturnType<typeof createClient>>
+  familyId: string
+  player: { id: string; first_name: string }
+  coachId: string
+  coachName: string
+  date: string
+  startTime: string
+  endTime: string
+  durationMinutes: number
+  priceCents: number
+  adminUserId: string | null
+  isStanding: boolean
+  parentBookingId: string | null
+}): Promise<{ ok: true; bookingId: string } | { ok: false; error: string }> {
+  const { supabase } = args
+  const { data: session } = await supabase
+    .from('sessions')
+    .insert({
+      session_type: 'private', date: args.date, start_time: args.startTime, end_time: args.endTime,
+      coach_id: args.coachId, status: 'scheduled', duration_minutes: args.durationMinutes,
+    })
+    .select('id')
+    .single()
+  if (!session) return { ok: false, error: 'Failed to create session' }
+
+  const { data: booking } = await supabase
+    .from('bookings')
+    .insert({
+      family_id: args.familyId, player_id: args.player.id,
+      session_id: session.id, booking_type: 'private',
+      status: 'confirmed', approval_status: 'approved', auto_approved: true,
+      approved_by: args.adminUserId, approved_at: new Date().toISOString(),
+      price_cents: args.priceCents, duration_minutes: args.durationMinutes,
+      booked_by: args.adminUserId,
+      is_standing: args.isStanding,
+      standing_parent_id: args.parentBookingId,
+    })
+    .select('id')
+    .single()
+  if (!booking) {
+    await supabase.from('sessions').delete().eq('id', session.id)
+    return { ok: false, error: 'Failed to create booking' }
+  }
+
+  const { createCharge, formatChargeDescription } = await import('@/lib/utils/billing')
+  await createCharge(supabase, {
+    familyId: args.familyId, playerId: args.player.id,
+    type: 'private', sourceType: 'enrollment',
+    sessionId: session.id, bookingId: booking.id,
+    description: formatChargeDescription({
+      playerName: args.player.first_name,
+      label: `Private w/ ${args.coachName}`,
+      date: args.date,
+    }),
+    amountCents: args.priceCents, status: 'confirmed', createdBy: args.adminUserId,
+  })
+
+  return { ok: true, bookingId: booking.id }
+}
+
 export async function adminBookPrivate(formData: FormData) {
-  const user = await requireAdmin()
+  await requireAdmin()
   const supabase = await createClient()
 
   const familyId = formData.get('family_id') as string
@@ -556,140 +610,180 @@ export async function adminBookPrivate(formData: FormData) {
   const date = formData.get('date') as string
   const startTime = formData.get('start_time') as string
   const durationMinutes = parseInt(formData.get('duration_minutes') as string)
+  const scheduleMode = (formData.get('schedule_mode') as string) || 'one_off'
 
   if (!familyId || !coachId || !playerId || !date || !startTime || !durationMinutes) {
     redirect('/admin/privates/bookings?error=All+fields+are+required')
   }
 
-  // Verify the player belongs to this family
   const { data: player } = await supabase
     .from('players')
     .select('id, first_name')
     .eq('id', playerId)
     .eq('family_id', familyId)
     .single()
+  if (!player) redirect('/admin/privates/bookings?error=Player+not+found+in+this+family')
 
-  if (!player) {
-    redirect('/admin/privates/bookings?error=Player+not+found+in+this+family')
-  }
+  const { data: coach } = await supabase.from('coaches').select('name').eq('id', coachId).single()
+  const coachName = coach?.name ?? 'coach'
 
-  // Get coach name
-  const { data: coach } = await supabase
-    .from('coaches')
-    .select('name')
-    .eq('id', coachId)
-    .single()
-
-  // Calculate price (resolves family overrides via SECURITY DEFINER RPC)
   const { getPrivatePrice } = await import('@/lib/utils/private-booking')
   const priceCents = await getPrivatePrice(supabase, familyId, coachId, durationMinutes)
 
-  // Calculate end time
   const startMinutes = parseInt(startTime.split(':')[0]) * 60 + parseInt(startTime.split(':')[1])
   const endMinutes = startMinutes + durationMinutes
   const endTime = `${String(Math.floor(endMinutes / 60)).padStart(2, '0')}:${String(endMinutes % 60).padStart(2, '0')}`
 
-  // Create session
-  const { data: session, error: sessionError } = await supabase
-    .from('sessions')
-    .insert({
-      session_type: 'private',
-      date,
-      start_time: startTime,
-      end_time: endTime,
-      coach_id: coachId,
-      status: 'scheduled',
-      duration_minutes: durationMinutes,
-    })
-    .select('id')
-    .single()
-
-  if (sessionError || !session) {
-    redirect(`/admin/privates/bookings?error=${encodeURIComponent('Failed to create session')}`)
-  }
-
-  // Create booking (auto-confirmed since admin is booking)
   const { getSessionUser } = await import('@/lib/supabase/server')
   const adminUser = await getSessionUser()
+  const adminUserId = adminUser?.id ?? null
 
-  const { data: booking, error: bookingError } = await supabase
-    .from('bookings')
-    .insert({
-      family_id: familyId,
-      player_id: player.id,
-      session_id: session.id,
-      booking_type: 'private',
-      status: 'confirmed',
-      approval_status: 'approved',
-      auto_approved: true,
-      approved_by: adminUser?.id ?? null,
-      approved_at: new Date().toISOString(),
-      price_cents: priceCents,
-      duration_minutes: durationMinutes,
-      booked_by: adminUser?.id ?? null,
-    })
-    .select('id')
-    .single()
+  const first = await createPrivateInstance({
+    supabase,
+    familyId, player: { id: player.id, first_name: player.first_name },
+    coachId, coachName, date, startTime, endTime, durationMinutes,
+    priceCents, adminUserId,
+    isStanding: scheduleMode === 'standing',
+    parentBookingId: null,
+  })
+  if (!first.ok) redirect(`/admin/privates/bookings?error=${encodeURIComponent(first.error)}`)
 
-  if (bookingError || !booking) {
-    await supabase.from('sessions').delete().eq('id', session.id)
-    redirect(`/admin/privates/bookings?error=${encodeURIComponent('Failed to create booking')}`)
+  let count = 1
+  if (scheduleMode === 'standing') {
+    const { getStandingDates } = await import('@/lib/utils/private-booking')
+    const dayOfWeek = new Date(date + 'T12:00:00').getDay()
+    const futureDates = getStandingDates(dayOfWeek, date)
+
+    for (const futureDate of futureDates) {
+      const inst = await createPrivateInstance({
+        supabase,
+        familyId, player: { id: player.id, first_name: player.first_name },
+        coachId, coachName, date: futureDate, startTime, endTime, durationMinutes,
+        priceCents, adminUserId,
+        isStanding: true,
+        parentBookingId: first.bookingId,
+      })
+      if (inst.ok) count++
+    }
   }
 
-  // Create charge
-  const { createCharge, formatChargeDescription } = await import('@/lib/utils/billing')
-  await createCharge(supabase, {
-    familyId,
-    playerId: player.id,
-    type: 'private',
-    sourceType: 'enrollment',
-    sessionId: session.id,
-    bookingId: booking.id,
-    description: formatChargeDescription({
-      playerName: player.first_name,
-      label: `Private w/ ${coach?.name ?? 'coach'}`,
-      date,
-    }),
-    amountCents: priceCents,
-    status: 'confirmed',
-    createdBy: adminUser?.id ?? null,
-  })
-
   revalidatePath('/admin/privates/bookings')
-  redirect('/admin/privates/bookings?success=Private+lesson+booked')
+  revalidatePath('/admin/privates')
+  const msg = scheduleMode === 'standing'
+    ? `${count}+weekly+sessions+booked`
+    : 'Private+lesson+booked'
+  redirect(`/admin/privates/bookings?success=${msg}`)
 }
 
 // ── Admin: Shared Private (2 players, possibly different families) ─────
+
+async function createSharedPrivateInstance(args: {
+  supabase: Awaited<ReturnType<typeof createClient>>
+  familyId1: string
+  player1: { id: string; first_name: string }
+  familyId2: string
+  player2: { id: string; first_name: string }
+  coachId: string
+  coachName: string
+  date: string
+  startTime: string
+  endTime: string
+  durationMinutes: number
+  totalPriceCents: number
+  halfPrice: number
+  adminUserId: string | null
+  isStanding: boolean
+  parentBookingId: string | null
+}): Promise<{ ok: true; bookingId: string } | { ok: false; error: string }> {
+  const { supabase } = args
+  const { data: session } = await supabase
+    .from('sessions')
+    .insert({
+      session_type: 'private', date: args.date, start_time: args.startTime, end_time: args.endTime,
+      coach_id: args.coachId, status: 'scheduled', duration_minutes: args.durationMinutes,
+    })
+    .select('id')
+    .single()
+  if (!session) return { ok: false, error: 'Failed to create session' }
+
+  const { data: booking } = await supabase
+    .from('bookings')
+    .insert({
+      family_id: args.familyId1, player_id: args.player1.id,
+      second_player_id: args.player2.id, second_family_id: args.familyId2,
+      session_id: session.id, booking_type: 'private',
+      status: 'confirmed', approval_status: 'approved', auto_approved: true,
+      approved_by: args.adminUserId, approved_at: new Date().toISOString(),
+      price_cents: args.totalPriceCents, duration_minutes: args.durationMinutes,
+      booked_by: args.adminUserId,
+      is_standing: args.isStanding,
+      standing_parent_id: args.parentBookingId,
+    })
+    .select('id')
+    .single()
+  if (!booking) {
+    await supabase.from('sessions').delete().eq('id', session.id)
+    return { ok: false, error: 'Failed to create booking' }
+  }
+
+  const { createCharge, formatChargeDescription } = await import('@/lib/utils/billing')
+  await createCharge(supabase, {
+    familyId: args.familyId1, playerId: args.player1.id,
+    type: 'private', sourceType: 'enrollment',
+    sessionId: session.id, bookingId: booking.id,
+    description: formatChargeDescription({
+      playerName: args.player1.first_name,
+      label: `Shared private w/ ${args.coachName} (+ ${args.player2.first_name})`,
+      date: args.date,
+    }),
+    amountCents: args.halfPrice, status: 'confirmed', createdBy: args.adminUserId,
+  })
+  await createCharge(supabase, {
+    familyId: args.familyId2, playerId: args.player2.id,
+    type: 'private', sourceType: 'enrollment',
+    sessionId: session.id, bookingId: booking.id,
+    description: formatChargeDescription({
+      playerName: args.player2.first_name,
+      label: `Shared private w/ ${args.coachName} (+ ${args.player1.first_name})`,
+      date: args.date,
+    }),
+    amountCents: args.halfPrice, status: 'confirmed', createdBy: args.adminUserId,
+  })
+
+  return { ok: true, bookingId: booking.id }
+}
 
 export async function adminCreateSharedPrivate(formData: FormData) {
   await requireAdmin()
   const supabase = await createClient()
 
   const familyId1 = formData.get('family_id_1') as string
-  const playerName1 = (formData.get('player_name_1') as string)?.trim()
+  const playerId1 = formData.get('player_id_1') as string
   const familyId2 = formData.get('family_id_2') as string
-  const playerName2 = (formData.get('player_name_2') as string)?.trim()
+  const playerId2 = formData.get('player_id_2') as string
   const coachId = formData.get('coach_id') as string
   const date = formData.get('date') as string
   const startTime = formData.get('start_time') as string
   const durationMinutes = parseInt(formData.get('duration_minutes') as string)
+  const scheduleMode = (formData.get('schedule_mode') as string) || 'one_off'
 
-  if (!familyId1 || !playerName1 || !familyId2 || !playerName2 || !coachId || !date || !startTime || !durationMinutes) {
+  if (!familyId1 || !playerId1 || !familyId2 || !playerId2 || !coachId || !date || !startTime || !durationMinutes) {
     redirect('/admin/privates/bookings?error=All+fields+are+required')
   }
+  if (playerId1 === playerId2) {
+    redirect('/admin/privates/bookings?error=Pick+two+different+players')
+  }
 
-  // Find both players
-  const { data: player1 } = await supabase.from('players').select('id, first_name').eq('family_id', familyId1).ilike('first_name', playerName1).single()
-  if (!player1) redirect(`/admin/privates/bookings?error=${encodeURIComponent(`Player "${playerName1}" not found`)}`)
-
-  const { data: player2 } = await supabase.from('players').select('id, first_name').eq('family_id', familyId2).ilike('first_name', playerName2).single()
-  if (!player2) redirect(`/admin/privates/bookings?error=${encodeURIComponent(`Player "${playerName2}" not found`)}`)
+  // Verify both players belong to the claimed families
+  const { data: player1 } = await supabase.from('players').select('id, first_name').eq('id', playerId1).eq('family_id', familyId1).single()
+  if (!player1) redirect('/admin/privates/bookings?error=Player+1+not+found+in+selected+family')
+  const { data: player2 } = await supabase.from('players').select('id, first_name').eq('id', playerId2).eq('family_id', familyId2).single()
+  if (!player2) redirect('/admin/privates/bookings?error=Player+2+not+found+in+selected+family')
 
   const { data: coach } = await supabase.from('coaches').select('name').eq('id', coachId).single()
+  const coachName = coach?.name ?? 'coach'
 
-  // Calculate price — full price, split between families.
-  // Note: shared privates use family1's rate as the basis (admin's pick).
-  // If family2 has its own override, it does not apply on the shared session.
+  // Pricing: full price split per family. Use family 1's pricing rules for parity with 1-on-1; halve for charges.
   const { getPrivatePrice } = await import('@/lib/utils/private-booking')
   const totalPriceCents = await getPrivatePrice(supabase, familyId1, coachId, durationMinutes)
   const halfPrice = Math.round(totalPriceCents / 2)
@@ -698,66 +792,45 @@ export async function adminCreateSharedPrivate(formData: FormData) {
   const endMinutes = startMinutes + durationMinutes
   const endTime = `${String(Math.floor(endMinutes / 60)).padStart(2, '0')}:${String(endMinutes % 60).padStart(2, '0')}`
 
-  // Create one session
-  const { data: session } = await supabase
-    .from('sessions')
-    .insert({ session_type: 'private', date, start_time: startTime, end_time: endTime, coach_id: coachId, status: 'scheduled', duration_minutes: durationMinutes })
-    .select('id')
-    .single()
-
-  if (!session) redirect('/admin/privates/bookings?error=Failed+to+create+session')
-
   const { getSessionUser } = await import('@/lib/supabase/server')
   const adminUser = await getSessionUser()
+  const adminUserId = adminUser?.id ?? null
 
-  // Create booking with second player/family
-  const { data: booking } = await supabase
-    .from('bookings')
-    .insert({
-      family_id: familyId1, player_id: player1.id,
-      second_player_id: player2.id, second_family_id: familyId2,
-      session_id: session.id, booking_type: 'private',
-      status: 'confirmed', approval_status: 'approved', auto_approved: true,
-      approved_by: adminUser?.id ?? null, approved_at: new Date().toISOString(),
-      price_cents: totalPriceCents, duration_minutes: durationMinutes,
-      booked_by: adminUser?.id ?? null,
-    })
-    .select('id')
-    .single()
+  const first = await createSharedPrivateInstance({
+    supabase,
+    familyId1, player1: { id: player1.id, first_name: player1.first_name },
+    familyId2, player2: { id: player2.id, first_name: player2.first_name },
+    coachId, coachName, date, startTime, endTime, durationMinutes,
+    totalPriceCents, halfPrice, adminUserId,
+    isStanding: scheduleMode === 'standing',
+    parentBookingId: null,
+  })
+  if (!first.ok) redirect(`/admin/privates/bookings?error=${encodeURIComponent(first.error)}`)
 
-  if (!booking) {
-    await supabase.from('sessions').delete().eq('id', session.id)
-    redirect('/admin/privates/bookings?error=Failed+to+create+booking')
+  let count = 1
+  if (scheduleMode === 'standing') {
+    const { getStandingDates } = await import('@/lib/utils/private-booking')
+    const dayOfWeek = new Date(date + 'T12:00:00').getDay()
+    const futureDates = getStandingDates(dayOfWeek, date)
+
+    for (const futureDate of futureDates) {
+      const inst = await createSharedPrivateInstance({
+        supabase,
+        familyId1, player1: { id: player1.id, first_name: player1.first_name },
+        familyId2, player2: { id: player2.id, first_name: player2.first_name },
+        coachId, coachName, date: futureDate, startTime, endTime, durationMinutes,
+        totalPriceCents, halfPrice, adminUserId,
+        isStanding: true,
+        parentBookingId: first.bookingId,
+      })
+      if (inst.ok) count++
+    }
   }
 
-  // Create two charges — one per family, each for half
-  const { createCharge, formatChargeDescription } = await import('@/lib/utils/billing')
-  const coachName = coach?.name ?? 'coach'
-
-  await createCharge(supabase, {
-    familyId: familyId1, playerId: player1.id,
-    type: 'private', sourceType: 'enrollment',
-    sessionId: session.id, bookingId: booking.id,
-    description: formatChargeDescription({
-      playerName: player1.first_name,
-      label: `Shared private w/ ${coachName} (+ ${player2.first_name})`,
-      date,
-    }),
-    amountCents: halfPrice, status: 'confirmed', createdBy: adminUser?.id ?? null,
-  })
-
-  await createCharge(supabase, {
-    familyId: familyId2, playerId: player2.id,
-    type: 'private', sourceType: 'enrollment',
-    sessionId: session.id, bookingId: booking.id,
-    description: formatChargeDescription({
-      playerName: player2.first_name,
-      label: `Shared private w/ ${coachName} (+ ${player1.first_name})`,
-      date,
-    }),
-    amountCents: halfPrice, status: 'confirmed', createdBy: adminUser?.id ?? null,
-  })
-
   revalidatePath('/admin/privates/bookings')
-  redirect('/admin/privates/bookings?success=Shared+private+booked')
+  revalidatePath('/admin/privates')
+  const msg = scheduleMode === 'standing'
+    ? `${count}+weekly+shared+sessions+booked`
+    : 'Shared+private+booked'
+  redirect(`/admin/privates/bookings?success=${msg}`)
 }

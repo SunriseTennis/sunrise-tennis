@@ -151,13 +151,6 @@ export async function removeAvailability(availabilityId: string) {
   redirect('/coach/availability')
 }
 
-// Form-data wrapper for v2 bulk editor remove buttons.
-export async function removeAvailabilityFromForm(formData: FormData) {
-  const id = formData.get('id') as string
-  if (!id) redirect('/coach/availability?error=Missing+id')
-  await removeAvailability(id)
-}
-
 export async function addException(formData: FormData) {
   const { user, coachId } = await requireCoach()
   if (!coachId) redirect('/coach?error=No+coach+profile+found')
@@ -650,47 +643,45 @@ export async function addWalkInPlayer(sessionId: string, playerId: string, charg
   redirect(`/coach/schedule/${sessionId}`)
 }
 
-// ── Bulk Availability ──────────────────────────────────────────────────
+// ── Stage-and-Save Availability ────────────────────────────────────────
 
-export async function setAvailabilityBulk(formData: FormData) {
+export async function applyAvailabilityChanges(formData: FormData) {
   const { user, coachId } = await requireCoach()
   if (!coachId) redirect('/coach?error=No+coach+profile+found')
   const supabase = await createClient()
 
   const { checkRateLimitAsync } = await import('@/lib/utils/rate-limit')
-  if (!await checkRateLimitAsync(`avail-bulk:${user.id}`, 10, 60_000)) {
+  if (!await checkRateLimitAsync(`avail-apply:${user.id}`, 10, 60_000)) {
     redirect('/coach/availability?error=Too+many+requests')
   }
 
-  // Parse days[] and blocks[] from form data. Days come as multiple "day" entries (0..6).
-  // Blocks come as paired "block_start_N" / "block_end_N".
-  const days = formData.getAll('day').map(v => parseInt(v as string, 10)).filter(n => !isNaN(n))
-  const blocks: { start: string; end: string }[] = []
-  let i = 0
-  while (true) {
-    const s = formData.get(`block_start_${i}`)
-    const e = formData.get(`block_end_${i}`)
-    if (!s || !e) break
-    blocks.push({ start: s as string, end: e as string })
-    i++
+  const deletesRaw = (formData.get('deletes') as string) ?? ''
+  const insertsRaw = (formData.get('inserts') as string) ?? '[]'
+  const deleteIds = deletesRaw.split(',').filter(Boolean)
+  let inserts: { day: number; start: string; end: string }[] = []
+  try {
+    inserts = JSON.parse(insertsRaw)
+    if (!Array.isArray(inserts)) inserts = []
+  } catch {
+    inserts = []
   }
 
-  if (days.length === 0 || blocks.length === 0) {
-    redirect('/coach/availability?error=Pick+at+least+one+day+and+one+time+block')
+  if (deleteIds.length === 0 && inserts.length === 0) {
+    redirect('/coach/availability')
   }
 
-  const { error } = await supabase.rpc('set_coach_availability_bulk', {
+  const { error } = await supabase.rpc('apply_coach_availability_changes', {
     p_coach_id: coachId,
-    p_days: days,
-    p_blocks: blocks,
+    p_delete_ids: deleteIds,
+    p_inserts: inserts,
   })
 
   if (error) {
-    redirect(`/coach/availability?error=${encodeURIComponent(error.message ?? 'Failed to apply availability')}`)
+    redirect(`/coach/availability?error=${encodeURIComponent(error.message ?? 'Failed to save changes')}`)
   }
 
   revalidatePath('/coach/availability')
-  redirect('/coach/availability?success=Availability+updated')
+  redirect('/coach/availability?success=Availability+saved')
 }
 
 export async function addExceptionRange(formData: FormData) {

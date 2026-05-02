@@ -33,8 +33,6 @@ export function BookPrivateModal({ families, coaches }: Props) {
     return () => window.removeEventListener('keydown', onKey)
   }, [open])
 
-  const sharedFamilies = families.map(f => ({ id: f.id, display_id: f.display_id, family_name: f.family_name }))
-
   return (
     <>
       <Button onClick={() => setOpen(true)} size="sm">
@@ -94,7 +92,7 @@ export function BookPrivateModal({ families, coaches }: Props) {
               {mode === 'single' ? (
                 <AdminBookForm families={families} coaches={coaches} alwaysExpanded />
               ) : (
-                <SharedPrivateForm families={sharedFamilies} coaches={coaches} alwaysExpanded />
+                <SharedPrivateForm families={families} coaches={coaches} alwaysExpanded />
               )}
             </div>
           </div>

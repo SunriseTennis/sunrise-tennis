@@ -4,17 +4,14 @@ import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/empty-state'
 import { Clock } from 'lucide-react'
-import { BulkWeeklyEditor } from '@/components/coach-availability/bulk-weekly-editor'
+import { EditModeAvailabilityEditor } from '@/components/coach-availability/edit-mode-editor'
 import { RangeExceptionForm } from '@/components/coach-availability/range-exception-form'
 import { GroupedExceptionList } from '@/components/coach-availability/grouped-exception-list'
 import {
-  adminSetCoachAvailabilityBulk,
-  adminRemoveAvailabilityFromForm,
+  adminApplyCoachAvailabilityChanges,
   adminAddExceptionRange,
   adminRemoveExceptionGroup,
 } from '../actions'
-
-const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
 interface Coach {
   id: string
@@ -48,12 +45,6 @@ export function AdminAvailabilityManager({ coaches, selectedCoachId, windows, ex
   const router = useRouter()
   const selectedCoach = coaches.find(c => c.id === selectedCoachId)
 
-  const windowsByDay = DAY_NAMES.map((name, i) => ({
-    day: i,
-    name,
-    windows: (windows ?? []).filter(w => w.day_of_week === i),
-  }))
-
   return (
     <div className="space-y-6">
       {/* Coach selector */}
@@ -81,11 +72,15 @@ export function AdminAvailabilityManager({ coaches, selectedCoachId, windows, ex
       {selectedCoach && (
         <div className="grid gap-6 lg:grid-cols-3">
           <div className="lg:col-span-2">
-            <BulkWeeklyEditor
-              windowsByDay={windowsByDay}
+            <EditModeAvailabilityEditor
               coachId={selectedCoach.id}
-              onApply={adminSetCoachAvailabilityBulk}
-              onRemoveWindow={adminRemoveAvailabilityFromForm}
+              existingBlocks={(windows ?? []).map(w => ({
+                id: w.id,
+                day_of_week: w.day_of_week,
+                start_time: w.start_time,
+                end_time: w.end_time,
+              }))}
+              onSave={adminApplyCoachAvailabilityChanges}
             />
           </div>
           <div className="space-y-3">

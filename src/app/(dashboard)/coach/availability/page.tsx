@@ -1,16 +1,13 @@
 import { redirect } from 'next/navigation'
 import { createClient, requireCoach } from '@/lib/supabase/server'
-import { BulkWeeklyEditor } from '@/components/coach-availability/bulk-weekly-editor'
+import { EditModeAvailabilityEditor } from '@/components/coach-availability/edit-mode-editor'
 import { RangeExceptionForm } from '@/components/coach-availability/range-exception-form'
 import { GroupedExceptionList } from '@/components/coach-availability/grouped-exception-list'
 import {
-  setAvailabilityBulk,
-  removeAvailabilityFromForm,
+  applyAvailabilityChanges,
   addExceptionRange,
   removeExceptionGroup,
 } from '../actions'
-
-const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
 export default async function CoachAvailabilityPage({
   searchParams,
@@ -28,7 +25,7 @@ export default async function CoachAvailabilityPage({
   ] = await Promise.all([
     supabase
       .from('coach_availability')
-      .select('*')
+      .select('id, day_of_week, start_time, end_time')
       .eq('coach_id', coachId)
       .order('day_of_week')
       .order('start_time'),
@@ -39,13 +36,6 @@ export default async function CoachAvailabilityPage({
       .gte('exception_date', new Date().toISOString().split('T')[0])
       .order('exception_date'),
   ])
-
-  // Group windows by day
-  const windowsByDay = DAY_NAMES.map((name, i) => ({
-    day: i,
-    name,
-    windows: (windows ?? []).filter(w => w.day_of_week === i),
-  }))
 
   return (
     <div className="space-y-6">
@@ -73,11 +63,15 @@ export default async function CoachAvailabilityPage({
 
       <div className="animate-fade-up grid gap-6 lg:grid-cols-3" style={{ animationDelay: '80ms' }}>
         <div className="lg:col-span-2">
-          <BulkWeeklyEditor
-            windowsByDay={windowsByDay}
+          <EditModeAvailabilityEditor
             coachId={coachId!}
-            onApply={setAvailabilityBulk}
-            onRemoveWindow={removeAvailabilityFromForm}
+            existingBlocks={(windows ?? []).map(w => ({
+              id: w.id,
+              day_of_week: w.day_of_week,
+              start_time: w.start_time,
+              end_time: w.end_time,
+            }))}
+            onSave={applyAvailabilityChanges}
           />
         </div>
         <div className="space-y-3">
