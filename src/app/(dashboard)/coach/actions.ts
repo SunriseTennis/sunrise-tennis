@@ -615,12 +615,23 @@ export async function addWalkInPlayer(sessionId: string, playerId: string, charg
         .single()
 
       if (player?.family_id) {
-        // Get session price
-        const { getSessionPrice } = await import('@/lib/utils/billing')
-        const priceCents = await getSessionPrice(supabase, player.family_id, session.program_id, 'group')
+        // Player-aware price: morning-squad partner rule + 25% multi-group recalc.
+        // Walk-ins get the same multi-group treatment as casual bookings — the
+        // walk-in is "additional" iff the player has any other eligible enrolment.
+        const { getPlayerSessionPriceBreakdown, formatDiscountSuffix } = await import('@/lib/utils/player-pricing')
+        const { data: programRow } = await supabase
+          .from('programs')
+          .select('type')
+          .eq('id', session.program_id)
+          .single()
+        const breakdown = await getPlayerSessionPriceBreakdown(
+          supabase, player.family_id, session.program_id, programRow?.type ?? null, playerId,
+        )
+        const priceCents = breakdown.priceCents
 
         if (priceCents > 0) {
           const { createCharge } = await import('@/lib/utils/billing')
+          const suffix = formatDiscountSuffix({ multiGroupApplied: breakdown.multiGroupApplied, earlyPayPct: 0 })
           await createCharge(supabase, {
             familyId: player.family_id,
             playerId,
@@ -629,7 +640,7 @@ export async function addWalkInPlayer(sessionId: string, playerId: string, charg
             sourceId: sessionId,
             sessionId,
             programId: session.program_id,
-            description: 'Walk-in session',
+            description: suffix ? `Walk-in session (${suffix})` : 'Walk-in session',
             amountCents: priceCents,
             status: 'confirmed',
             createdBy: user.id,

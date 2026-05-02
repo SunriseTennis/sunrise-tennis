@@ -2477,6 +2477,10 @@ export type Database = {
         Returns: Json
       }
       claim_invitation: { Args: { p_token: string }; Returns: Json }
+      coach_can_read_player: {
+        Args: { coach_uid: string; target_player_id: string }
+        Returns: boolean
+      }
       create_booking_notification: {
         Args: {
           p_body: string
@@ -2598,6 +2602,18 @@ export type Database = {
         Returns: number
       }
       is_admin: { Args: { user_uuid: string }; Returns: boolean }
+      private_partner_summary: {
+        Args: { booking_ids: string[] }
+        Returns: {
+          booking_id: string
+          partner_booking_id: string
+          partner_family_id: string
+          partner_family_name: string
+          partner_first_name: string
+          partner_last_name: string
+          partner_player_id: string
+        }[]
+      }
       recalculate_family_balance: {
         Args: { target_family_id: string }
         Returns: number

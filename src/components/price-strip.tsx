@@ -23,7 +23,7 @@ const ROWS = [
     ballColors: ['#2B5EA7', '#1A2332'],
   },
   {
-    label: 'Morning squads (Tue/Thu)',
+    label: 'Morning squads (Tue/Wed)',
     meta: '6:45-8am — Advanced/Elite. $15 if both days',
     amount: 25,
     ballColors: ['#2B5EA7'],
@@ -81,9 +81,9 @@ export function PriceStrip() {
           <div className="border-t border-[#E0D0BE]/30 bg-[#FFFBF7] px-5 py-3.5 sm:px-6">
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <p className="text-xs text-[#556270]">
-                <span className="font-medium text-[#1A2332]">15% early-bird</span> until Mon 4 May ·
-                <span className="ml-1 font-medium text-[#1A2332]">10%</span> until Sun 10 May ·
-                <span className="ml-1 font-medium text-[#1A2332]">Multi-group discounts</span> apply
+                <span className="font-medium text-[#1A2332]">25% off the 2nd group, per child</span> ·
+                <span className="ml-1 font-medium text-[#1A2332]">15% early-bird</span> until Mon 4 May ·
+                <span className="ml-1 font-medium text-[#1A2332]">10%</span> until Sun 10 May
               </p>
               <Link
                 href="/login"

@@ -8,7 +8,7 @@ import { validateFormData, enrolFormSchema } from '@/lib/utils/validation'
 import { createCharge, getTermPrice, voidCharge, getExistingSessionCharge, formatChargeDescription } from '@/lib/utils/billing'
 import { getTermLabel } from '@/lib/utils/school-terms'
 import { isEligible, getActiveEarlyBird } from '@/lib/utils/eligibility'
-import { getMorningSquadSessionPrice } from '@/lib/utils/morning-squad-pricing'
+import { getPlayerSessionPrice, getPlayerSessionPriceBreakdown, formatDiscountSuffix } from '@/lib/utils/player-pricing'
 
 async function getParentFamilyId(): Promise<{ userId: string; familyId: string } | null> {
   const supabase = await createClient()
@@ -119,22 +119,27 @@ export async function enrolInProgram(programId: string, familyId: string, formDa
 
   const sessionsTotal = remainingSessions ?? 0
 
-  // Resolve pricing (family override > program default)
+  // Resolve pricing (family override > program default), apply morning-squad
+  // partner rule + 25% multi-group recalc per player. Term-fee path stays
+  // term-fee (locked at booking); per-session paths recalc on each event.
   let priceCents = 0
   let discountCents = 0
   let activeDiscountPct = 0
+  let multiGroupApplied = false
 
   if (isTermEnrollment && effectivePaymentOption === 'pay_now') {
     // Term fee (may be overridden per family)
     const termPrice = await getTermPrice(supabase, familyId, programId, program?.type)
-    const sessionPrice = await getMorningSquadSessionPrice(
+    const breakdown = await getPlayerSessionPriceBreakdown(
       supabase, familyId, programId, program?.type, playerId,
     )
 
-    // Use term fee if set, otherwise per-session * remaining sessions
-    priceCents = termPrice > 0 ? termPrice : sessionPrice * sessionsTotal
+    // Term-fee override is the locked-in deal; per-session × sessions otherwise
+    // (and per-session already has multi-group baked in).
+    priceCents = termPrice > 0 ? termPrice : breakdown.priceCents * sessionsTotal
+    multiGroupApplied = termPrice > 0 ? false : breakdown.multiGroupApplied
 
-    // Apply tiered early-pay discount (15% tier 1, 10% tier 2, 0% expired)
+    // Apply tiered early-pay discount (15% tier 1, 10% tier 2, 0% expired) on top
     const eb = getActiveEarlyBird({
       early_pay_discount_pct: program?.early_pay_discount_pct ?? null,
       early_bird_deadline: program?.early_bird_deadline ?? null,
@@ -146,15 +151,18 @@ export async function enrolInProgram(programId: string, familyId: string, formDa
       activeDiscountPct = eb.pct
     }
   } else if (isTermEnrollment && effectivePaymentOption === 'pay_later') {
-    // No charge now — charges created per-session via attendance
-    const sessionPrice = await getMorningSquadSessionPrice(
+    // Projected total only — actual charges created per-session at attendance
+    // time and re-priced then via the same helper (recalc).
+    const sessionPrice = await getPlayerSessionPrice(
       supabase, familyId, programId, program?.type, playerId,
     )
     priceCents = sessionPrice * sessionsTotal
   } else if (bookingType === 'casual') {
-    priceCents = await getMorningSquadSessionPrice(
+    const breakdown = await getPlayerSessionPriceBreakdown(
       supabase, familyId, programId, program?.type, playerId,
     )
+    priceCents = breakdown.priceCents
+    multiGroupApplied = breakdown.multiGroupApplied
   }
   // trial = free, priceCents stays 0
 
@@ -197,7 +205,7 @@ export async function enrolInProgram(programId: string, familyId: string, formDa
       description: formatChargeDescription({
         playerName: player.first_name,
         label: `${program?.name ?? 'Program'} - Term enrolment`,
-        suffix: discountCents > 0 ? `${activeDiscountPct}% early-pay discount` : null,
+        suffix: formatDiscountSuffix({ multiGroupApplied, earlyPayPct: discountCents > 0 ? activeDiscountPct : 0 }),
         term: getTermLabel(new Date()),
       }),
       amountCents: chargeAmount,
@@ -219,6 +227,7 @@ export async function enrolInProgram(programId: string, familyId: string, formDa
       description: formatChargeDescription({
         playerName: player.first_name,
         label: `${program?.name ?? 'Program'} - Casual session`,
+        suffix: formatDiscountSuffix({ multiGroupApplied, earlyPayPct: 0 }),
         term: getTermLabel(new Date()),
       }),
       amountCents: priceCents,
@@ -326,9 +335,10 @@ export async function bookSession(
   }
 
   for (const playerId of playerIds) {
-    const sessionPrice = await getMorningSquadSessionPrice(
+    const breakdown = await getPlayerSessionPriceBreakdown(
       supabase, auth.familyId, programId, program?.type, playerId,
     )
+    const sessionPrice = breakdown.priceCents
     // Check not already attending
     const { data: existingAttendance } = await supabase
       .from('attendances')
@@ -366,6 +376,7 @@ export async function bookSession(
         description: formatChargeDescription({
           playerName: playerNameById.get(playerId),
           label: program?.name ?? 'Session',
+          suffix: formatDiscountSuffix({ multiGroupApplied: breakdown.multiGroupApplied, earlyPayPct: 0 }),
           term: getTermLabel(session.date),
           date: session.date,
         }),

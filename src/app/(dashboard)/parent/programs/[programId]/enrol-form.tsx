@@ -11,6 +11,17 @@ import { CheckCircle, Clock, Check } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
 import { getActiveEarlyBird } from '@/lib/utils/eligibility'
 import { CreditChip } from '@/components/credit-chip'
+import { MultiGroupChip } from '@/components/multi-group-chip'
+import { MULTI_GROUP_DISCOUNT_PCT } from '@/lib/utils/player-pricing'
+
+type PlayerOption = {
+  id: string
+  name: string
+  firstName: string
+  level: string | null
+  /** True when enrolling this player in this program will trigger the 25% multi-group discount. */
+  willGetMultiGroupDiscount: boolean
+}
 
 export function EnrolForm({
   programId,
@@ -28,7 +39,7 @@ export function EnrolForm({
 }: {
   programId: string
   familyId: string
-  players: { id: string; name: string; level: string | null }[]
+  players: PlayerOption[]
   programLevel: string
   termFeeCents?: number | null
   perSessionCents?: number | null
@@ -55,10 +66,32 @@ export function EnrolForm({
   const hasDiscount = eb.pct > 0
   const activeDiscountPct = eb.pct
 
-  // Calculate prices — always from per-session × remaining × number of players
+  // Calculate prices — per-player, accounting for multi-group discount per player
   const playerCount = Math.max(selectedPlayerIds.length, 1)
-  const termPricePerPlayer = perSessionCents && remainingSessions ? perSessionCents * remainingSessions : null
-  const termPrice = termPricePerPlayer ? termPricePerPlayer * playerCount : null
+  const sessions = remainingSessions ?? 0
+  const playerById = new Map(players.map(p => [p.id, p]))
+  const discountFactor = 1 - MULTI_GROUP_DISCOUNT_PCT / 100
+
+  function effectivePerSession(player: PlayerOption | undefined, applyMultiGroup: boolean) {
+    if (!perSessionCents || !player) return perSessionCents ?? 0
+    return applyMultiGroup ? Math.round(perSessionCents * discountFactor) : perSessionCents
+  }
+
+  const selectedPlayers = selectedPlayerIds.map(id => playerById.get(id)).filter((p): p is PlayerOption => !!p)
+  const anySelectedGetsMultiGroup = selectedPlayers.some(p => p.willGetMultiGroupDiscount)
+  const multiGroupPlayerNames = selectedPlayers.filter(p => p.willGetMultiGroupDiscount).map(p => p.firstName)
+
+  // Term price (gross, no early-pay) summed per-selected-player with their per-player rate
+  const termPricePerPlayerGross = perSessionCents && sessions ? perSessionCents * sessions : null
+  const termPriceGross = termPricePerPlayerGross ? termPricePerPlayerGross * playerCount : null
+
+  const termPriceWithMultiGroup = perSessionCents && sessions && selectedPlayers.length > 0
+    ? selectedPlayers.reduce((sum, p) => sum + effectivePerSession(p, p.willGetMultiGroupDiscount) * sessions, 0)
+    : termPriceGross
+  const multiGroupSavings = (termPriceGross ?? 0) - (termPriceWithMultiGroup ?? 0)
+
+  // Backwards-compat aliases used downstream in the JSX
+  const termPrice = termPriceWithMultiGroup
   const discountedPrice = termPrice && hasDiscount
     ? Math.round(termPrice * (1 - activeDiscountPct / 100))
     : termPrice
@@ -213,7 +246,15 @@ export function EnrolForm({
           {bookingType === 'casual' && perSessionCents && (
             <div className="mt-3 rounded-lg bg-muted/50 px-4 py-2.5 text-sm">
               <span className="text-muted-foreground">Session fee: </span>
-              <span className="font-medium text-foreground tabular-nums">{formatCurrency(perSessionCents)}</span>
+              {anySelectedGetsMultiGroup ? (
+                <>
+                  <span className="font-medium text-foreground tabular-nums">{formatCurrency(Math.round(perSessionCents * discountFactor))}</span>
+                  <span className="ml-1.5 text-xs text-muted-foreground line-through tabular-nums">{formatCurrency(perSessionCents)}</span>
+                  <span className="ml-1.5 text-xs font-medium text-success">{MULTI_GROUP_DISCOUNT_PCT}% off</span>
+                </>
+              ) : (
+                <span className="font-medium text-foreground tabular-nums">{formatCurrency(perSessionCents)}</span>
+              )}
             </div>
           )}
           {bookingType === 'trial' && (
@@ -232,6 +273,19 @@ export function EnrolForm({
               className="mt-1"
             />
           </div>
+
+          {anySelectedGetsMultiGroup && bookingType !== 'trial' && (
+            <div className="mt-3">
+              <MultiGroupChip
+                state="applied"
+                playerName={multiGroupPlayerNames.length === 1 ? multiGroupPlayerNames[0] : null}
+                savingsCents={bookingType === 'casual'
+                  ? selectedPlayers.filter(p => p.willGetMultiGroupDiscount).length * Math.round((perSessionCents ?? 0) * (MULTI_GROUP_DISCOUNT_PCT / 100))
+                  : multiGroupSavings}
+                size="md"
+              />
+            </div>
+          )}
 
           {confirmedCreditCents > 0 && bookingType === 'term' && (discountedPrice ?? termPrice) && (
             <div className="mt-3">

@@ -280,6 +280,30 @@ export default async function Home() {
       {/* ── Price Strip ───────────────────────────────────────────── */}
       <PriceStrip />
 
+      {/* ── Multi-Group Discount Spotlight ────────────────────────── */}
+      <section className="bg-gradient-to-b from-[#FFF6ED] to-[#FFEAD8] px-4 py-10 sm:py-14">
+        <div className="mx-auto max-w-3xl">
+          <div className="overflow-hidden rounded-2xl border border-[#E0D0BE]/40 bg-white shadow-sm">
+            <div className="flex flex-col gap-4 px-5 py-5 sm:flex-row sm:items-center sm:px-7 sm:py-6">
+              <div className="flex size-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-[#E87450] to-[#F7CD5D] text-white shadow-md">
+                <Heart className="size-6" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <h2 className="text-lg font-bold text-[#1A2332] sm:text-xl">
+                  More than one group? Save 25%.
+                </h2>
+                <p className="mt-1 text-sm leading-relaxed text-[#556270]">
+                  Every additional group your child enrols in is automatically <span className="font-semibold text-[#1A2332]">25% off — for the whole term</span>. Per child, stacks with our 15% early-bird. Designed to back the kids who are seriously into their tennis.
+                </p>
+                <p className="mt-2 text-xs text-[#8899A6]">
+                  Example: Green Ball + Friday Night Squad for one player → <span className="font-semibold text-[#1A2332] tabular-nums">$25 + $22.50/wk</span> instead of $25 + $30.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* ── Programs ──────────────────────────────────────────────── */}
       <ProgramsSection programs={programs} />
 

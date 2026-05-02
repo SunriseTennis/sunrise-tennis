@@ -21,11 +21,11 @@ import {
 import {
   createCharge,
   voidCharge,
-  getSessionPrice,
   getExistingSessionCharge,
   recalculateBalance,
   formatChargeDescription,
 } from '@/lib/utils/billing'
+import { getPlayerSessionPriceBreakdown, formatDiscountSuffix } from '@/lib/utils/player-pricing'
 import { getTermLabel } from '@/lib/utils/school-terms'
 
 // ── Families ────────────────────────────────────────────────────────────
@@ -675,7 +675,11 @@ export async function updateAttendance(sessionId: string, formData: FormData) {
       const familyId = booking.family_id
       const paymentOption = booking.payment_option
       const existingCharge = await getExistingSessionCharge(supabase, sessionId, entry.playerId)
-      const sessionPrice = await getSessionPrice(supabase, familyId, programId, program?.type)
+      // Player-aware: applies morning-squad partner rule + 25% multi-group recalc.
+      const priceBreakdown = await getPlayerSessionPriceBreakdown(
+        supabase, familyId, programId, program?.type, entry.playerId,
+      )
+      const sessionPrice = priceBreakdown.priceCents
 
       if (paymentOption === 'pay_later') {
         // ── Pay Later: charge per session as attended ──
@@ -693,6 +697,7 @@ export async function updateAttendance(sessionId: string, formData: FormData) {
               description: formatChargeDescription({
                 playerName: playerNames.get(entry.playerId),
                 label: program?.name ?? 'Session',
+                suffix: formatDiscountSuffix({ multiGroupApplied: priceBreakdown.multiGroupApplied, earlyPayPct: 0 }),
                 term: termLabel,
                 date: sessionDate,
               }),
@@ -717,7 +722,7 @@ export async function updateAttendance(sessionId: string, formData: FormData) {
               .in('session_id', (await supabase.from('sessions').select('id').eq('program_id', programId)).data?.map(s => s.id) ?? [])
 
             if ((noshowCount ?? 0) > 2) {
-              // 3rd+ no-show: fully charged
+              // 3rd+ no-show: fully charged (still applies multi-group recalc)
               await createCharge(supabase, {
                 familyId,
                 playerId: entry.playerId,
@@ -730,7 +735,7 @@ export async function updateAttendance(sessionId: string, formData: FormData) {
                 description: formatChargeDescription({
                   playerName: playerNames.get(entry.playerId),
                   label: program?.name ?? 'Session',
-                  suffix: 'No Show',
+                  suffix: priceBreakdown.multiGroupApplied ? `No Show + ${25}% multi-group` : 'No Show',
                   term: termLabel,
                   date: sessionDate,
                 }),
@@ -949,8 +954,12 @@ export async function cancelSession(sessionId: string, formData: FormData) {
           // Void the existing charge
           await voidCharge(supabase, existingCharge.id, familyId)
         } else if (booking.payment_option === 'pay_now') {
-          // Create credit for pre-paid session
-          const sessionPrice = await getSessionPrice(supabase, familyId, programId, program?.type)
+          // Create credit for pre-paid session — at the player's current per-session
+          // rate (multi-group + morning-squad partner aware) so credit reflects
+          // what they're effectively paying per session, not the full program price.
+          const { priceCents: sessionPrice } = await getPlayerSessionPriceBreakdown(
+            supabase, familyId, programId, program?.type, playerId,
+          )
           if (!existingCharge) {
             await createCharge(supabase, {
               familyId,
@@ -1082,7 +1091,9 @@ export async function rainOutToday() {
               .eq('id', session.program_id)
               .single()
 
-            const sessionPrice = await getSessionPrice(supabase, booking.family_id, session.program_id, program?.type)
+            const { priceCents: sessionPrice } = await getPlayerSessionPriceBreakdown(
+              supabase, booking.family_id, session.program_id, program?.type, rosterEntry.player_id,
+            )
             if (!existingCharge) {
               await createCharge(supabase, {
                 familyId: booking.family_id,
