@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useMemo, useRef, useEffect, useCallback } from 'react'
+import { createPortal } from 'react-dom'
 import Link from 'next/link'
 import { ChevronLeft, ChevronRight, X, Clock, Users, DollarSign, CheckCircle, ExternalLink, Loader2, CalendarDays, List } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
@@ -220,50 +221,65 @@ export type SessionEnrolledMap = Record<string, string[]>
 /** Map of programId → Set of family playerIds eligible to enrol/book that program */
 export type EligiblePlayersMap = Record<string, string[]>
 
-/** Popup container that auto-clamps to stay within calendar bounds */
+/** Popup container — portaled to <body> with viewport-fixed positioning so
+ *  it never gets clipped by the calendar wrapper's overflow:hidden. The
+ *  wrapper's clip is intentional (rounds event-cell corners in week view),
+ *  so we escape via portal rather than removing it.
+ *
+ *  popupPos coords are viewport-absolute (set by handleEventClick).
+ */
 function PopupContainer({
   popupRef,
-  calendarRef,
   popupPos,
   children,
 }: {
   popupRef: React.RefObject<HTMLDivElement | null>
-  calendarRef: React.RefObject<HTMLDivElement | null>
   popupPos: { top: number; left: number; preferRight: boolean }
   children: React.ReactNode
 }) {
   const [adjustedTop, setAdjustedTop] = useState<number>(Math.max(8, popupPos.top - 80))
+  const [adjustedLeft, setAdjustedLeft] = useState<number>(popupPos.left)
 
   useEffect(() => {
     const popup = popupRef.current
-    const calendar = calendarRef.current
-    if (!popup || !calendar) return
+    if (!popup) return
 
-    // Wait for content to render
     requestAnimationFrame(() => {
       const popupHeight = popup.offsetHeight
-      const calendarHeight = calendar.offsetHeight
+      const popupWidth = popup.offsetWidth
+      const vh = window.innerHeight
+      const vw = window.innerWidth
+
+      // Top: try to center vertically on click (popupPos.top - 80 is the
+      // existing offset that puts the click point ~80px below popup top).
+      // Clamp inside [8, vh - popupHeight - 8] so it stays on-screen.
       const idealTop = Math.max(8, popupPos.top - 80)
-      const maxTop = calendarHeight - popupHeight - 8
+      const maxTop = Math.max(8, vh - popupHeight - 8)
+      setAdjustedTop(Math.min(idealTop, maxTop))
 
-      setAdjustedTop(Math.max(8, Math.min(idealTop, maxTop)))
+      // Left: preferRight means the click was on the right half of the
+      // calendar — anchor the popup to the right edge with 8px margin.
+      // Otherwise position to the right of the click, clamped so the popup
+      // doesn't overflow the right edge of the viewport.
+      if (popupPos.preferRight) {
+        setAdjustedLeft(Math.max(8, vw - popupWidth - 8))
+      } else {
+        setAdjustedLeft(Math.max(8, Math.min(popupPos.left, vw - popupWidth - 8)))
+      }
     })
-  }, [popupRef, calendarRef, popupPos])
+  }, [popupRef, popupPos])
 
-  return (
+  if (typeof document === 'undefined') return null
+
+  return createPortal(
     <div
       ref={popupRef}
-      className="absolute z-50 w-72 max-h-[70vh] overflow-y-auto animate-fade-up rounded-xl border border-border bg-white shadow-elevated"
-      style={{
-        top: adjustedTop,
-        ...(popupPos.preferRight
-          ? { right: 8 }
-          : { left: Math.min(popupPos.left, (calendarRef.current?.offsetWidth ?? 600) - 296) }
-        ),
-      }}
+      className="fixed z-50 w-72 max-h-[70vh] overflow-y-auto animate-fade-up rounded-xl border border-border bg-white shadow-elevated"
+      style={{ top: adjustedTop, left: adjustedLeft }}
     >
       {children}
-    </div>
+    </div>,
+    document.body,
   )
 }
 
@@ -669,8 +685,12 @@ export function WeeklyCalendar({
     const btnRect = buttonEl.getBoundingClientRect()
     if (!calRect) return
 
-    const top = btnRect.top - calRect.top + btnRect.height / 2
-    const left = btnRect.right - calRect.left + 8
+    // Viewport-absolute coords — popup is portaled to <body> with
+    // position: fixed, so the visual reference is the viewport, not the
+    // calendar wrapper. preferRight is still calendar-relative because
+    // it's about which side of the event sits visually nearer the edge.
+    const top = btnRect.top + btnRect.height / 2
+    const left = btnRect.right + 8
     const preferRight = btnRect.left - calRect.left > calRect.width / 2
 
     setPopupEvent(event)
@@ -1135,7 +1155,6 @@ export function WeeklyCalendar({
       {popupEvent && popupPos && (
         <PopupContainer
           popupRef={popupRef}
-          calendarRef={calendarRef}
           popupPos={popupPos}
         >
           {renderPopup ? (

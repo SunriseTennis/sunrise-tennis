@@ -131,7 +131,7 @@ export default async function ParentTeamDetailPage({
   return (
     <div className="space-y-5">
       {/* ── Hero ── */}
-      <ImageHero src="/images/tennis/hero-sunset.jpg" alt="Tennis court">
+      <ImageHero>
         <div>
           <Link
             href="/parent/teams"

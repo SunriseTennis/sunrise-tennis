@@ -129,7 +129,7 @@ export default async function ParentSettingsPage({
   return (
     <div className="space-y-5">
       {/* ── Hero ── */}
-      <ImageHero src="/images/tennis/hero-sunset.jpg" alt="Tennis court">
+      <ImageHero>
         <div className="flex items-center gap-3">
           <div className="flex size-10 items-center justify-center rounded-xl bg-white/15 backdrop-blur-sm">
             <Settings className="size-5" />

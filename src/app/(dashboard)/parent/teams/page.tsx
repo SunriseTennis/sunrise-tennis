@@ -128,7 +128,7 @@ export default async function ParentTeamsPage() {
   return (
     <div className="space-y-5">
       {/* ── Hero ── */}
-      <ImageHero src="/images/tennis/hero-sunset.jpg" alt="Tennis court">
+      <ImageHero>
         <div>
           <p className="text-sm font-medium text-white/80">Competition</p>
           <h1 className="text-2xl font-bold">Teams</h1>

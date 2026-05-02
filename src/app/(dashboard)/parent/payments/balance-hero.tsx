@@ -17,7 +17,7 @@ export function BalanceHero({
   const balanceCents = confirmedBalanceCents
 
   return (
-    <ImageHero src="/images/tennis/hero-sunset.jpg" alt="Tennis court">
+    <ImageHero>
       <div className="flex items-center gap-2">
         <CreditCard className="size-5 text-white/80" />
         <p className="text-sm font-medium text-white/80">

@@ -105,7 +105,7 @@ export default async function ParentProgramDetailPage({
   return (
     <div className="space-y-5">
       {/* ── Hero ── */}
-      <ImageHero src="/images/tennis/hero-sunset.jpg" alt="Tennis coaching">
+      <ImageHero>
         <div>
           <Link
             href="/parent/programs"

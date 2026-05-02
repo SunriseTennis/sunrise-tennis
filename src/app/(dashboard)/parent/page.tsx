@@ -253,7 +253,7 @@ export default async function ParentDashboard() {
   return (
     <div className="space-y-6">
       {/* ── Hero Banner ── */}
-      <ImageHero src="/images/tennis/hero-sunset.jpg" alt="Tennis court at golden hour">
+      <ImageHero>
         <div className="flex items-center justify-between">
           <div>
             <p className="text-sm font-medium text-white/80">Welcome back</p>
@@ -483,6 +483,7 @@ export default async function ParentDashboard() {
               })}
               nextJumpDate={nextSession?.date}
               nextJumpLabel="Next session"
+              hideNextTerm
             />
           </div>
         ) : (

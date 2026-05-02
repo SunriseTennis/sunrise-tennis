@@ -69,7 +69,7 @@ export default async function ParentMessagesPage({
 
   return (
     <div className="space-y-6">
-      <ImageHero src="/images/tennis/hero-sunset.jpg" alt="Tennis court">
+      <ImageHero>
         <div className="flex items-center justify-between">
           <div>
             <p className="text-sm font-medium text-white/80">Messages</p>

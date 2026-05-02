@@ -133,6 +133,7 @@ export function EnrolledCalendar({
   onCancelPrivate,
   nextJumpDate,
   nextJumpLabel,
+  hideNextTerm,
 }: {
   enrollments: Enrollment[]
   sessions: SessionData[]
@@ -144,6 +145,7 @@ export function EnrolledCalendar({
   onCancelPrivate?: (bookingId: string) => Promise<{ error?: string }>
   nextJumpDate?: string
   nextJumpLabel?: string
+  hideNextTerm?: boolean
 }) {
   const router = useRouter()
   const [colorMode, setColorMode] = useState<ColorMode>('player')
@@ -394,6 +396,7 @@ export function EnrolledCalendar({
         hideCapacity
         nextJumpDate={nextJumpDate}
         nextJumpLabel={nextJumpLabel}
+        hideNextTerm={hideNextTerm}
         onBookSession={async (sid, pid, pids) => {
           const r = await bookSession(sid, pid, pids)
           router.refresh()

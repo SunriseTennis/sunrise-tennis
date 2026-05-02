@@ -149,7 +149,7 @@ export default async function ParentBookingsPage({
 
   return (
     <div className="space-y-6">
-      <ImageHero src="/images/tennis/coaching-1on1.jpg" alt="Private tennis coaching">
+      <ImageHero>
         <div>
           <p className="text-sm font-medium text-white/80">Private Lessons</p>
           <h1 className="text-2xl font-bold">Book &amp; Manage</h1>

@@ -72,6 +72,14 @@ const TYPE_PILL_STYLES: Record<string, { active: string; inactive: string }> = {
   competition: { active: 'bg-amber-500 text-white shadow-sm', inactive: 'bg-amber-100 text-amber-700 hover:bg-amber-200' },
 }
 
+/** Calendar-tab type toggles use a single primary-blue style across all types
+ *  so the calendar reads as one coherent surface, not four colour-coded ones.
+ *  Per Maxim 02-May-2026: same colour for groups/squads/comps/schools. */
+const CAL_TYPE_TOGGLE = {
+  active: 'bg-[#2B5EA7] text-white shadow-sm border-[#2B5EA7]',
+  inactive: 'bg-[#2B5EA7]/10 text-[#2B5EA7] border-[#2B5EA7]/20 hover:bg-[#2B5EA7]/20',
+}
+
 type Program = {
   id: string
   name: string
@@ -316,22 +324,6 @@ export function ParentProgramFilters({
     return map
   }, [programs, playerIds])
 
-  // Programs matching family player levels (recommended) — includes composite levels
-  const recommendedProgramIds = useMemo(() => {
-    const ids = new Set<string>()
-    programs.forEach(p => {
-      if (!p.level) return
-      // Check if any player level matches the program level (exact or within composite)
-      for (const pl of playerLevels) {
-        if (p.level === pl || p.level.includes(pl)) {
-          ids.add(p.id)
-          break
-        }
-      }
-    })
-    return ids
-  }, [programs, playerLevels])
-
   // Attendance lookup: sessionId → booking status + per-player status map
   const sessionAttendanceMap = useMemo(() => {
     const map = new Map<string, { booked: boolean; allAway: boolean; bookedPlayerIds: Set<string>; awayPlayerIds: Set<string>; playerStatus: Record<string, string> }>()
@@ -452,9 +444,11 @@ export function ParentProgramFilters({
         // Apply type filter
         if (!calendarTypes.has(prog.type)) return false
 
-        // "For you" filter further narrows to enrolled or recommended.
+        // "For you" filter narrows to programs at least one family player is
+        // eligible for (or already enrolled in). Uses full classification +
+        // gender + track gates, not just ball-color match.
         if (calendarFilter === 'mine') {
-          return enrolledProgramIds.has(s.program_id) || recommendedProgramIds.has(s.program_id)
+          return enrolledProgramIds.has(s.program_id) || eligibleProgramIds.has(s.program_id)
         }
         return true
       })
@@ -513,7 +507,40 @@ export function ParentProgramFilters({
           playerAttendance: sessionAttendanceMap.get(s.id)?.playerStatus,
         }
       })
-  }, [sessions, programMap, calendarFilter, calendarTypes, enrolledProgramIds, recommendedProgramIds, sessionAttendanceMap, remainingSessionsMap])
+  }, [sessions, programMap, calendarFilter, calendarTypes, enrolledProgramIds, eligibleProgramIds, strictHiddenProgramIds, sessionAttendanceMap, remainingSessionsMap])
+
+  // Earliest future session date in the current calendar view. Drives both
+  // the "Next available" jump button (label) AND the auto-jump on first
+  // mount when this real-world week has nothing in it.
+  const todayStrForJump = new Date().toISOString().split('T')[0]
+  const nextAvailableDate = useMemo(() => {
+    const futureDates = calendarEvents
+      .map(e => e.date)
+      .filter((d): d is string => !!d && d >= todayStrForJump)
+      .sort()
+    return futureDates[0]
+  }, [calendarEvents, todayStrForJump])
+
+  // Pass `initialJumpDate` only when *this* week is empty — otherwise the
+  // user lands on "this week" and the calendar's existing default behaviour
+  // wins. Computed once at render; the calendar ignores it after first mount.
+  const initialJumpDate = useMemo(() => {
+    if (!nextAvailableDate) return undefined
+    // Get this week's Monday and Sunday in YYYY-MM-DD
+    const now = new Date()
+    const day = now.getDay()
+    const diff = day === 0 ? -6 : 1 - day
+    const monday = new Date(now)
+    monday.setDate(now.getDate() + diff)
+    monday.setHours(0, 0, 0, 0)
+    const sunday = new Date(monday)
+    sunday.setDate(monday.getDate() + 6)
+    const fmt = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    const monStr = fmt(monday)
+    const sunStr = fmt(sunday)
+    const thisWeekHasEvents = calendarEvents.some(e => e.date && e.date >= monStr && e.date <= sunStr)
+    return thisWeekHasEvents ? undefined : nextAvailableDate
+  }, [calendarEvents, nextAvailableDate])
 
   // "All" view shows the full catalogue minus strict-hide. "For you" narrows
   // to programs with at least one eligible family player. Cards in "All" mode
@@ -648,8 +675,8 @@ export function ParentProgramFilters({
                 }}
                   className={cn('rounded-full px-2.5 py-1 text-[11px] font-medium capitalize transition-all border',
                     isOn
-                      ? (TYPE_PILL_STYLES[t]?.active ?? 'bg-primary text-white shadow-sm')
-                      : (TYPE_PILL_STYLES[t]?.inactive ?? 'bg-muted text-muted-foreground') + ' line-through opacity-60'
+                      ? CAL_TYPE_TOGGLE.active
+                      : CAL_TYPE_TOGGLE.inactive + ' line-through opacity-60'
                   )}
                 >
                   {label}
@@ -665,6 +692,10 @@ export function ParentProgramFilters({
               sessionEnrolledMap={sessionEnrolledMap}
               eligiblePlayersMap={eligiblePlayersByProgram as EligiblePlayersMap}
               hideCapacity
+              hideNextTerm
+              nextJumpDate={nextAvailableDate}
+              nextJumpLabel="Next available"
+              initialJumpDate={initialJumpDate}
               onBookSession={async (sid, pid, pids) => {
                 const r = await bookSession(sid, pid, pids)
                 router.refresh()

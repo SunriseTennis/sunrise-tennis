@@ -69,7 +69,7 @@ export default async function ParentEventsPage() {
   return (
     <div className="space-y-5">
       {/* ── Hero ── */}
-      <ImageHero src="/images/tennis/hero-sunset.jpg" alt="Tennis court">
+      <ImageHero>
         <div>
           <p className="text-sm font-medium text-white/80">Community</p>
           <h1 className="text-2xl font-bold">Club Events</h1>

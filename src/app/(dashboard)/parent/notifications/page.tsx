@@ -38,7 +38,7 @@ export default async function NotificationsPage() {
   return (
     <div className="space-y-6">
       {/* ── Hero Banner ── */}
-      <ImageHero src="/images/tennis/hero-sunset.jpg" alt="Tennis court">
+      <ImageHero>
         <div className="flex items-center justify-between">
           <div>
             <p className="text-sm font-medium text-white/80">Notifications</p>

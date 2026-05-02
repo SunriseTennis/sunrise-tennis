@@ -121,7 +121,7 @@ export default async function ParentPlayerDetailPage({ params }: { params: Promi
   return (
     <div className="max-w-3xl space-y-5">
       {/* ── Hero Header ── */}
-      <ImageHero src="/images/tennis/profile-bg.jpg" alt="Tennis player">
+      <ImageHero>
         {/* Back button */}
         <Link
           href="/parent"
