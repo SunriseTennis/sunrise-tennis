@@ -321,8 +321,8 @@ export default async function Home() {
             {/* Image side */}
             <div className="relative hidden lg:col-span-2 lg:block">
               <Image
-                src="/images/tennis/coaching-1on1.jpg"
-                alt="Tennis coaching at sunset"
+                src="/images/somerton/court-1.jpg"
+                alt="Somerton Park Tennis Club courts"
                 fill
                 className="object-cover"
                 sizes="40vw"
@@ -373,8 +373,8 @@ export default async function Home() {
             {/* Image */}
             <div className="relative aspect-[4/3] overflow-hidden rounded-2xl shadow-lg">
               <Image
-                src="/images/tennis/hero-sunset.jpg"
-                alt="Tennis at sunset"
+                src="/images/somerton/court-2.jpg"
+                alt="Somerton Park Tennis Club"
                 fill
                 className="object-cover"
                 sizes="(max-width: 1024px) 100vw, 50vw"
