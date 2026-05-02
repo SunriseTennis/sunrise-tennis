@@ -3,9 +3,9 @@
 import { useState, useMemo } from 'react'
 import { formatCurrency } from '@/lib/utils/currency'
 import { formatDate } from '@/lib/utils/dates'
-import { StatusBadge } from '@/components/status-badge'
 import { EmptyState } from '@/components/empty-state'
-import { CreditCard, ChevronDown, ChevronRight, CheckCircle2, Clock, CloudRain, XCircle } from 'lucide-react'
+import { CreditCard, ChevronDown, CheckCircle2, Clock, CloudRain, XCircle } from 'lucide-react'
+import { cn } from '@/lib/utils/cn'
 
 // SA school terms 2026 (approximate)
 const TERMS: { label: string; start: string; end: string }[] = [
@@ -21,7 +21,6 @@ function getTermForDate(dateStr: string): string {
   for (const t of TERMS) {
     if (d >= t.start && d <= t.end) return t.label
   }
-  // Holiday period — assign to nearest upcoming term
   for (const t of TERMS) {
     if (d < t.start) return t.label
   }
@@ -65,81 +64,98 @@ function SessionStatusIcon({ status }: { status: string | null }) {
   }
 }
 
-/** Strip trailing date pattern like " - 2026-04-06" */
 function cleanDescription(desc: string): string {
   return desc.replace(/\s*-\s*\d{4}-\d{2}-\d{2}\s*$/, '')
 }
 
-function PaymentRow({ payment }: { payment: Payment }) {
+function methodLabel(method: string): string {
+  return method.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
+}
+
+function PaymentCard({ payment }: { payment: Payment }) {
   const [expanded, setExpanded] = useState(false)
-  const hasAllocations = payment.allocations.length > 0
+  const allocCount = payment.allocations.length
+  const hasAllocations = allocCount > 0
 
   return (
-    <tr className="group">
-      <td colSpan={5} className="p-0">
-        <button
-          onClick={() => hasAllocations && setExpanded(!expanded)}
-          className={`flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm ${
-            hasAllocations ? 'hover:bg-muted/30 cursor-pointer' : ''
-          } transition-colors`}
-        >
-          <span className="w-24 shrink-0 tabular-nums text-muted-foreground">
-            {payment.date ? formatDate(payment.date) : '-'}
-          </span>
-          <span className="flex-1 min-w-0 truncate text-foreground">
+    <div>
+      <button
+        type="button"
+        onClick={() => hasAllocations && setExpanded(!expanded)}
+        disabled={!hasAllocations}
+        className={cn(
+          'flex w-full items-start gap-3 px-4 py-3 text-left transition-colors',
+          hasAllocations && 'hover:bg-muted/20 cursor-pointer',
+          expanded && 'bg-muted/10',
+        )}
+      >
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-xs text-muted-foreground tabular-nums">
+              {payment.date ? formatDate(payment.date) : '-'}
+            </span>
+            <span className="inline-flex items-center rounded-full border border-border bg-muted/40 px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+              {methodLabel(payment.method)}
+            </span>
+            {hasAllocations && (
+              <span className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-800">
+                Applied to {allocCount}
+              </span>
+            )}
+          </div>
+          <p className="mt-1 text-sm text-foreground break-words">
             {payment.description}
-          </span>
-          <span className="hidden sm:inline capitalize text-muted-foreground w-24 shrink-0">
-            {payment.method.replace('_', ' ')}
-          </span>
-          <span className="w-20 shrink-0 text-right tabular-nums font-medium text-success">
+          </p>
+        </div>
+        <div className="flex items-center gap-1.5 shrink-0">
+          <span className="tabular-nums font-semibold text-success">
             {formatCurrency(payment.amountCents)}
           </span>
-          <span className="w-5 shrink-0">
-            {hasAllocations && (
-              expanded
-                ? <ChevronDown className="size-3.5 text-muted-foreground" />
-                : <ChevronRight className="size-3.5 text-muted-foreground" />
-            )}
-          </span>
-        </button>
+          {hasAllocations && (
+            <ChevronDown className={cn('size-3.5 text-muted-foreground transition-transform', expanded && 'rotate-180')} />
+          )}
+        </div>
+      </button>
 
-        {expanded && payment.allocations.length > 0 && (
-          <div className="border-t border-border/50 bg-muted/20 px-4 py-2">
-            <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground mb-1">
-              Applied to
-            </p>
+      {expanded && hasAllocations && (
+        <div className="border-t border-border/30 bg-muted/5 px-4 py-2.5">
+          <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground mb-1.5">
+            Applied to
+          </p>
+          <div className="space-y-1.5">
             {payment.allocations.map((alloc, i) => (
-              <div key={i} className="flex items-center justify-between py-1 text-xs">
-                <div className="flex items-center gap-1.5 min-w-0 flex-1">
-                  <SessionStatusIcon status={alloc.sessionStatus} />
-                  <span className="truncate text-foreground">{cleanDescription(alloc.chargeDescription)}</span>
-                  {alloc.sessionDate && (
-                    <span className="text-muted-foreground shrink-0">
-                      ({formatDate(alloc.sessionDate)})
-                    </span>
-                  )}
+              <div key={i} className="flex items-start justify-between gap-2 text-xs">
+                <div className="flex items-start gap-1.5 min-w-0 flex-1">
+                  <span className="mt-0.5 shrink-0">
+                    <SessionStatusIcon status={alloc.sessionStatus} />
+                  </span>
+                  <div className="min-w-0">
+                    <p className="text-foreground break-words">{cleanDescription(alloc.chargeDescription)}</p>
+                    {alloc.sessionDate && (
+                      <p className="text-muted-foreground tabular-nums">
+                        {formatDate(alloc.sessionDate)}
+                      </p>
+                    )}
+                  </div>
                 </div>
-                <span className="tabular-nums text-foreground shrink-0 ml-2">
+                <span className="tabular-nums text-foreground shrink-0">
                   {formatCurrency(alloc.amountCents)}
                 </span>
               </div>
             ))}
           </div>
-        )}
-      </td>
-    </tr>
+        </div>
+      )}
+    </div>
   )
 }
 
 export function PaymentHistory({ payments }: { payments: Payment[] }) {
-  // Build available terms from payment dates
   const availableTerms = useMemo(() => {
     const termSet = new Set<string>()
     for (const p of payments) {
       if (p.date) termSet.add(getTermForDate(p.date))
     }
-    // Sort: current terms first, then reverse chronological
     const ordered = TERMS.filter(t => termSet.has(t.label)).map(t => t.label)
     if (termSet.has('Other')) ordered.push('Other')
     return ordered
@@ -157,8 +173,8 @@ export function PaymentHistory({ payments }: { payments: Payment[] }) {
   const termTotal = filtered.reduce((sum, p) => sum + p.amountCents, 0)
 
   return (
-    <div>
-      <div className="flex items-center justify-between">
+    <div className="space-y-3">
+      <div className="flex items-center justify-between gap-2">
         <h2 className="text-lg font-semibold text-foreground">Payment History</h2>
         {availableTerms.length > 1 && (
           <select
@@ -174,34 +190,28 @@ export function PaymentHistory({ payments }: { payments: Payment[] }) {
       </div>
 
       {filtered.length > 0 ? (
-        <div className="mt-3 overflow-hidden rounded-xl border border-border bg-card shadow-card">
-          <table className="w-full">
-            <thead>
-              <tr className="border-b border-border bg-muted/50">
-                <th colSpan={5} className="px-4 py-2 text-left">
-                  <div className="flex items-center justify-between text-xs font-medium text-muted-foreground">
-                    <span>{selectedTerm || 'All'} - {filtered.length} payment{filtered.length !== 1 ? 's' : ''}</span>
-                    <span className="tabular-nums">{formatCurrency(termTotal)}</span>
-                  </div>
-                </th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border/50">
-              {filtered.map((payment) => (
-                <PaymentRow key={payment.id} payment={payment} />
-              ))}
-            </tbody>
-          </table>
+        <div className="overflow-hidden rounded-xl border border-border bg-card shadow-card">
+          <div className="flex items-center justify-between border-b border-border bg-muted/40 px-4 py-2">
+            <span className="text-xs font-medium text-muted-foreground">
+              {selectedTerm || 'All'} - {filtered.length} payment{filtered.length !== 1 ? 's' : ''}
+            </span>
+            <span className="text-xs font-semibold text-foreground tabular-nums">
+              {formatCurrency(termTotal)}
+            </span>
+          </div>
+          <div className="divide-y divide-border/50">
+            {filtered.map((payment) => (
+              <PaymentCard key={payment.id} payment={payment} />
+            ))}
+          </div>
         </div>
       ) : (
-        <div className="mt-3">
-          <EmptyState
-            icon={CreditCard}
-            title="No payments this term"
-            description="Payments will appear here once recorded."
-            compact
-          />
-        </div>
+        <EmptyState
+          icon={CreditCard}
+          title="No payments this term"
+          description="Payments will appear here once recorded."
+          compact
+        />
       )}
     </div>
   )

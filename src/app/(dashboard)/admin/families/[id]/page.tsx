@@ -22,7 +22,7 @@ export default async function FamilyDetailPage({ params }: { params: Promise<{ i
     supabase.from('families').select('*').eq('id', id).single(),
     supabase.from('players').select('*').eq('family_id', id).order('first_name'),
     supabase.from('family_balance').select('balance_cents, confirmed_balance_cents, projected_balance_cents').eq('family_id', id).single(),
-    supabase.from('family_pricing').select('*').eq('family_id', id).order('created_at', { ascending: false }),
+    supabase.from('family_pricing').select('id, program_id, program_type, coach_id, per_session_cents, term_fee_cents, notes, valid_from, valid_until').eq('family_id', id).order('created_at', { ascending: false }),
     supabase.from('programs').select('id, name, type').eq('status', 'active').order('name'),
     supabase.from('coaches').select('id, name').eq('status', 'active').order('name'),
     supabase.from('player_allowed_coaches').select('player_id, coach_id, auto_approve'),
@@ -210,6 +210,7 @@ export default async function FamilyDetailPage({ params }: { params: Promise<{ i
           familyId={id}
           overrides={pricingOverrides ?? []}
           programs={(allPrograms ?? []).map(p => ({ id: p.id, name: p.name, type: p.type }))}
+          coaches={(coaches ?? []).map(c => ({ id: c.id, name: c.name }))}
         />
 
         {/* Outstanding Charges / Waive */}

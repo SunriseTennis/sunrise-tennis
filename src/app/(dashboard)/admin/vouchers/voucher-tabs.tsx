@@ -28,6 +28,7 @@ type Voucher = {
   reviewed_at: string | null
   submission_method: string
   file_path: string | null
+  form_pdf_path: string | null
   batch_id: string | null
   voucher_number: number
   linked_voucher_id: string | null
@@ -215,6 +216,16 @@ function PendingTab({
                     >
                       <Eye className="size-3.5 mr-1" />
                       View
+                    </Button>
+                  )}
+                  {v.submission_method === 'form' && v.form_pdf_path && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => window.open(`/api/admin/voucher-file?path=${encodeURIComponent(v.form_pdf_path!)}`, '_blank')}
+                    >
+                      <Download className="size-3.5 mr-1" />
+                      PDF
                     </Button>
                   )}
                   <button
@@ -434,35 +445,35 @@ function BatchesTab({
                       <span className={cn('rounded-full px-2 py-0.5 text-xs font-medium', statusColor)}>
                         {batch.status}
                       </span>
+                      {count > 0 && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={isPending}
+                          onClick={async () => {
+                            const csv = await downloadBatchCsv(batch.id)
+                            if (csv) {
+                              const blob = new Blob([csv], { type: 'text/csv' })
+                              const url = URL.createObjectURL(blob)
+                              const a = document.createElement('a')
+                              a.href = url
+                              a.download = `sports-vouchers-batch-${batch.batch_number}.csv`
+                              a.click()
+                              URL.revokeObjectURL(url)
+                            }
+                          }}
+                        >
+                          <Download className="size-3.5 mr-1" />
+                          CSV
+                        </Button>
+                      )}
                       {batch.status === 'draft' && count > 0 && (
-                        <>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            disabled={isPending}
-                            onClick={async () => {
-                              const csv = await downloadBatchCsv(batch.id)
-                              if (csv) {
-                                const blob = new Blob([csv], { type: 'text/csv' })
-                                const url = URL.createObjectURL(blob)
-                                const a = document.createElement('a')
-                                a.href = url
-                                a.download = `sports-vouchers-batch-${batch.batch_number}.csv`
-                                a.click()
-                                URL.revokeObjectURL(url)
-                              }
-                            }}
-                          >
-                            <Download className="size-3.5 mr-1" />
-                            CSV
+                        <form action={() => startTransition(() => markBatchSubmitted(batch.id))}>
+                          <Button type="submit" size="sm" disabled={isPending}>
+                            <Send className="size-3.5 mr-1" />
+                            Mark Submitted
                           </Button>
-                          <form action={() => startTransition(() => markBatchSubmitted(batch.id))}>
-                            <Button type="submit" size="sm" disabled={isPending}>
-                              <Send className="size-3.5 mr-1" />
-                              Mark Submitted
-                            </Button>
-                          </form>
-                        </>
+                        </form>
                       )}
                     </div>
                   </div>

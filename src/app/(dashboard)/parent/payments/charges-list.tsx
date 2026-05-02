@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { formatCurrency } from '@/lib/utils/currency'
-import { Gift, MinusCircle, ChevronDown, ChevronRight } from 'lucide-react'
+import { Gift, MinusCircle, ChevronRight } from 'lucide-react'
 import { formatDateFriendly } from '@/lib/utils/dates'
 import { ChargeRow, type ChargeRowData, type ChargeBadge } from './charge-row'
 import { usePayment } from './payment-context'
@@ -145,7 +145,6 @@ function buildGroups(charges: Charge[]): { playerGroups: PlayerGroup[]; dueTotal
 }
 
 export function ChargesList({ charges }: { charges: Charge[] }) {
-  const [showPaid, setShowPaid] = useState(false)
   const [expandedChargeId, setExpandedChargeId] = useState<string | null>(null)
   // Track which service groups are expanded (collapsed by default)
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
@@ -157,7 +156,6 @@ export function ChargesList({ charges }: { charges: Charge[] }) {
   // status is still 'confirmed' but allocations cover the full amount.
   const positive = active.filter(c => c.amount_cents > 0 && c.outstanding_cents > 0 && c.status !== 'paid' && c.status !== 'credited')
   const credits = active.filter(c => c.amount_cents < 0)
-  const paid = active.filter(c => c.status === 'paid' || c.status === 'credited' || (c.amount_cents > 0 && c.outstanding_cents === 0))
 
   const { playerGroups, dueTotalCents, scheduledTotalCents, totalCents } = buildGroups(positive)
 
@@ -375,31 +373,6 @@ export function ChargesList({ charges }: { charges: Charge[] }) {
         </div>
       )}
 
-      {/* Paid history (collapsed) */}
-      {paid.length > 0 && (
-        <div>
-          <button
-            type="button"
-            onClick={() => setShowPaid(!showPaid)}
-            className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm font-semibold text-muted-foreground hover:bg-muted/20"
-          >
-            {showPaid ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
-            History ({paid.length})
-          </button>
-          {showPaid && (
-            <div className="mt-2 overflow-hidden rounded-xl border border-border bg-card">
-              <div className="divide-y divide-border/50">
-                {paid.map(c => (
-                  <ChargeRow
-                    key={c.id}
-                    charge={{ ...toRowData(c), badge: 'paid' }}
-                  />
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
     </div>
   )
 }

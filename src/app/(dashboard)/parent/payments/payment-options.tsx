@@ -25,6 +25,7 @@ export function PaymentOptions({
   // Outstanding balance (positive value for display)
   const owedCents = Math.abs(Math.min(balanceCents, 0))
   const owedDollars = (owedCents / 100).toFixed(2)
+  const isPayAhead = owedCents === 0
 
   // When a click-to-pay request comes in, auto-switch to card mode
   useEffect(() => {
@@ -46,7 +47,10 @@ export function PaymentOptions({
   if (method === 'choose') {
     return (
       <div>
-        <h2 className="text-lg font-semibold text-foreground">Make a Payment</h2>
+        <h2 className="text-lg font-semibold text-foreground">{isPayAhead ? 'Pay Ahead' : 'Make a Payment'}</h2>
+        {isPayAhead && (
+          <p className="mt-1 text-xs text-muted-foreground">Adds to your account credit. Future charges are deducted automatically.</p>
+        )}
 
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
           <button
@@ -88,10 +92,17 @@ export function PaymentOptions({
   }
 
   if (method === 'card') {
-    // Use prefilled amount from click-to-pay if available, otherwise full balance
+    // Use prefilled amount from click-to-pay if available; otherwise:
+    //   - balance owed → prefill the owed amount
+    //   - pay-ahead    → leave empty, parent types whatever they want
     const prefillCents = payment?.prefillAmountCents
-    const prefillDollars = prefillCents ? (prefillCents / 100).toFixed(2) : owedDollars
-    const prefillDesc = payment?.prefillDescription ?? 'Account payment'
+    const prefillDollars = prefillCents
+      ? (prefillCents / 100).toFixed(2)
+      : isPayAhead ? '' : owedDollars
+    const prefillDesc = payment?.prefillDescription
+      ?? (isPayAhead ? 'Account top-up' : 'Account payment')
+    // Cap only enforced when there's a real owed amount; pay-ahead has no cap.
+    const maxDollars = isPayAhead ? undefined : owedDollars
 
     return (
       <div>
@@ -105,7 +116,7 @@ export function PaymentOptions({
           <StripePaymentForm
             familyId={familyId}
             defaultAmountDollars={prefillDollars}
-            maxAmountDollars={owedDollars}
+            maxAmountDollars={maxDollars}
             description={prefillDesc}
             payingForLabel={payment?.prefillDescription}
             editable

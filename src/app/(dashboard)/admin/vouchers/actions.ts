@@ -4,23 +4,8 @@ import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { createClient, requireAdmin } from '@/lib/supabase/server'
 import { createCharge } from '@/lib/utils/billing'
-import { sendPushToUser } from '@/lib/push/send'
-
-// ── Helper: get parent user_id for a voucher's family ──
-
-async function getParentUserIdForFamily(
-  supabase: Awaited<ReturnType<typeof createClient>>,
-  familyId: string,
-): Promise<string | null> {
-  const { data } = await supabase
-    .from('user_roles')
-    .select('user_id')
-    .eq('family_id', familyId)
-    .eq('role', 'parent')
-    .limit(1)
-    .single()
-  return data?.user_id ?? null
-}
+import { notifyFamily } from '@/lib/notifications/notify'
+import { uploadVoucherBatchCsv, getVoucherFileUrl } from '@/lib/utils/storage'
 
 // ── Batch Management ──
 
@@ -74,13 +59,32 @@ export async function markBatchSubmitted(batchId: string) {
   const user = await requireAdmin()
   const supabase = await createClient()
 
+  const submittedAt = new Date().toISOString()
+
+  // Generate + persist the CSV first so the artifact is durable even if downstream steps fail
+  const csv = await buildBatchCsv(supabase, batchId)
+  let csvFilePath: string | null = null
+  if (csv) {
+    const { data: batchMeta } = await supabase
+      .from('voucher_batches')
+      .select('batch_number')
+      .eq('id', batchId)
+      .single()
+    const filename = `batch-${batchMeta?.batch_number ?? 'x'}-${submittedAt.slice(0, 10)}.csv`
+    const upload = await uploadVoucherBatchCsv(supabase, csv, batchId, filename)
+    if (!('error' in upload)) {
+      csvFilePath = upload.path
+    }
+  }
+
   // Update batch status
   await supabase
     .from('voucher_batches')
     .update({
       status: 'submitted',
-      submitted_at: new Date().toISOString(),
+      submitted_at: submittedAt,
       submitted_by: user.id,
+      ...(csvFilePath ? { csv_file_path: csvFilePath } : {}),
     })
     .eq('id', batchId)
 
@@ -100,20 +104,18 @@ export async function markBatchSubmitted(batchId: string) {
       })
       .eq('batch_id', batchId)
 
-    // Notify each family
+    // Notify each family (in-app + push)
     const notifiedFamilies = new Set<string>()
     for (const v of vouchers) {
       if (notifiedFamilies.has(v.family_id)) continue
       notifiedFamilies.add(v.family_id)
 
-      const parentUserId = await getParentUserIdForFamily(supabase, v.family_id)
-      if (parentUserId) {
-        await sendPushToUser(parentUserId, {
-          title: 'Voucher Submitted to SA',
-          body: `Your sports voucher for ${v.child_first_name ?? 'your child'} has been submitted to Sports Vouchers SA`,
-          url: '/parent/payments',
-        }).catch(() => {})
-      }
+      await notifyFamily(v.family_id, {
+        type: 'voucher_submitted',
+        title: 'Voucher Submitted to SA',
+        body: `Your sports voucher for ${v.child_first_name ?? 'your child'} has been submitted to Sports Vouchers SA`,
+        url: '/parent/payments',
+      }, user.id).catch(() => {})
     }
   }
 
@@ -153,19 +155,17 @@ function escCsv(val: string | null | undefined): string {
   return s
 }
 
-export async function downloadBatchCsv(batchId: string) {
-  await requireAdmin()
-  const supabase = await createClient()
-
+async function buildBatchCsv(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  batchId: string,
+): Promise<string | null> {
   const { data: vouchers } = await supabase
     .from('vouchers')
     .select('*')
     .eq('batch_id', batchId)
     .order('created_at')
 
-  if (!vouchers || vouchers.length === 0) {
-    redirect('/admin/vouchers?error=' + encodeURIComponent('No vouchers in this batch'))
-  }
+  if (!vouchers || vouchers.length === 0) return null
 
   const rows = vouchers.map((v) => [
     escCsv(v.child_first_name),
@@ -189,10 +189,48 @@ export async function downloadBatchCsv(batchId: string) {
     escCsv(v.activity_cost),
   ].join(','))
 
-  const csv = [CSV_HEADERS.join(','), ...rows].join('\n')
+  return [CSV_HEADERS.join(','), ...rows].join('\n')
+}
 
-  // Return the CSV content — the client component will trigger download
+export async function downloadBatchCsv(batchId: string): Promise<string> {
+  await requireAdmin()
+  const supabase = await createClient()
+
+  // Prefer the persisted CSV if it exists
+  const { data: batch } = await supabase
+    .from('voucher_batches')
+    .select('csv_file_path')
+    .eq('id', batchId)
+    .single()
+
+  if (batch?.csv_file_path) {
+    const { data: file } = await supabase.storage
+      .from('voucher-files')
+      .download(batch.csv_file_path)
+    if (file) return await file.text()
+  }
+
+  // Fallback: regenerate from current voucher rows
+  const csv = await buildBatchCsv(supabase, batchId)
+  if (!csv) {
+    redirect('/admin/vouchers?error=' + encodeURIComponent('No vouchers in this batch'))
+  }
   return csv
+}
+
+/**
+ * Get a signed URL for a batch's persisted CSV. Returns null if not yet persisted.
+ */
+export async function getBatchCsvUrl(batchId: string): Promise<string | null> {
+  await requireAdmin()
+  const supabase = await createClient()
+  const { data } = await supabase
+    .from('voucher_batches')
+    .select('csv_file_path')
+    .eq('id', batchId)
+    .single()
+  if (!data?.csv_file_path) return null
+  return getVoucherFileUrl(supabase, data.csv_file_path)
 }
 
 // ── Voucher Review ──
@@ -222,15 +260,13 @@ export async function rejectVoucher(voucherId: string, formData: FormData) {
     })
     .eq('id', voucherId)
 
-  // Notify parent
-  const parentUserId = await getParentUserIdForFamily(supabase, voucher.family_id)
-  if (parentUserId) {
-    await sendPushToUser(parentUserId, {
-      title: 'Voucher Declined',
-      body: `Your sports voucher for ${voucher.child_first_name ?? 'your child'} was declined. Reason: ${reason}`,
-      url: '/parent/payments',
-    }).catch(() => {})
-  }
+  // Notify parent (in-app + push)
+  await notifyFamily(voucher.family_id, {
+    type: 'voucher_declined',
+    title: 'Voucher Declined',
+    body: `Your sports voucher for ${voucher.child_first_name ?? 'your child'} was declined. Reason: ${reason}`,
+    url: '/parent/payments',
+  }, user.id).catch(() => {})
 
   revalidatePath('/admin/vouchers')
   redirect('/admin/vouchers')
@@ -274,15 +310,13 @@ export async function approveVouchers(voucherIds: string[]) {
       })
       .eq('id', voucherId)
 
-    // Notify parent
-    const parentUserId = await getParentUserIdForFamily(supabase, voucher.family_id)
-    if (parentUserId) {
-      await sendPushToUser(parentUserId, {
-        title: 'Voucher Approved',
-        body: `$${(voucher.amount_cents / 100).toFixed(0)} has been credited to your account for ${voucher.child_first_name ?? 'your child'}'s sports voucher`,
-        url: '/parent/payments',
-      }).catch(() => {})
-    }
+    // Notify parent (in-app + push)
+    await notifyFamily(voucher.family_id, {
+      type: 'voucher_approved',
+      title: 'Voucher Approved',
+      body: `$${(voucher.amount_cents / 100).toFixed(0)} has been credited to your account for ${voucher.child_first_name ?? 'your child'}'s sports voucher`,
+      url: '/parent/payments',
+    }, user.id).catch(() => {})
   }
 
   revalidatePath('/admin/vouchers')

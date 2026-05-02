@@ -10,6 +10,8 @@ import { Calendar, CalendarDays, List, X, Loader2 } from 'lucide-react'
 import { DurationPills } from './duration-pills'
 import { requestPrivateBooking, requestStandingPrivate, cancelPrivateBooking } from './actions'
 import { getStandingDates } from '@/lib/utils/private-booking'
+import { CreditChip } from '@/components/credit-chip'
+import { getTermForDate, getNextTermStart } from '@/lib/utils/school-terms'
 import type {
   AvailabilityWindow,
   AvailabilityException,
@@ -58,6 +60,11 @@ interface ExistingBooking {
   } | null
 }
 
+interface PrivateOverride {
+  per30Cents: number
+  validUntil: string | null
+}
+
 interface Props {
   players: Player[]
   coaches: Coach[]
@@ -68,6 +75,12 @@ interface Props {
   existingBookings: ExistingBooking[]
   playerMap: Record<string, string>
   rangeEndDate: string // YYYY-MM-DD — end of term or fallback
+  /** Family's confirmed credit (cents, >= 0). Used to surface auto-applied credit on the booking popup. */
+  confirmedCreditCents?: number
+  /** Per-coach grandfathered private rates for this family (per_30min cents + valid_until). */
+  privateRateOverrides?: Record<string, PrivateOverride>
+  /** Family-wide all-privates override (applies when no per-coach row exists). */
+  allPrivatesOverride?: PrivateOverride | null
 }
 
 type ActiveTab = 'yours' | 'availabilities'
@@ -418,6 +431,9 @@ export function AvailabilityCalendar({
   existingBookings,
   playerMap,
   rangeEndDate,
+  confirmedCreditCents = 0,
+  privateRateOverrides = {},
+  allPrivatesOverride = null,
 }: Props) {
   const [activeTab, setActiveTab] = useState<ActiveTab>('yours')
   const [viewMode, setViewMode] = useState<ViewMode>('week')
@@ -586,7 +602,29 @@ export function AvailabilityCalendar({
   }
 
   const popupCoach = bookingPopup ? bookableCoaches.find(c => c.id === bookingPopup.coachId) : null
-  const popupPriceCents = popupCoach ? Math.round((popupCoach.rate_per_hour_cents * duration) / 60) : 0
+  // Resolve effective rate for this coach: per-coach override > all-privates override > coach default.
+  function getCoachOverride(coachId: string): PrivateOverride | null {
+    return privateRateOverrides[coachId] ?? allPrivatesOverride ?? null
+  }
+  function priceForCoach(coachId: string, defaultPerHourCents: number, durationMinutes: number): { priceCents: number; defaultCents: number; override: PrivateOverride | null } {
+    const o = getCoachOverride(coachId)
+    const defaultCents = Math.round((defaultPerHourCents * durationMinutes) / 60)
+    const priceCents = o ? Math.round((o.per30Cents * durationMinutes) / 30) : defaultCents
+    return { priceCents, defaultCents, override: o }
+  }
+  function formatUntilLabel(validUntil: string | null): string {
+    if (!validUntil) return ''
+    const d = new Date(validUntil + 'T00:00:00')
+    if (isNaN(d.getTime())) return ''
+    // Find the term that starts immediately after the override expires.
+    const nextStart = getNextTermStart(d)
+    const nextTerm = nextStart ? getTermForDate(nextStart) : null
+    if (nextTerm) return `until Term ${nextTerm.term} ${nextTerm.year}`
+    // Fallback: just the date
+    return `until ${d.toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })}`
+  }
+  const popupPricing = popupCoach ? priceForCoach(popupCoach.id, popupCoach.rate_per_hour_cents, duration) : null
+  const popupPriceCents = popupPricing?.priceCents ?? 0
 
   const popupEligiblePlayers = useMemo(() => {
     if (!popupCoach) return []
@@ -660,25 +698,61 @@ export function AvailabilityCalendar({
             <tbody>
               {(() => {
                 const filteredCoaches = bookableCoaches.filter(c => visibleCoachIds.has(c.id))
-                // Group: Maxim alone, Zoe alone, then rest together
+                // Group: Maxim alone, Zoe alone, then rest together. When a coach has a
+                // grandfathered rate they show on their own row regardless (so the override
+                // is visible) — they're never bundled into "rest".
                 const maxim = filteredCoaches.find(c => c.name.toLowerCase().includes('maxim'))
                 const zoe = filteredCoaches.find(c => c.name.toLowerCase().includes('zoe'))
-                const rest = filteredCoaches.filter(c => c !== maxim && c !== zoe)
-                const rows: { label: string; rate: number }[] = []
-                if (maxim) rows.push({ label: maxim.name.split(' ')[0], rate: maxim.rate_per_hour_cents })
-                if (zoe) rows.push({ label: zoe.name.split(' ')[0], rate: zoe.rate_per_hour_cents })
+                const overriddenCoaches = filteredCoaches.filter(c => privateRateOverrides[c.id] && c !== maxim && c !== zoe)
+                const rest = filteredCoaches.filter(c => c !== maxim && c !== zoe && !privateRateOverrides[c.id])
+                interface Row {
+                  label: string
+                  defaultRate: number          // per hour cents
+                  override: PrivateOverride | null
+                }
+                const rows: Row[] = []
+                if (maxim) rows.push({ label: maxim.name.split(' ')[0], defaultRate: maxim.rate_per_hour_cents, override: getCoachOverride(maxim.id) })
+                if (zoe) rows.push({ label: zoe.name.split(' ')[0], defaultRate: zoe.rate_per_hour_cents, override: getCoachOverride(zoe.id) })
+                for (const c of overriddenCoaches) {
+                  rows.push({ label: c.name.split(' ')[0], defaultRate: c.rate_per_hour_cents, override: getCoachOverride(c.id) })
+                }
                 if (rest.length > 0) {
                   const rate = rest[0].rate_per_hour_cents
                   const label = rest.length <= 2 ? rest.map(c => c.name.split(' ')[0]).join(', ') : 'Other coaches'
-                  rows.push({ label, rate })
+                  // "Rest" coaches share the same default; if all-privates override applies, show it once
+                  rows.push({ label, defaultRate: rate, override: allPrivatesOverride && !rest.some(c => privateRateOverrides[c.id]) ? allPrivatesOverride : null })
                 }
-                return rows.map(r => (
-                  <tr key={r.label} className="border-t border-border/30">
-                    <td className="py-1 pr-6 text-foreground font-medium">{r.label}</td>
-                    <td className="py-1 px-3 text-right font-semibold text-foreground">${(r.rate / 200).toFixed(0)}</td>
-                    <td className="py-1 pl-3 text-right font-semibold text-foreground">${(r.rate / 100).toFixed(0)}</td>
-                  </tr>
-                ))
+                return rows.map(r => {
+                  const default30 = Math.round(r.defaultRate / 2)
+                  const default60 = r.defaultRate
+                  const has30Override = !!r.override
+                  const has60Override = !!r.override
+                  const price30 = r.override ? r.override.per30Cents : default30
+                  const price60 = r.override ? r.override.per30Cents * 2 : default60
+                  const untilLabel = r.override ? formatUntilLabel(r.override.validUntil) : ''
+                  return (
+                    <tr key={r.label} className="border-t border-border/30">
+                      <td className="py-1 pr-6 text-foreground font-medium">
+                        {r.label}
+                        {untilLabel && (
+                          <span className="ml-1.5 inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[9px] font-medium text-emerald-800">{untilLabel}</span>
+                        )}
+                      </td>
+                      <td className="py-1 px-3 text-right">
+                        {has30Override && (
+                          <span className="mr-1.5 text-muted-foreground line-through">${(default30 / 100).toFixed(0)}</span>
+                        )}
+                        <span className={cn('font-semibold', has30Override ? 'text-emerald-700' : 'text-foreground')}>${(price30 / 100).toFixed(0)}</span>
+                      </td>
+                      <td className="py-1 pl-3 text-right">
+                        {has60Override && (
+                          <span className="mr-1.5 text-muted-foreground line-through">${(default60 / 100).toFixed(0)}</span>
+                        )}
+                        <span className={cn('font-semibold', has60Override ? 'text-emerald-700' : 'text-foreground')}>${(price60 / 100).toFixed(0)}</span>
+                      </td>
+                    </tr>
+                  )
+                })
               })()}
             </tbody>
           </table>
@@ -813,8 +887,33 @@ export function AvailabilityCalendar({
               <div className="border-t border-border pt-1.5">
                 <div className="flex justify-between text-xs font-semibold">
                   <span>Price</span>
-                  <span>${(popupPriceCents / 100).toFixed(2)} (incl. GST)</span>
+                  <span>
+                    {popupPricing?.override && (
+                      <span className="mr-1.5 text-muted-foreground line-through font-normal">
+                        ${(popupPricing.defaultCents / 100).toFixed(2)}
+                      </span>
+                    )}
+                    <span className={cn(popupPricing?.override && 'text-emerald-700')}>
+                      ${(popupPriceCents / 100).toFixed(2)}
+                    </span>
+                    <span className="ml-1 text-muted-foreground font-normal">(incl. GST)</span>
+                  </span>
                 </div>
+                {popupPricing?.override?.validUntil && (
+                  <div className="mt-1 text-right">
+                    <span className="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-800">
+                      Grandfathered rate · {formatUntilLabel(popupPricing.override.validUntil)}
+                    </span>
+                  </div>
+                )}
+                {confirmedCreditCents > 0 && (
+                  <div className="mt-1.5">
+                    <CreditChip
+                      creditCents={confirmedCreditCents}
+                      costCents={isStanding ? popupPriceCents * (standingDates.length + 1) : popupPriceCents}
+                    />
+                  </div>
+                )}
               </div>
             </div>
 

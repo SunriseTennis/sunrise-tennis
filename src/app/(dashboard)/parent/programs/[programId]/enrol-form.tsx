@@ -10,6 +10,7 @@ import { formatCurrency } from '@/lib/utils/currency'
 import { CheckCircle, Clock, Check } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
 import { getActiveEarlyBird } from '@/lib/utils/eligibility'
+import { CreditChip } from '@/components/credit-chip'
 
 export function EnrolForm({
   programId,
@@ -23,6 +24,7 @@ export function EnrolForm({
   earlyPayDiscountPctTier2,
   earlyBirdDeadlineTier2,
   remainingSessions,
+  confirmedCreditCents = 0,
 }: {
   programId: string
   familyId: string
@@ -35,6 +37,7 @@ export function EnrolForm({
   earlyPayDiscountPctTier2?: number | null
   earlyBirdDeadlineTier2?: string | null
   remainingSessions?: number | null
+  confirmedCreditCents?: number
 }) {
   const [selectedPlayerIds, setSelectedPlayerIds] = useState<string[]>(players.length === 1 ? [players[0].id] : [])
   const [bookingType, setBookingType] = useState('term')
@@ -229,6 +232,23 @@ export function EnrolForm({
               className="mt-1"
             />
           </div>
+
+          {confirmedCreditCents > 0 && bookingType === 'term' && (discountedPrice ?? termPrice) && (
+            <div className="mt-3">
+              <CreditChip
+                creditCents={confirmedCreditCents}
+                costCents={(discountedPrice ?? termPrice ?? 0) * Math.max(selectedPlayerIds.length, 1)}
+              />
+            </div>
+          )}
+          {confirmedCreditCents > 0 && bookingType === 'casual' && perSessionCents && (
+            <div className="mt-3">
+              <CreditChip
+                creditCents={confirmedCreditCents}
+                costCents={perSessionCents}
+              />
+            </div>
+          )}
 
           <div className="mt-4">
             <Button type="submit" disabled={selectedPlayerIds.length === 0}>

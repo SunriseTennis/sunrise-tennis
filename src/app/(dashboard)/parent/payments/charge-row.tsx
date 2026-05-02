@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { formatCurrency } from '@/lib/utils/currency'
 import { formatDateFriendly } from '@/lib/utils/dates'
-import { MessageCircle, ExternalLink, CreditCard, ChevronDown, BookOpen } from 'lucide-react'
+import { ExternalLink, CreditCard, ChevronDown, BookOpen } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
 import { usePayment } from './payment-context'
 
@@ -66,9 +66,6 @@ export function ChargeRow({
   // Use props-based expand/collapse when provided (accordion mode)
   const expanded = isExpanded ?? false
   const handleToggle = onToggle ?? (() => {})
-
-  // Build pre-filled message URL
-  const questionUrl = `/parent/messages?compose=charge:${charge.id}&subject=${encodeURIComponent(`Question about charge`)}&body=${encodeURIComponent(`Hi, I have a question about the charge: ${charge.description} (${formatCurrency(charge.amountCents)})${displayDate ? ` on ${displayDate}` : ''}.`)}`
 
   return (
     <div>
@@ -155,13 +152,6 @@ export function ChargeRow({
               Pay now
             </button>
           )}
-          <Link
-            href={questionUrl}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground shadow-sm hover:shadow-card transition-all"
-          >
-            <MessageCircle className="size-3" />
-            Question this charge
-          </Link>
         </div>
       )}
     </div>

@@ -106,8 +106,6 @@ export default async function ParentPaymentsPage({
 
   const confirmedBalanceCents = balance?.confirmed_balance_cents ?? 0
   const totalBalanceCents = balance?.balance_cents ?? 0
-  // Show payment options when any balance is owed (confirmed or projected)
-  const hasAnyBalance = totalBalanceCents < 0
 
   // Check for overdue: confirmed balance negative means money owed for completed sessions
   const isOverdue = confirmedBalanceCents < 0
@@ -166,17 +164,15 @@ export default async function ParentPaymentsPage({
         {/* ── Balance Hero ── */}
         <BalanceHero confirmedBalanceCents={confirmedBalanceCents} />
 
-        {/* ── Make a Payment ── */}
-        {hasAnyBalance && (
-          <section id="payment-section" className="animate-fade-up" style={{ animationDelay: '80ms' }}>
-            <PaymentOptions
-              familyId={familyId}
-              balanceCents={totalBalanceCents}
-              familyName={familyName}
-              outstandingInvoices={[]}
-            />
-          </section>
-        )}
+        {/* ── Make a Payment / Pay Ahead ── */}
+        <section id="payment-section" className="animate-fade-up" style={{ animationDelay: '80ms' }}>
+          <PaymentOptions
+            familyId={familyId}
+            balanceCents={totalBalanceCents}
+            familyName={familyName}
+            outstandingInvoices={[]}
+          />
+        </section>
 
         {/* ── Current Charges ── */}
         {enrichedCharges.length > 0 && (

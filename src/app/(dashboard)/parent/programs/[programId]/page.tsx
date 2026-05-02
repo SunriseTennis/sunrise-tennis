@@ -65,6 +65,7 @@ export default async function ParentProgramDetailPage({
     { data: players },
     { data: roster },
     { data: upcomingSessions },
+    { data: balance },
   ] = await Promise.all([
     supabase.from('programs').select('*, venues:venue_id(name, address)').eq('id', programId).single(),
     supabase.from('players').select('id, first_name, last_name, ball_color, level, status, gender, classifications, track').eq('family_id', familyId).eq('status', 'active').order('first_name'),
@@ -74,9 +75,12 @@ export default async function ParentProgramDetailPage({
       .gte('date', new Date().toISOString().split('T')[0])
       .eq('status', 'scheduled')
       .order('date'),
+    supabase.from('family_balance').select('confirmed_balance_cents').eq('family_id', familyId).single(),
   ])
 
   if (!program) notFound()
+
+  const confirmedCreditCents = Math.max(0, balance?.confirmed_balance_cents ?? 0)
 
   const venue = program.venues as unknown as { name: string; address: string | null } | null
   const enrolledPlayerIds = new Set(
@@ -238,6 +242,7 @@ export default async function ParentProgramDetailPage({
             earlyPayDiscountPctTier2={program.early_pay_discount_pct_tier2}
             earlyBirdDeadlineTier2={program.early_bird_deadline_tier2}
             remainingSessions={upcomingSessions?.length ?? null}
+            confirmedCreditCents={confirmedCreditCents}
           />
         </div>
       )}

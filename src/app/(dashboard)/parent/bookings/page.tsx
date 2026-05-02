@@ -45,6 +45,8 @@ export default async function ParentBookingsPage({
     { data: coachWindows },
     { data: coachExceptions },
     { data: allSessions },
+    { data: balance },
+    { data: overrides },
   ] = await Promise.all([
     supabase
       .from('players')
@@ -92,7 +94,36 @@ export default async function ParentBookingsPage({
       .neq('status', 'cancelled')
       .gte('date', todayStr)
       .lte('date', rangeEndStr),
+    supabase
+      .from('family_balance')
+      .select('confirmed_balance_cents')
+      .eq('family_id', familyId)
+      .single(),
+    // Per-coach private-rate overrides for this family (RLS scopes to own family)
+    supabase
+      .from('family_pricing')
+      .select('coach_id, per_session_cents, valid_until')
+      .eq('family_id', familyId)
+      .eq('program_type', 'private')
+      .lte('valid_from', todayStr)
+      .or(`valid_until.is.null,valid_until.gte.${todayStr}`)
+      .not('per_session_cents', 'is', null),
   ])
+
+  const confirmedCreditCents = Math.max(0, balance?.confirmed_balance_cents ?? 0)
+
+  // Build per-coach override map. Per-coach rows win over coach_id IS NULL rows.
+  // Treats per_session_cents as the per-30min rate for privates.
+  const privateOverrideMap = new Map<string, { per30Cents: number; validUntil: string | null }>()
+  let allPrivatesOverride: { per30Cents: number; validUntil: string | null } | null = null
+  for (const row of overrides ?? []) {
+    if (row.per_session_cents == null) continue
+    if (row.coach_id) {
+      privateOverrideMap.set(row.coach_id, { per30Cents: row.per_session_cents, validUntil: row.valid_until })
+    } else if (!allPrivatesOverride) {
+      allPrivatesOverride = { per30Cents: row.per_session_cents, validUntil: row.valid_until }
+    }
+  }
 
   // Fetch lesson notes (needs player IDs from first batch)
   const playerIds = (players ?? []).map(p => p.id)
@@ -201,6 +232,9 @@ export default async function ParentBookingsPage({
         existingBookings={allBookings}
         rangeEndDate={rangeEndStr}
         playerMap={Object.fromEntries(playerMap)}
+        confirmedCreditCents={confirmedCreditCents}
+        privateRateOverrides={Object.fromEntries(privateOverrideMap)}
+        allPrivatesOverride={allPrivatesOverride}
       />
       </div>
 

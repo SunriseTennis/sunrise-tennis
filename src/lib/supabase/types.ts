@@ -12,6 +12,31 @@ export type Database = {
   __InternalSupabase: {
     PostgrestVersion: "14.4"
   }
+  graphql_public: {
+    Tables: {
+      [_ in never]: never
+    }
+    Views: {
+      [_ in never]: never
+    }
+    Functions: {
+      graphql: {
+        Args: {
+          extensions?: Json
+          operationName?: string
+          query?: string
+          variables?: Json
+        }
+        Returns: Json
+      }
+    }
+    Enums: {
+      [_ in never]: never
+    }
+    CompositeTypes: {
+      [_ in never]: never
+    }
+  }
   public: {
     Tables: {
       attendances: {
@@ -687,6 +712,7 @@ export type Database = {
           id: string
           is_owner: boolean | null
           name: string
+          notification_preferences: Json | null
           pay_period: string
           phone: string | null
           qualifications: Json | null
@@ -700,6 +726,7 @@ export type Database = {
           id?: string
           is_owner?: boolean | null
           name: string
+          notification_preferences?: Json | null
           pay_period?: string
           phone?: string | null
           qualifications?: Json | null
@@ -713,6 +740,7 @@ export type Database = {
           id?: string
           is_owner?: boolean | null
           name?: string
+          notification_preferences?: Json | null
           pay_period?: string
           phone?: string | null
           qualifications?: Json | null
@@ -867,6 +895,7 @@ export type Database = {
           referred_by: string | null
           secondary_contact: Json | null
           status: string
+          terms_acknowledged_at: string | null
           updated_at: string | null
         }
         Insert: {
@@ -885,6 +914,7 @@ export type Database = {
           referred_by?: string | null
           secondary_contact?: Json | null
           status?: string
+          terms_acknowledged_at?: string | null
           updated_at?: string | null
         }
         Update: {
@@ -903,6 +933,7 @@ export type Database = {
           referred_by?: string | null
           secondary_contact?: Json | null
           status?: string
+          terms_acknowledged_at?: string | null
           updated_at?: string | null
         }
         Relationships: []
@@ -941,6 +972,7 @@ export type Database = {
       }
       family_pricing: {
         Row: {
+          coach_id: string | null
           created_at: string | null
           family_id: string
           id: string
@@ -953,6 +985,7 @@ export type Database = {
           valid_until: string | null
         }
         Insert: {
+          coach_id?: string | null
           created_at?: string | null
           family_id: string
           id?: string
@@ -965,6 +998,7 @@ export type Database = {
           valid_until?: string | null
         }
         Update: {
+          coach_id?: string | null
           created_at?: string | null
           family_id?: string
           id?: string
@@ -977,6 +1011,13 @@ export type Database = {
           valid_until?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "family_pricing_coach_id_fkey"
+            columns: ["coach_id"]
+            isOneToOne: false
+            referencedRelation: "coaches"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "family_pricing_family_id_fkey"
             columns: ["family_id"]
@@ -1221,6 +1262,85 @@ export type Database = {
           },
         ]
       }
+      messages: {
+        Row: {
+          admin_reply: string | null
+          archived_at: string | null
+          body: string
+          category: string
+          created_at: string
+          family_id: string | null
+          id: string
+          player_id: string | null
+          program_id: string | null
+          read_at: string | null
+          recipient_id: string | null
+          recipient_role: string
+          replied_at: string | null
+          replied_by: string | null
+          sender_id: string
+          subject: string
+        }
+        Insert: {
+          admin_reply?: string | null
+          archived_at?: string | null
+          body: string
+          category?: string
+          created_at?: string
+          family_id?: string | null
+          id?: string
+          player_id?: string | null
+          program_id?: string | null
+          read_at?: string | null
+          recipient_id?: string | null
+          recipient_role?: string
+          replied_at?: string | null
+          replied_by?: string | null
+          sender_id: string
+          subject: string
+        }
+        Update: {
+          admin_reply?: string | null
+          archived_at?: string | null
+          body?: string
+          category?: string
+          created_at?: string
+          family_id?: string | null
+          id?: string
+          player_id?: string | null
+          program_id?: string | null
+          read_at?: string | null
+          recipient_id?: string | null
+          recipient_role?: string
+          replied_at?: string | null
+          replied_by?: string | null
+          sender_id?: string
+          subject?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "messages_family_id_fkey"
+            columns: ["family_id"]
+            isOneToOne: false
+            referencedRelation: "families"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "messages_player_id_fkey"
+            columns: ["player_id"]
+            isOneToOne: false
+            referencedRelation: "players"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "messages_program_id_fkey"
+            columns: ["program_id"]
+            isOneToOne: false
+            referencedRelation: "programs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       notification_recipients: {
         Row: {
           created_at: string | null
@@ -1344,8 +1464,8 @@ export type Database = {
           payment_method: string
           received_at: string | null
           recorded_by: string | null
-          stripe_payment_intent_id: string | null
           status: string
+          stripe_payment_intent_id: string | null
           voided_at: string | null
           voided_by: string | null
         }
@@ -1361,8 +1481,8 @@ export type Database = {
           payment_method: string
           received_at?: string | null
           recorded_by?: string | null
-          stripe_payment_intent_id?: string | null
           status?: string
+          stripe_payment_intent_id?: string | null
           voided_at?: string | null
           voided_by?: string | null
         }
@@ -1378,8 +1498,8 @@ export type Database = {
           payment_method?: string
           received_at?: string | null
           recorded_by?: string | null
-          stripe_payment_intent_id?: string | null
           status?: string
+          stripe_payment_intent_id?: string | null
           voided_at?: string | null
           voided_by?: string | null
         }
@@ -2118,6 +2238,7 @@ export type Database = {
         Row: {
           batch_number: number
           created_at: string | null
+          csv_file_path: string | null
           id: string
           notes: string | null
           processed_at: string | null
@@ -2128,6 +2249,7 @@ export type Database = {
         Insert: {
           batch_number?: number
           created_at?: string | null
+          csv_file_path?: string | null
           id?: string
           notes?: string | null
           processed_at?: string | null
@@ -2138,6 +2260,7 @@ export type Database = {
         Update: {
           batch_number?: number
           created_at?: string | null
+          csv_file_path?: string | null
           id?: string
           notes?: string | null
           processed_at?: string | null
@@ -2163,6 +2286,7 @@ export type Database = {
           family_id: string
           file_path: string | null
           first_time: boolean | null
+          form_pdf_path: string | null
           has_disability: boolean | null
           id: string
           is_indigenous: boolean | null
@@ -2205,6 +2329,7 @@ export type Database = {
           family_id: string
           file_path?: string | null
           first_time?: boolean | null
+          form_pdf_path?: string | null
           has_disability?: boolean | null
           id?: string
           is_indigenous?: boolean | null
@@ -2247,6 +2372,7 @@ export type Database = {
           family_id?: string
           file_path?: string | null
           first_time?: boolean | null
+          form_pdf_path?: string | null
           has_disability?: boolean | null
           id?: string
           is_indigenous?: boolean | null
@@ -2317,6 +2443,17 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      add_coach_exception_range: {
+        Args: {
+          p_coach_id: string
+          p_end_date: string
+          p_end_time?: string
+          p_reason?: string
+          p_start_date: string
+          p_start_time?: string
+        }
+        Returns: number
+      }
       allocate_payment_to_charges: {
         Args: { target_payment_id: string }
         Returns: undefined
@@ -2370,9 +2507,27 @@ export type Database = {
           physical_notes: string
         }[]
       }
-      get_private_price: {
-        Args: { target_coach_id: string; target_duration_minutes: number }
+      get_private_default_rate: {
+        Args: { target_coach_id: string }
         Returns: number
+      }
+      get_private_price: {
+        Args: {
+          target_coach_id: string
+          target_duration_minutes: number
+          target_family_id: string
+        }
+        Returns: number
+      }
+      get_private_rate_for_family: {
+        Args: { target_coach_id: string; target_family_id: string }
+        Returns: {
+          default_per_hour_cents: number
+          is_override: boolean
+          override_source: string
+          per_30_cents: number
+          valid_until: string
+        }[]
       }
       get_security_alerts: {
         Args: { p_hours?: number }
@@ -2437,6 +2592,10 @@ export type Database = {
           id: string
           last_name: string
         }[]
+      }
+      set_coach_availability_bulk: {
+        Args: { p_blocks: Json; p_coach_id: string; p_days: number[] }
+        Returns: number
       }
     }
     Enums: {
@@ -2566,6 +2725,9 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
+  graphql_public: {
+    Enums: {},
+  },
   public: {
     Enums: {},
   },

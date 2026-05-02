@@ -15,12 +15,12 @@ export default async function AdminVouchersPage({
   const [vouchersRes, batchesRes] = await Promise.all([
     supabase
       .from('vouchers')
-      .select('id, family_id, player_id, amount_cents, status, submitted_at, reviewed_at, submission_method, file_path, batch_id, voucher_number, linked_voucher_id, child_first_name, child_surname, child_gender, child_dob, street_address, suburb, postcode, visa_number, medicare_number, parent_first_name, parent_surname, parent_contact_number, parent_email, first_time, has_disability, is_indigenous, english_main_language, other_language, activity_cost, rejection_reason, notes')
+      .select('id, family_id, player_id, amount_cents, status, submitted_at, reviewed_at, submission_method, file_path, form_pdf_path, batch_id, voucher_number, linked_voucher_id, child_first_name, child_surname, child_gender, child_dob, street_address, suburb, postcode, visa_number, medicare_number, parent_first_name, parent_surname, parent_contact_number, parent_email, first_time, has_disability, is_indigenous, english_main_language, other_language, activity_cost, rejection_reason, notes')
       .order('submitted_at', { ascending: false })
       .limit(200),
     supabase
       .from('voucher_batches')
-      .select('id, batch_number, status, submitted_at, processed_at, notes, created_at')
+      .select('id, batch_number, status, submitted_at, processed_at, csv_file_path, notes, created_at')
       .order('created_at', { ascending: false })
       .limit(50),
   ])

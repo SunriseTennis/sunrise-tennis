@@ -5,7 +5,7 @@ import { redirect } from 'next/navigation'
 import { createClient, getSessionUser } from '@/lib/supabase/server'
 import { validateFormData, submitVoucherFormSchema, submitVoucherImageSchema } from '@/lib/utils/validation'
 import { uploadVoucherFile } from '@/lib/utils/storage'
-import { sendPushToAdmins } from '@/lib/push/send'
+import { notifyAdmins } from '@/lib/notifications/notify'
 
 async function getParentFamily() {
   const supabase = await createClient()
@@ -117,16 +117,52 @@ export async function submitVoucherForm(formData: FormData) {
     activity_cost: d.activity_cost,
   }
 
-  await createVoucherRecords(supabase, base, d.amount)
+  const voucherIds = await createVoucherRecords(supabase, base, d.amount)
 
-  // Notify admins
+  // Notify admins (in-app + push)
   const { data: family } = await supabase.from('families').select('family_name').eq('id', familyId).single()
   const { data: player } = await supabase.from('players').select('first_name').eq('id', d.player_id).single()
-  await sendPushToAdmins({
+  await notifyAdmins({
+    type: 'voucher_received',
     title: 'Sports Voucher Submitted',
     body: `${family?.family_name ?? 'A family'} submitted a sports voucher for ${player?.first_name ?? 'a player'}`,
     url: '/admin/vouchers',
-  }).catch(() => {})
+  }, user.id).catch(() => {})
+
+  // Render and persist a PDF copy of the form submission for parent + admin record
+  try {
+    const { renderFormSubmissionPdf } = await import('@/lib/utils/voucher-pdf')
+    const { uploadVoucherFormPdf } = await import('@/lib/utils/storage')
+    const pdfBytes = await renderFormSubmissionPdf({
+      childFirstName: d.child_first_name,
+      childSurname: d.child_surname,
+      childGender: d.child_gender,
+      childDob: d.child_dob,
+      streetAddress: d.street_address,
+      suburb: d.suburb,
+      postcode: d.postcode,
+      medicareNumber: d.medicare_number ?? null,
+      visaNumber: d.visa_number ?? null,
+      parentFirstName: d.parent_first_name,
+      parentSurname: d.parent_surname,
+      parentContactNumber: d.parent_contact_number,
+      parentEmail: d.parent_email,
+      firstTime: d.first_time,
+      hasDisability: d.has_disability,
+      isIndigenous: d.is_indigenous,
+      englishMainLanguage: d.english_main_language,
+      otherLanguage: d.other_language ?? null,
+      activityCost: d.activity_cost,
+      submittedAt: base.submitted_at,
+      familyName: family?.family_name ?? null,
+    })
+    const upload = await uploadVoucherFormPdf(supabase, pdfBytes, familyId, voucherIds[0])
+    if (!('error' in upload)) {
+      await supabase.from('vouchers').update({ form_pdf_path: upload.path }).in('id', voucherIds)
+    }
+  } catch (pdfErr) {
+    console.error('Voucher PDF render failed:', pdfErr instanceof Error ? pdfErr.message : 'Unknown')
+  }
 
   revalidatePath('/parent/payments')
   redirect('/parent/payments?success=' + encodeURIComponent(
@@ -175,14 +211,15 @@ export async function submitVoucherImage(formData: FormData) {
     .update({ file_path: uploadResult.path })
     .in('id', voucherIds)
 
-  // Notify admins
+  // Notify admins (in-app + push)
   const { data: family } = await supabase.from('families').select('family_name').eq('id', familyId).single()
   const { data: player } = await supabase.from('players').select('first_name').eq('id', d.player_id).single()
-  await sendPushToAdmins({
+  await notifyAdmins({
+    type: 'voucher_received',
     title: 'Sports Voucher Uploaded',
     body: `${family?.family_name ?? 'A family'} uploaded a voucher form for ${player?.first_name ?? 'a player'}`,
     url: '/admin/vouchers',
-  }).catch(() => {})
+  }, user.id).catch(() => {})
 
   revalidatePath('/parent/payments')
   redirect('/parent/payments?success=' + encodeURIComponent('Voucher form uploaded for review'))

@@ -57,3 +57,47 @@ export async function getVoucherFileUrl(
   }
   return data.signedUrl
 }
+
+/**
+ * Upload a generated PDF of a form-mode voucher submission.
+ * Path: voucher-files/{familyId}/{voucherId}-form.pdf
+ */
+export async function uploadVoucherFormPdf(
+  supabase: SupabaseClient<Database>,
+  pdfBytes: Uint8Array,
+  familyId: string,
+  voucherId: string,
+): Promise<{ path: string } | { error: string }> {
+  const path = `${familyId}/${voucherId}-form.pdf`
+  const { error } = await supabase.storage
+    .from(VOUCHER_BUCKET)
+    .upload(path, pdfBytes, { upsert: true, contentType: 'application/pdf' })
+
+  if (error) {
+    console.error('Voucher form PDF upload failed:', error.message)
+    return { error: 'PDF upload failed' }
+  }
+  return { path }
+}
+
+/**
+ * Upload a generated CSV of a voucher batch.
+ * Path: voucher-files/batches/{batchId}/{filename}.csv
+ */
+export async function uploadVoucherBatchCsv(
+  supabase: SupabaseClient<Database>,
+  csv: string,
+  batchId: string,
+  filename: string,
+): Promise<{ path: string } | { error: string }> {
+  const path = `batches/${batchId}/${filename}`
+  const { error } = await supabase.storage
+    .from(VOUCHER_BUCKET)
+    .upload(path, new Blob([csv], { type: 'text/csv' }), { upsert: true, contentType: 'text/csv' })
+
+  if (error) {
+    console.error('Voucher batch CSV upload failed:', error.message)
+    return { error: 'CSV upload failed' }
+  }
+  return { path }
+}

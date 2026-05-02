@@ -16,7 +16,7 @@ export async function addFamilyPricing(familyId: string, formData: FormData) {
     redirect(`/admin/families/${familyId}?error=${encodeURIComponent(parsed.error)}`)
   }
 
-  const { program_id: programId, program_type: programType, per_session_dollars: perSessionDollars, term_fee_dollars: termFeeDollars, notes, valid_from: validFrom, valid_until: validUntil } = parsed.data
+  const { program_id: programId, program_type: programType, coach_id: coachId, per_session_dollars: perSessionDollars, term_fee_dollars: termFeeDollars, notes, valid_from: validFrom, valid_until: validUntil } = parsed.data
 
   const perSessionCents = perSessionDollars ? Math.round(parseFloat(perSessionDollars) * 100) : null
   const termFeeCents = termFeeDollars ? Math.round(parseFloat(termFeeDollars) * 100) : null
@@ -25,12 +25,16 @@ export async function addFamilyPricing(familyId: string, formData: FormData) {
     redirect(`/admin/families/${familyId}?error=${encodeURIComponent('Please set at least one price override')}`)
   }
 
+  // coach_id only applies to private overrides — quietly ignore otherwise
+  const effectiveCoachId = (programType === 'private' && coachId) ? coachId : null
+
   const { error } = await supabase
     .from('family_pricing')
     .insert({
       family_id: familyId,
       program_id: programId || null,
       program_type: programType || null,
+      coach_id: effectiveCoachId,
       per_session_cents: perSessionCents,
       term_fee_cents: termFeeCents,
       notes: notes || null,

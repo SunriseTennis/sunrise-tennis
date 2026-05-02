@@ -104,8 +104,8 @@ export async function requestPrivateBooking(formData: FormData) {
     redirect('/parent/bookings?error=This+slot+is+no+longer+available')
   }
 
-  // Calculate price
-  const priceCents = await getPrivatePrice(supabase, coach_id, duration_minutes)
+  // Calculate price (resolves family overrides via SECURITY DEFINER RPC)
+  const priceCents = await getPrivatePrice(supabase, familyId, coach_id, duration_minutes)
 
   // Check auto-approve
   const autoApprove = await isAutoApproved(supabase, player_id, coach_id)
@@ -383,7 +383,7 @@ export async function requestStandingPrivate(formData: FormData) {
   if (!allowed) redirect('/parent/bookings?error=Coach+not+available+for+this+player')
 
   const autoApprove = await isAutoApproved(supabase, player_id, coach_id)
-  const priceCents = await getPrivatePrice(supabase, coach_id, duration_minutes)
+  const priceCents = await getPrivatePrice(supabase, familyId, coach_id, duration_minutes)
   const endMinutes = timeToMinutes(start_time) + duration_minutes
   const endTime = minutesToTime(endMinutes)
 

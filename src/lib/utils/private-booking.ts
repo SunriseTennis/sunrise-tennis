@@ -52,15 +52,19 @@ export async function isAutoApproved(
 // ── Pricing ────────────────────────────────────────────────────────────
 
 /**
- * Get the private lesson price in cents for a coach + duration.
- * Pro-rated from hourly rate.
+ * Get the private lesson price in cents for a family + coach + duration.
+ *
+ * Resolution: family + specific coach > family + all-private > coach default.
+ * Pro-rated from per-30min override or per-hour coach rate.
  */
 export async function getPrivatePrice(
   supabase: Supabase,
+  familyId: string,
   coachId: string,
   durationMinutes: number,
 ): Promise<number> {
   const { data, error } = await supabase.rpc('get_private_price', {
+    target_family_id: familyId,
     target_coach_id: coachId,
     target_duration_minutes: durationMinutes,
   })
@@ -71,6 +75,45 @@ export async function getPrivatePrice(
   }
 
   return data as number
+}
+
+export interface PrivateRateResolved {
+  per30Cents: number
+  defaultPerHourCents: number
+  isOverride: boolean
+  validUntil: string | null
+  overrideSource: 'family_coach' | 'family_all_private' | null
+}
+
+/**
+ * Resolve a family's effective private rate for a coach in a single round trip.
+ * Returns the per-30 price + the default per-hour rate (for "$X (was $Y)" display)
+ * + override metadata (valid_until + source).
+ */
+export async function getPrivateRateForFamily(
+  supabase: Supabase,
+  familyId: string,
+  coachId: string,
+): Promise<PrivateRateResolved | null> {
+  const { data, error } = await supabase.rpc('get_private_rate_for_family', {
+    target_family_id: familyId,
+    target_coach_id: coachId,
+  })
+
+  if (error) {
+    console.error('Failed to resolve private rate:', error.message)
+    return null
+  }
+  // Postgres function returns a setof; the JS client gives us an array.
+  const row = Array.isArray(data) ? data[0] : data
+  if (!row) return null
+  return {
+    per30Cents: row.per_30_cents,
+    defaultPerHourCents: row.default_per_hour_cents,
+    isOverride: !!row.is_override,
+    validUntil: row.valid_until ?? null,
+    overrideSource: (row.override_source as PrivateRateResolved['overrideSource']) ?? null,
+  }
 }
 
 /**
