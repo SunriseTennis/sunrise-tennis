@@ -1,7 +1,22 @@
 import { createServerClient } from '@supabase/ssr'
+import { createClient as createBareClient } from '@supabase/supabase-js'
 import { cookies } from 'next/headers'
 import type { Database } from './types'
 import type { SupabaseClient, User } from '@supabase/supabase-js'
+
+/**
+ * Service-role client. Bypasses RLS — only use server-side after the caller's
+ * identity + ownership has been validated against the JWT-scoped client.
+ * Pattern: read-and-validate via createClient(), then write via the service
+ * client. Mirrors the helper in lib/notifications/notify.ts.
+ */
+export function createServiceClient(): SupabaseClient<Database> {
+  return createBareClient<Database>(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    { auth: { persistSession: false } },
+  )
+}
 
 export async function createClient() {
   const cookieStore = await cookies()

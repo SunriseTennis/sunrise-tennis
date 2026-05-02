@@ -5,9 +5,19 @@ import { Ratelimit } from '@upstash/ratelimit'
  * Upstash Redis client for persistent rate limiting.
  * Returns null if env vars are not configured (local dev fallback).
  */
+function trimQuoted(value: string | undefined): string | undefined {
+  if (!value) return value
+  const trimmed = value.trim()
+  // Strip surrounding double or single quotes (some 1Password fields ship with literal quotes)
+  if ((trimmed.startsWith('"') && trimmed.endsWith('"')) || (trimmed.startsWith("'") && trimmed.endsWith("'"))) {
+    return trimmed.slice(1, -1)
+  }
+  return trimmed
+}
+
 function createRedis(): Redis | null {
-  const url = process.env.UPSTASH_REDIS_REST_URL
-  const token = process.env.UPSTASH_REDIS_REST_TOKEN
+  const url = trimQuoted(process.env.UPSTASH_REDIS_REST_URL)
+  const token = trimQuoted(process.env.UPSTASH_REDIS_REST_TOKEN)
 
   if (!url || !token) return null
 

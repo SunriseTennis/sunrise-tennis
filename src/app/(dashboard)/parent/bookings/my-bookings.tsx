@@ -88,59 +88,71 @@ export function MyBookings({ bookings, playerMap, partnerByBookingId }: Props) {
         if (booking.approval_status === 'pending') displayStatus = 'pending'
         if (booking.approval_status === 'declined') displayStatus = 'declined'
 
-        const cardBody = (
-          <CardContent className="p-4">
-            <div className="flex items-start justify-between">
-              <div className="min-w-0 flex-1 space-y-1.5">
-                {/* Row 1: Player + Status + Shared pill */}
-                <div className="flex flex-wrap items-center gap-2">
-                  <p className="text-sm font-semibold text-foreground">{playerName}</p>
-                  <StatusBadge status={displayStatus} />
-                  {isShared && (
-                    <span className="rounded-full bg-purple-100 px-2 py-0.5 text-[10px] font-medium text-purple-800">Shared</span>
-                  )}
-                </div>
-                {/* Row 2: Date */}
-                {session && (
-                  <p className="text-sm font-medium text-foreground">
-                    {formatFriendlyDate(session.date)}
-                  </p>
-                )}
-                {/* Row 3: Time + Duration + Coach */}
-                {session && (
-                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-                    <span className="flex items-center gap-1">
-                      <Clock className="size-3" />
-                      {session.start_time ? formatTimeShort(session.start_time) : ''}
-                      {session.end_time ? ` – ${formatTimeShort(session.end_time)}` : ''}
-                    </span>
-                    <span>{booking.duration_minutes}min</span>
-                    <span className="flex items-center gap-1">
-                      <User className="size-3" />
-                      {coachName}
-                    </span>
-                  </div>
-                )}
-                {/* Row 4: Partner (when shared) */}
-                {isShared && partner && (
-                  <p className="flex items-center gap-1 text-xs text-purple-800">
-                    <Users className="size-3" />
-                    with {partner.partner_first_name} {partner.partner_last_name}
-                  </p>
-                )}
+        const linkContent = (
+          <div className="min-w-0 flex-1 space-y-1.5">
+            {/* Row 1: Player + Status + Shared pill */}
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="text-sm font-semibold text-foreground">{playerName}</p>
+              <StatusBadge status={displayStatus} />
+              {isShared && (
+                <span className="rounded-full bg-purple-100 px-2 py-0.5 text-[10px] font-medium text-purple-800">Shared</span>
+              )}
+            </div>
+            {/* Row 2: Date */}
+            {session && (
+              <p className="text-sm font-medium text-foreground">
+                {formatFriendlyDate(session.date)}
+              </p>
+            )}
+            {/* Row 3: Time + Duration + Coach */}
+            {session && (
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                <span className="flex items-center gap-1">
+                  <Clock className="size-3" />
+                  {session.start_time ? formatTimeShort(session.start_time) : ''}
+                  {session.end_time ? ` – ${formatTimeShort(session.end_time)}` : ''}
+                </span>
+                <span>{booking.duration_minutes}min</span>
+                <span className="flex items-center gap-1">
+                  <User className="size-3" />
+                  {coachName}
+                </span>
               </div>
-              {/* Right side: Price + Cancel */}
-              <div className="flex flex-col items-end gap-2 ml-3">
+            )}
+            {/* Row 4: Partner (when shared) */}
+            {isShared && partner && (
+              <p className="flex items-center gap-1 text-xs text-purple-800">
+                <Users className="size-3" />
+                with {partner.partner_first_name} {partner.partner_last_name}
+              </p>
+            )}
+          </div>
+        )
+
+        // Card has TWO siblings: the clickable content area (a Link or static
+        // div) and the cancel form. The cancel form is OUTSIDE the Link so the
+        // submit isn't intercepted by client-side router navigation. Nesting
+        // a form inside an anchor is also invalid HTML and behaves
+        // inconsistently across browsers.
+        return (
+          <Card key={booking.id} className="rounded-xl shadow-card">
+            <CardContent className="flex items-start justify-between p-4">
+              {booking.session_id ? (
+                <Link href={`/parent/bookings/${booking.id}`} className="flex-1 min-w-0 -m-4 p-4 rounded-xl transition-colors hover:bg-[#FFF6ED]/40">
+                  {linkContent}
+                </Link>
+              ) : (
+                linkContent
+              )}
+              {/* Right side: Price + Cancel — sibling to the Link, not nested */}
+              <div className="flex flex-col items-end gap-2 ml-3 shrink-0">
                 {booking.price_cents != null && (
                   <p className="text-sm font-bold text-foreground">
                     ${(booking.price_cents / 100).toFixed(0)}
                   </p>
                 )}
                 {booking.status !== 'cancelled' && (
-                  <form
-                    action={cancelPrivateBooking}
-                    onClick={(e) => e.stopPropagation()}
-                  >
+                  <form action={cancelPrivateBooking}>
                     <input type="hidden" name="booking_id" value={booking.id} />
                     <Button type="submit" variant="ghost" size="sm" className="h-7 text-xs text-red-600 hover:bg-red-50 hover:text-red-700">
                       Cancel
@@ -148,20 +160,7 @@ export function MyBookings({ bookings, playerMap, partnerByBookingId }: Props) {
                   </form>
                 )}
               </div>
-            </div>
-          </CardContent>
-        )
-
-        // Whole card is a link to the booking detail page when there's a session id.
-        return booking.session_id ? (
-          <Link key={booking.id} href={`/parent/bookings/${booking.id}`} className="block">
-            <Card className="rounded-xl shadow-card transition-colors hover:bg-[#FFF6ED]/40">
-              {cardBody}
-            </Card>
-          </Link>
-        ) : (
-          <Card key={booking.id} className="rounded-xl shadow-card">
-            {cardBody}
+            </CardContent>
           </Card>
         )
       })}

@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
-import { createClient, getSessionUser } from '@/lib/supabase/server'
+import { createClient, createServiceClient, getSessionUser } from '@/lib/supabase/server'
 import { validateFormData, requestPrivateFormSchema, cancelPrivateFormSchema } from '@/lib/utils/validation'
 import { createCharge, voidCharge, formatChargeDescription } from '@/lib/utils/billing'
 import { sendPushToUser, sendPushToAdmins } from '@/lib/push/send'
@@ -200,6 +200,11 @@ export async function requestPrivateBooking(formData: FormData) {
 export async function cancelPrivateBooking(formData: FormData) {
   const { userId, familyId } = await getParentAuth()
   const supabase = await createClient()
+  // Service-role client for the actual writes — parents have no UPDATE policy
+  // on bookings/sessions/charges, so doing the writes via the parent JWT
+  // silently no-ops under RLS. We still validate ownership against the parent
+  // JWT before touching the service client.
+  const service = createServiceClient()
 
   const parsed = validateFormData(formData, cancelPrivateFormSchema)
   if (!parsed.success) {
@@ -248,7 +253,7 @@ export async function cancelPrivateBooking(formData: FormData) {
 
   if (isLate) {
     // Get cancellation counter
-    const { data: tracker } = await supabase
+    const { data: tracker } = await service
       .from('cancellation_tracker')
       .select('late_cancellation_count')
       .eq('family_id', familyId)
@@ -269,7 +274,7 @@ export async function cancelPrivateBooking(formData: FormData) {
     cancellationType = 'parent_late'
 
     // Increment counter
-    await supabase.rpc('increment_cancellation_counter', {
+    await service.rpc('increment_cancellation_counter', {
       target_family_id: familyId,
       target_term: currentTerm.term,
       target_year: currentTerm.year,
@@ -278,7 +283,7 @@ export async function cancelPrivateBooking(formData: FormData) {
   }
 
   // Void existing charge
-  const { data: existingCharge } = await supabase
+  const { data: existingCharge } = await service
     .from('charges')
     .select('id, amount_cents')
     .eq('booking_id', booking_id)
@@ -286,12 +291,12 @@ export async function cancelPrivateBooking(formData: FormData) {
     .single()
 
   if (existingCharge) {
-    await voidCharge(supabase, existingCharge.id, familyId)
+    await voidCharge(service, existingCharge.id, familyId)
 
     // If partial credit (not 100%), create a charge for the non-refunded portion
     if (creditPercent < 100) {
       const chargeAmount = Math.round(existingCharge.amount_cents * (1 - creditPercent / 100))
-      await createCharge(supabase, {
+      await createCharge(service, {
         familyId,
         type: 'private',
         sourceType: 'cancellation',
@@ -309,8 +314,8 @@ export async function cancelPrivateBooking(formData: FormData) {
     }
   }
 
-  // Update booking
-  await supabase
+  // Update booking via service client (parents have no UPDATE RLS).
+  await service
     .from('bookings')
     .update({
       status: 'cancelled',
@@ -323,7 +328,7 @@ export async function cancelPrivateBooking(formData: FormData) {
   // this is the last non-cancelled booking on it.
   let sessionFreed = false
   {
-    const { count: remaining } = await supabase
+    const { count: remaining } = await service
       .from('bookings')
       .select('id', { count: 'exact', head: true })
       .eq('session_id', booking.session_id!)
@@ -331,7 +336,7 @@ export async function cancelPrivateBooking(formData: FormData) {
       .neq('status', 'cancelled')
 
     if ((remaining ?? 0) === 0) {
-      await supabase
+      await service
         .from('sessions')
         .update({ status: 'cancelled', cancellation_reason: 'Parent cancelled' })
         .eq('id', booking.session_id!)

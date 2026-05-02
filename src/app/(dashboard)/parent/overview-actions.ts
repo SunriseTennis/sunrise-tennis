@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
-import { createClient, getSessionUser } from '@/lib/supabase/server'
+import { createClient, createServiceClient, getSessionUser } from '@/lib/supabase/server'
 import { voidCharge } from '@/lib/utils/billing'
 
 /**
@@ -45,8 +45,13 @@ export async function cancelPrivateFromOverview(
     return { error: 'Booking already cancelled' }
   }
 
+  // Service-role client for the writes — parents have no UPDATE RLS on
+  // bookings/sessions/charges, so doing the writes via the parent JWT
+  // silently no-ops. Ownership has already been validated above.
+  const service = createServiceClient()
+
   // Cancel booking
-  await supabase
+  await service
     .from('bookings')
     .update({ status: 'cancelled', cancellation_type: 'parent_24h' })
     .eq('id', bookingId)
@@ -56,7 +61,7 @@ export async function cancelPrivateFromOverview(
   // this is the last non-cancelled booking on it.
   let cancelledSession = false
   if (booking.session_id) {
-    const { count: remaining } = await supabase
+    const { count: remaining } = await service
       .from('bookings')
       .select('id', { count: 'exact', head: true })
       .eq('session_id', booking.session_id)
@@ -64,7 +69,7 @@ export async function cancelPrivateFromOverview(
       .neq('status', 'cancelled')
 
     if ((remaining ?? 0) === 0) {
-      await supabase
+      await service
         .from('sessions')
         .update({ status: 'cancelled', cancellation_reason: 'Parent cancelled' })
         .eq('id', booking.session_id)
@@ -73,7 +78,7 @@ export async function cancelPrivateFromOverview(
   }
 
   // Void charge
-  const { data: charge } = await supabase
+  const { data: charge } = await service
     .from('charges')
     .select('id')
     .eq('booking_id', bookingId)
@@ -81,7 +86,7 @@ export async function cancelPrivateFromOverview(
     .single()
 
   if (charge) {
-    await voidCharge(supabase, charge.id, familyId)
+    await voidCharge(service, charge.id, familyId)
   }
 
   // Heads-up to partner family if their booking still stands.
