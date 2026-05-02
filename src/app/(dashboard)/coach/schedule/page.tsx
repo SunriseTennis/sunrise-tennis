@@ -39,7 +39,7 @@ export default async function CoachSchedulePage() {
   // Fetch sessions where coach is primary (direct assignment) — exclude cancelled
   const { data: primarySessions } = await supabase
     .from('sessions')
-    .select('id, program_id, coach_id, date, start_time, end_time, status, session_type, coaches:coach_id(name), programs:program_id(name, level, type), venues:venue_id(name)')
+    .select('id, program_id, coach_id, date, start_time, end_time, status, session_type, coaches:coach_id(name), programs:program_id(name, level, type)')
     .eq('coach_id', coachId)
     .neq('status', 'cancelled')
     .gte('date', termStart)
@@ -66,7 +66,7 @@ export default async function CoachSchedulePage() {
   if (assistantProgramIds.length > 0) {
     const { data } = await supabase
       .from('sessions')
-      .select('id, program_id, coach_id, date, start_time, end_time, status, session_type, coaches:coach_id(name), programs:program_id(name, level, type), venues:venue_id(name)')
+      .select('id, program_id, coach_id, date, start_time, end_time, status, session_type, coaches:coach_id(name), programs:program_id(name, level, type)')
       .in('program_id', assistantProgramIds)
       .neq('status', 'cancelled')
       .gte('date', termStart)
@@ -146,14 +146,12 @@ export default async function CoachSchedulePage() {
   // Serialize sessions for client component
   const calendarSessions = allSessions.map(s => {
     const program = s.programs as unknown as { name: string; level: string; type: string } | null
-    const venue = s.venues as unknown as { name: string } | null
     const isLead = s.coach_id === coachId || (s.program_id ? primaryProgramIds.has(s.program_id) : false)
     const eventDate = new Date(s.date + 'T12:00:00')
 
     return {
       id: s.id,
       title: program?.name ?? s.session_type,
-      subtitle: venue?.name ?? '',
       dayOfWeek: eventDate.getDay(),
       startTime: s.start_time ?? '09:00',
       endTime: s.end_time ?? '10:00',
@@ -166,6 +164,14 @@ export default async function CoachSchedulePage() {
       bookedCount: attendanceCounts[s.id] ?? rosterCounts[s.program_id ?? ''] ?? 0,
     }
   })
+
+  // Future session dates for the "Next session" jump button (today onwards, ordered)
+  const todayStr = new Date().toISOString().split('T')[0]
+  const nextSessionDates = [...new Set(
+    allSessions
+      .filter(s => s.date >= todayStr)
+      .map(s => s.date)
+  )].sort()
 
   return (
     <div className="space-y-6">
@@ -184,6 +190,7 @@ export default async function CoachSchedulePage() {
           sessions={calendarSessions}
           programRosters={programRosters}
           sessionAttendances={sessionAttendances}
+          nextSessionDates={nextSessionDates}
         />
       </div>
     </div>

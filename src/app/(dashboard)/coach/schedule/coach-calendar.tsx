@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { WeeklyCalendar, type CalendarEvent } from '@/components/weekly-calendar'
 import { StatusBadge } from '@/components/status-badge'
-import { Users, MapPin, X, Eye } from 'lucide-react'
+import { Users, X, Eye } from 'lucide-react'
 import { InlineAttendance } from './inline-attendance'
 
 type Player = { id: string; first_name: string; last_name: string; ball_color: string | null }
@@ -42,12 +42,6 @@ function CoachSessionPopup({ event, onClose }: { event: CalendarEvent; onClose: 
             <span>{event.bookedCount} player{event.bookedCount !== 1 ? 's' : ''}</span>
           </div>
         )}
-        {event.subtitle && (
-          <div className="flex items-center gap-2">
-            <MapPin className="size-3.5 shrink-0" />
-            <span>{event.subtitle}</span>
-          </div>
-        )}
       </div>
 
       <div className="mt-4">
@@ -69,14 +63,19 @@ export function CoachCalendar({
   sessions,
   programRosters,
   sessionAttendances,
+  nextSessionDates,
 }: {
   sessions: CalendarEvent[]
   programRosters?: Record<string, Player[]>
   sessionAttendances?: Record<string, Record<string, string>>
+  nextSessionDates?: string[]
 }) {
   return (
     <WeeklyCalendar
       events={sessions}
+      hideNextTerm
+      nextJumpDates={nextSessionDates}
+      nextJumpLabel="Next session"
       renderPopup={(event, onClose) => (
         <CoachSessionPopup event={event} onClose={onClose} />
       )}

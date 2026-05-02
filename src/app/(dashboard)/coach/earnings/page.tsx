@@ -5,6 +5,7 @@ import { EmptyState } from '@/components/empty-state'
 import { DollarSign } from 'lucide-react'
 import { formatDate } from '@/lib/utils/dates'
 import { getPayPeriodKey } from '@/lib/utils/private-booking'
+import { PayPeriodForm } from './pay-period-form'
 
 export default async function CoachEarningsPage({
   searchParams,
@@ -73,6 +74,15 @@ export default async function CoachEarningsPage({
             <p className="text-2xl font-bold tabular-nums">${(totalOwed / 100).toFixed(2)}</p>
           </div>
         </div>
+      </div>
+
+      {/* ── Pay Period Selector ── */}
+      <div className="animate-fade-up flex items-center justify-between rounded-xl border border-[#F0B8B0]/60 bg-[#FFFBF7] p-4 shadow-card" style={{ animationDelay: '40ms' }}>
+        <div>
+          <p className="text-sm font-semibold text-deep-navy">Pay period</p>
+          <p className="text-xs text-slate-blue">How often you prefer to be paid</p>
+        </div>
+        <PayPeriodForm payPeriod={payPeriod} />
       </div>
 
       {/* ── Stat Cards ── */}

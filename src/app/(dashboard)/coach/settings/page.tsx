@@ -1,7 +1,9 @@
 import { redirect } from 'next/navigation'
-import { getSessionUser } from '@/lib/supabase/server'
+import { createClient, requireCoach, getSessionUser } from '@/lib/supabase/server'
 import { EmailChangeForm, PasswordChangeFormShared } from '@/components/settings'
+import { SettingsAccordion, type AccordionSection } from '@/components/settings/settings-accordion'
 import { SignOutButton } from '@/app/(dashboard)/parent/settings/sign-out-button'
+import { CoachNotificationPrefsForm } from './notification-prefs-form'
 import { ImageHero } from '@/components/image-hero'
 import { WarmToast } from '@/components/warm-toast'
 import { Settings } from 'lucide-react'
@@ -15,7 +17,54 @@ export default async function CoachSettingsPage({
   const user = await getSessionUser()
   if (!user) redirect('/login')
 
+  const { coachId } = await requireCoach()
+  if (!coachId) redirect('/coach?error=No+coach+profile+found')
+
+  const supabase = await createClient()
+  const { data: coach } = await supabase
+    .from('coaches')
+    .select('notification_preferences')
+    .eq('id', coachId)
+    .single()
+
+  const prefs = (coach?.notification_preferences as Record<string, boolean> | null) ?? {}
   const pendingEmail = (user.user_metadata as Record<string, unknown> | undefined)?.new_email as string | undefined
+
+  const sections: AccordionSection[] = [
+    {
+      id: 'notifications',
+      iconName: 'Bell',
+      label: 'Notifications',
+      description: 'Booking requests, session digest, late cancellations',
+      content: <CoachNotificationPrefsForm prefs={prefs} />,
+    },
+    {
+      id: 'email',
+      iconName: 'Mail',
+      label: 'Email Address',
+      description: user.email ?? 'Change your login email',
+      content: (
+        <EmailChangeForm
+          currentEmail={user.email ?? ''}
+          pendingEmail={pendingEmail}
+        />
+      ),
+    },
+    {
+      id: 'password',
+      iconName: 'Lock',
+      label: 'Password',
+      description: 'Update your password',
+      content: <PasswordChangeFormShared redirectPath="/coach/settings" />,
+    },
+    {
+      id: 'signout',
+      iconName: 'LogOut',
+      label: 'Sign Out',
+      destructive: true,
+      content: <SignOutButton />,
+    },
+  ]
 
   return (
     <div className="space-y-5">
@@ -27,7 +76,7 @@ export default async function CoachSettingsPage({
           </div>
           <div>
             <p className="text-sm font-medium text-white/80">Coach</p>
-            <h1 className="text-2xl font-bold">Settings</h1>
+            <h1 className="text-2xl font-bold">Account Settings</h1>
           </div>
         </div>
       </ImageHero>
@@ -36,22 +85,9 @@ export default async function CoachSettingsPage({
       {error && <WarmToast variant="danger">{error}</WarmToast>}
       {success && <WarmToast variant="success">{success}</WarmToast>}
 
-      {/* ── Email Change ── */}
+      {/* ── Accordion ── */}
       <div className="animate-fade-up" style={{ animationDelay: '80ms' }}>
-        <EmailChangeForm
-          currentEmail={user.email ?? ''}
-          pendingEmail={pendingEmail}
-        />
-      </div>
-
-      {/* ── Password ── */}
-      <div className="animate-fade-up" style={{ animationDelay: '160ms' }}>
-        <PasswordChangeFormShared redirectPath="/coach/settings" />
-      </div>
-
-      {/* ── Account (destructive) ── */}
-      <div className="animate-fade-up" style={{ animationDelay: '240ms' }}>
-        <SignOutButton />
+        <SettingsAccordion sections={sections} />
       </div>
     </div>
   )

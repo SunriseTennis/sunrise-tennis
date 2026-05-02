@@ -339,6 +339,7 @@ export const familyPricingFormSchema = z.object({
   family_id: uuidString('Invalid family'),
   program_id: optionalUuid(),
   program_type: optionalString(),
+  coach_id: optionalUuid(),
   per_session_dollars: optionalString(),
   term_fee_dollars: optionalString(),
   notes: optionalString(1000),
@@ -479,7 +480,7 @@ export const updateCompPlayerFormSchema = z.object({
 
 // ── Private Bookings ──────────────────────────────────────────────────
 
-export const payPeriodSchema = z.enum(['weekly', 'fortnightly', 'end_of_term'])
+export const payPeriodSchema = z.enum(['weekly', 'end_of_term'])
 export const approvalStatusSchema = z.enum(['pending', 'approved', 'declined', 'auto'])
 
 export const coachAvailabilityFormSchema = z.object({

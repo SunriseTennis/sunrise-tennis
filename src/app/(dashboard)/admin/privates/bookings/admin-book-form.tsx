@@ -31,10 +31,12 @@ interface Coach {
 interface Props {
   families: Family[]
   coaches: Coach[]
+  /** When true, renders the form directly without the toggle button (e.g. inside a modal). */
+  alwaysExpanded?: boolean
 }
 
-export function AdminBookForm({ families, coaches }: Props) {
-  const [showForm, setShowForm] = useState(false)
+export function AdminBookForm({ families, coaches, alwaysExpanded = false }: Props) {
+  const [showForm, setShowForm] = useState(alwaysExpanded)
   const [search, setSearch] = useState('')
   const [selectedFamily, setSelectedFamily] = useState<Family | null>(null)
   const [selectedPlayerId, setSelectedPlayerId] = useState('')
@@ -188,7 +190,9 @@ export function AdminBookForm({ families, coaches }: Props) {
           </div>
           <div className="sm:col-span-2 flex gap-2">
             <Button type="submit" size="sm">Book & Confirm</Button>
-            <Button type="button" variant="ghost" size="sm" onClick={() => { setShowForm(false); handleClearFamily() }}>Cancel</Button>
+            {!alwaysExpanded && (
+              <Button type="button" variant="ghost" size="sm" onClick={() => { setShowForm(false); handleClearFamily() }}>Cancel</Button>
+            )}
           </div>
         </form>
       </CardContent>

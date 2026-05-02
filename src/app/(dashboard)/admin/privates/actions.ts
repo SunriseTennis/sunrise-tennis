@@ -55,6 +55,13 @@ export async function adminRemoveAvailability(availabilityId: string) {
   redirect('/admin/privates/availability')
 }
 
+// Form-data wrapper for v2 bulk editor remove buttons.
+export async function adminRemoveAvailabilityFromForm(formData: FormData) {
+  const id = formData.get('id') as string
+  if (!id) redirect('/admin/privates/availability?error=Missing+id')
+  await adminRemoveAvailability(id)
+}
+
 export async function adminAddException(formData: FormData) {
   await requireAdmin()
   const supabase = await createClient()
@@ -98,6 +105,102 @@ export async function adminRemoveException(exceptionId: string) {
 
   revalidatePath('/admin/privates')
   redirect('/admin/privates/availability')
+}
+
+// Form-data wrapper accepting a comma-separated list of ids — used by the
+// grouped exception list to remove an entire date-range group in one click.
+export async function adminRemoveExceptionGroup(formData: FormData) {
+  await requireAdmin()
+  const supabase = await createClient()
+
+  const idsRaw = (formData.get('ids') as string) ?? ''
+  const ids = idsRaw.split(',').filter(Boolean)
+  if (ids.length === 0) redirect('/admin/privates/availability?error=Missing+ids')
+
+  const { error } = await supabase
+    .from('coach_availability_exceptions')
+    .delete()
+    .in('id', ids)
+
+  if (error) {
+    redirect(`/admin/privates/availability?error=${encodeURIComponent('Failed to remove exceptions')}`)
+  }
+
+  revalidatePath('/admin/privates')
+  redirect('/admin/privates/availability')
+}
+
+// ── Admin: Bulk Coach Availability ─────────────────────────────────────
+
+export async function adminSetCoachAvailabilityBulk(formData: FormData) {
+  await requireAdmin()
+  const supabase = await createClient()
+
+  const coachId = formData.get('coach_id') as string
+  if (!coachId) redirect('/admin/privates/availability?error=Coach+is+required')
+
+  const days = formData.getAll('day').map(v => parseInt(v as string, 10)).filter(n => !isNaN(n))
+  const blocks: { start: string; end: string }[] = []
+  let i = 0
+  while (true) {
+    const s = formData.get(`block_start_${i}`)
+    const e = formData.get(`block_end_${i}`)
+    if (!s || !e) break
+    blocks.push({ start: s as string, end: e as string })
+    i++
+  }
+
+  if (days.length === 0 || blocks.length === 0) {
+    redirect(`/admin/privates/availability?coach_id=${coachId}&error=Pick+at+least+one+day+and+one+time+block`)
+  }
+
+  const { error } = await supabase.rpc('set_coach_availability_bulk', {
+    p_coach_id: coachId,
+    p_days: days,
+    p_blocks: blocks,
+  })
+
+  if (error) {
+    redirect(`/admin/privates/availability?coach_id=${coachId}&error=${encodeURIComponent(error.message ?? 'Failed to apply')}`)
+  }
+
+  revalidatePath('/admin/privates/availability')
+  redirect(`/admin/privates/availability?coach_id=${coachId}`)
+}
+
+export async function adminAddExceptionRange(formData: FormData) {
+  await requireAdmin()
+  const supabase = await createClient()
+
+  const coachId = formData.get('coach_id') as string
+  if (!coachId) redirect('/admin/privates/availability?error=Coach+is+required')
+
+  const startDate = formData.get('start_date') as string
+  const endDate = (formData.get('end_date') as string) || startDate
+  const allDay = formData.get('all_day') === 'on'
+  const startTime = allDay ? null : (formData.get('start_time') as string) || null
+  const endTime = allDay ? null : (formData.get('end_time') as string) || null
+  const reason = (formData.get('reason') as string) || null
+
+  if (!startDate) {
+    redirect(`/admin/privates/availability?coach_id=${coachId}&error=Start+date+is+required`)
+  }
+
+  const { error } = await supabase.rpc('add_coach_exception_range', {
+    p_coach_id: coachId,
+    p_start_date: startDate,
+    p_end_date: endDate,
+    p_start_time: startTime ?? undefined,
+    p_end_time: endTime ?? undefined,
+    p_reason: reason ?? undefined,
+  })
+
+  if (error) {
+    redirect(`/admin/privates/availability?coach_id=${coachId}&error=${encodeURIComponent(error.message ?? 'Failed to add')}`)
+  }
+
+  revalidatePath('/admin/privates/availability')
+  redirect(`/admin/privates/availability?coach_id=${coachId}`)
 }
 
 // ── Admin: Player Allowed Coaches ──────────────────────────────────────
@@ -477,9 +580,9 @@ export async function adminBookPrivate(formData: FormData) {
     .eq('id', coachId)
     .single()
 
-  // Calculate price
+  // Calculate price (resolves family overrides via SECURITY DEFINER RPC)
   const { getPrivatePrice } = await import('@/lib/utils/private-booking')
-  const priceCents = await getPrivatePrice(supabase, coachId, durationMinutes)
+  const priceCents = await getPrivatePrice(supabase, familyId, coachId, durationMinutes)
 
   // Calculate end time
   const startMinutes = parseInt(startTime.split(':')[0]) * 60 + parseInt(startTime.split(':')[1])
@@ -584,9 +687,11 @@ export async function adminCreateSharedPrivate(formData: FormData) {
 
   const { data: coach } = await supabase.from('coaches').select('name').eq('id', coachId).single()
 
-  // Calculate price — full price, split between families
+  // Calculate price — full price, split between families.
+  // Note: shared privates use family1's rate as the basis (admin's pick).
+  // If family2 has its own override, it does not apply on the shared session.
   const { getPrivatePrice } = await import('@/lib/utils/private-booking')
-  const totalPriceCents = await getPrivatePrice(supabase, coachId, durationMinutes)
+  const totalPriceCents = await getPrivatePrice(supabase, familyId1, coachId, durationMinutes)
   const halfPrice = Math.round(totalPriceCents / 2)
 
   const startMinutes = parseInt(startTime.split(':')[0]) * 60 + parseInt(startTime.split(':')[1])

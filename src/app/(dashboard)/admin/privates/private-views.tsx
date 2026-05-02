@@ -6,7 +6,9 @@ import { formatCurrency } from '@/lib/utils/currency'
 import { StatusBadge } from '@/components/status-badge'
 import { Card, CardContent } from '@/components/ui/card'
 import { EmptyState } from '@/components/empty-state'
-import { AlertCircle, Calendar, List, Users } from 'lucide-react'
+import { AlertCircle, Calendar, CalendarDays, List, Users } from 'lucide-react'
+import { AdminPrivatesCalendar } from './admin-privates-calendar'
+import { BookPrivateModal } from './book-private-modal'
 
 type Booking = {
   id: string
@@ -28,7 +30,7 @@ type Booking = {
   bookedAt: string | null
 }
 
-type Tab = 'pending' | 'by-coach' | 'all'
+type Tab = 'pending' | 'calendar' | 'by-coach' | 'all'
 
 export function PrivateViews({
   bookings,
@@ -42,7 +44,7 @@ export function PrivateViews({
   const pendingBookings = useMemo(() => bookings.filter(b => b.approvalStatus === 'pending'), [bookings])
   const hasPending = pendingBookings.length > 0
 
-  const [tab, setTab] = useState<Tab>(hasPending ? 'pending' : 'by-coach')
+  const [tab, setTab] = useState<Tab>(hasPending ? 'pending' : 'calendar')
 
   // Group by coach
   const byCoach = useMemo(() => {
@@ -59,12 +61,18 @@ export function PrivateViews({
 
   const tabs: { key: Tab; label: string; icon: typeof List; badge?: number }[] = [
     { key: 'pending', label: 'Pending', icon: AlertCircle, badge: pendingBookings.length || undefined },
+    { key: 'calendar', label: 'Calendar', icon: CalendarDays },
     { key: 'by-coach', label: 'By Coach', icon: Users },
     { key: 'all', label: 'All Bookings', icon: List },
   ]
 
   return (
     <div>
+      {/* Top action bar */}
+      <div className="mb-4 flex items-center justify-end">
+        <BookPrivateModal families={families} coaches={coaches} />
+      </div>
+
       {/* Tab bar */}
       <div className="flex gap-1 overflow-x-auto rounded-lg bg-muted p-1">
         {tabs.map(({ key, label, icon: Icon, badge }) => (
@@ -108,6 +116,13 @@ export function PrivateViews({
             Confirm or decline pending bookings from the{' '}
             <a href="/admin/privates/bookings" className="text-primary hover:underline">bookings management page</a>.
           </p>
+        </div>
+      )}
+
+      {/* Calendar tab */}
+      {tab === 'calendar' && (
+        <div className="mt-4">
+          <AdminPrivatesCalendar bookings={bookings} />
         </div>
       )}
 

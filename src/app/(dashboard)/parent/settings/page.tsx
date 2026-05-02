@@ -8,7 +8,7 @@ import { EmailChangeForm, PasswordChangeFormShared } from '@/components/settings
 import { SignOutButton } from './sign-out-button'
 import { ImageHero } from '@/components/image-hero'
 import { WarmToast } from '@/components/warm-toast'
-import { SettingsAccordion, type AccordionSection } from './settings-accordion'
+import { SettingsAccordion, type AccordionSection } from '@/components/settings/settings-accordion'
 import { Settings } from 'lucide-react'
 
 export default async function ParentSettingsPage({

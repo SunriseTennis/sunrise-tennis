@@ -22,10 +22,12 @@ interface Coach {
 interface Props {
   families: Family[]
   coaches: Coach[]
+  /** When true, renders the form directly without the toggle button (e.g. inside a modal). */
+  alwaysExpanded?: boolean
 }
 
-export function SharedPrivateForm({ families, coaches }: Props) {
-  const [showForm, setShowForm] = useState(false)
+export function SharedPrivateForm({ families, coaches, alwaysExpanded = false }: Props) {
+  const [showForm, setShowForm] = useState(alwaysExpanded)
 
   if (!showForm) {
     return (
@@ -102,7 +104,9 @@ export function SharedPrivateForm({ families, coaches }: Props) {
 
           <div className="flex gap-2">
             <Button type="submit" size="sm">Book Shared Private</Button>
-            <Button type="button" variant="ghost" size="sm" onClick={() => setShowForm(false)}>Cancel</Button>
+            {!alwaysExpanded && (
+              <Button type="button" variant="ghost" size="sm" onClick={() => setShowForm(false)}>Cancel</Button>
+            )}
           </div>
         </form>
       </CardContent>

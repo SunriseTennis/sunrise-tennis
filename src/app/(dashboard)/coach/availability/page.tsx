@@ -1,7 +1,14 @@
 import { redirect } from 'next/navigation'
 import { createClient, requireCoach } from '@/lib/supabase/server'
-import { AvailabilityEditor } from './availability-editor'
-import { ExceptionList } from './exception-list'
+import { BulkWeeklyEditor } from '@/components/coach-availability/bulk-weekly-editor'
+import { RangeExceptionForm } from '@/components/coach-availability/range-exception-form'
+import { GroupedExceptionList } from '@/components/coach-availability/grouped-exception-list'
+import {
+  setAvailabilityBulk,
+  removeAvailabilityFromForm,
+  addExceptionRange,
+  removeExceptionGroup,
+} from '../actions'
 
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
@@ -18,7 +25,6 @@ export default async function CoachAvailabilityPage({
   const [
     { data: windows },
     { data: exceptions },
-    { data: coach },
   ] = await Promise.all([
     supabase
       .from('coach_availability')
@@ -32,11 +38,6 @@ export default async function CoachAvailabilityPage({
       .eq('coach_id', coachId)
       .gte('exception_date', new Date().toISOString().split('T')[0])
       .order('exception_date'),
-    supabase
-      .from('coaches')
-      .select('pay_period')
-      .eq('id', coachId)
-      .single(),
   ])
 
   // Group windows by day
@@ -66,22 +67,24 @@ export default async function CoachAvailabilityPage({
 
       {success && (
         <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
-          {success}
+          {decodeURIComponent(success)}
         </div>
       )}
 
       <div className="animate-fade-up grid gap-6 lg:grid-cols-3" style={{ animationDelay: '80ms' }}>
         <div className="lg:col-span-2">
-          <AvailabilityEditor
+          <BulkWeeklyEditor
             windowsByDay={windowsByDay}
             coachId={coachId!}
+            onApply={setAvailabilityBulk}
+            onRemoveWindow={removeAvailabilityFromForm}
           />
         </div>
-        <div>
-          <ExceptionList
+        <div className="space-y-3">
+          <RangeExceptionForm coachId={coachId!} onAdd={addExceptionRange} />
+          <GroupedExceptionList
             exceptions={exceptions ?? []}
-            coachId={coachId!}
-            payPeriod={coach?.pay_period ?? 'weekly'}
+            onRemove={removeExceptionGroup}
           />
         </div>
       </div>
