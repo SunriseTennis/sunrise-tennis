@@ -1270,8 +1270,10 @@ export function WeeklyCalendar({
               </div>
             )}
 
-            {/* Cancel private booking */}
-            {onCancelPrivate && popupEvent.bookingId && popupEvent.programType === 'private' && (
+            {/* Cancel private booking — hidden when the booking is already cancelled.
+                We detect that via the subtitle suffix ("Cancelled — Re-book"); avoids
+                threading an extra `status` field through CalendarEvent for this single check. */}
+            {onCancelPrivate && popupEvent.bookingId && popupEvent.programType === 'private' && !(popupEvent.subtitle ?? '').includes('Cancelled') && (
               <div className="mt-2">
                 <button
                   disabled={actionLoading}

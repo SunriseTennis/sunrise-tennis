@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useState, useTransition, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
 import { Plus, X } from 'lucide-react'
 import { createCoach } from './actions'
@@ -9,7 +10,19 @@ import { Button } from '@/components/ui/button'
 export function CreateCoachButton() {
   const [open, setOpen] = useState(false)
   const [isPending, startTransition] = useTransition()
+  const [mounted, setMounted] = useState(false)
   const router = useRouter()
+
+  // Required for createPortal — document is not available during SSR.
+  useEffect(() => { setMounted(true) }, [])
+
+  // Lock body scroll while open
+  useEffect(() => {
+    if (!open) return
+    const prev = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => { document.body.style.overflow = prev }
+  }, [open])
 
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -21,20 +34,21 @@ export function CreateCoachButton() {
     })
   }
 
-  if (!open) {
-    return (
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        className="inline-flex items-center gap-1.5 rounded-full bg-white/20 px-3 py-1.5 text-sm font-medium text-white backdrop-blur-sm transition-colors hover:bg-white/30"
-      >
-        <Plus className="size-3.5" /> Add Coach
-      </button>
-    )
-  }
+  const trigger = (
+    <button
+      type="button"
+      onClick={() => setOpen(true)}
+      className="inline-flex items-center gap-1.5 rounded-full bg-white/20 px-3 py-1.5 text-sm font-medium text-white backdrop-blur-sm transition-colors hover:bg-white/30"
+    >
+      <Plus className="size-3.5" /> Add Coach
+    </button>
+  )
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center">
+  // Portal the modal to <body> so the gradient header's backdrop-blur /
+  // overflow doesn't create a containing block that traps `position: fixed`
+  // and clips the modal under the header.
+  const modal = open && mounted ? createPortal(
+    <div className="fixed inset-0 z-[100] flex items-end justify-center sm:items-center">
       <div className="fixed inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setOpen(false)} />
       <div className="relative w-full max-w-md rounded-t-2xl sm:rounded-2xl bg-popover p-6 shadow-elevated max-h-[85vh] overflow-y-auto">
         <div className="mb-4 flex items-center justify-between">
@@ -113,6 +127,9 @@ export function CreateCoachButton() {
           </div>
         </form>
       </div>
-    </div>
-  )
+    </div>,
+    document.body,
+  ) : null
+
+  return <>{trigger}{modal}</>
 }

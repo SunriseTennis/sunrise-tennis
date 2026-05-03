@@ -6,7 +6,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { StatusBadge } from '@/components/status-badge'
 import { cancelPrivateBooking } from './actions'
-import { Clock, User, Users, ChevronDown, Repeat } from 'lucide-react'
+import { Clock, User, Users, ChevronDown, Repeat, X } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
 
 interface BookingSession {
@@ -235,16 +235,42 @@ function SeriesCard({ groupKey, bookings, playerName, partnerByBookingId }: Seri
         </button>
 
         {expanded && (
-          <div className="border-t border-border/40 bg-muted/10 px-3 py-3 space-y-2" data-group-key={groupKey}>
-            {bookings.map((b) => (
-              <SingleBookingCard
-                key={b.id}
-                booking={b}
-                playerName={playerName}
-                partner={partnerByBookingId?.[b.id]}
-              />
-            ))}
-          </div>
+          <ul className="border-t border-border/40 bg-muted/10 px-4 py-2 divide-y divide-border/30" data-group-key={groupKey}>
+            {bookings.map((b) => {
+              const sess = b.sessions
+              if (!sess?.date) return null
+              return (
+                <li key={b.id} className="flex items-center gap-2 py-1.5 text-xs">
+                  <Link
+                    href={`/parent/bookings/${b.id}`}
+                    className="flex-1 min-w-0 flex items-center gap-2 hover:text-primary transition-colors"
+                  >
+                    <span className="tabular-nums text-foreground">{formatFriendlyDate(sess.date)}</span>
+                    {sess.start_time && (
+                      <span className="text-muted-foreground tabular-nums">
+                        {formatTimeShort(sess.start_time)}
+                      </span>
+                    )}
+                  </Link>
+                  {b.price_cents != null && (
+                    <span className="tabular-nums text-muted-foreground">${(b.price_cents / 100).toFixed(0)}</span>
+                  )}
+                  {b.status !== 'cancelled' && (
+                    <form action={cancelPrivateBooking}>
+                      <input type="hidden" name="booking_id" value={b.id} />
+                      <button
+                        type="submit"
+                        className="rounded p-0.5 text-muted-foreground hover:bg-red-50 hover:text-red-600 transition-colors"
+                        aria-label="Cancel"
+                      >
+                        <X className="size-3.5" />
+                      </button>
+                    </form>
+                  )}
+                </li>
+              )
+            })}
+          </ul>
         )}
       </CardContent>
     </Card>

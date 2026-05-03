@@ -94,7 +94,10 @@ type PrivateBooking = {
   endTime: string | null
   date?: string | null
   sessionId?: string | null
+  coachId?: string | null
   approvalStatus?: string | null
+  status?: string | null
+  cancellationType?: string | null
   partnerFirstName?: string | null
   partnerLastName?: string | null
   partnerFamilyName?: string | null
@@ -277,17 +280,23 @@ export function EnrolledCalendar({
     })
     .filter((e): e is NonNullable<typeof e> => e !== null)
 
-  // Private booking events (still use dayOfWeek if no date)
+  // Private booking events (still use dayOfWeek if no date).
+  // Cancelled-self bookings (parent_24h / parent_late) keep showing on the
+  // calendar with a faded coral style + "Cancelled — Re-book" label, parity
+  // with the privates page. Coach/admin cancels are server-filtered out.
   const privateEvents: CalendarEvent[] = (privateBookings ?? [])
     .filter(b => b.startTime && b.endTime && (b.dayOfWeek != null || b.date))
     .map(b => {
-      const statusLabel = b.approvalStatus === 'pending' ? ' · Pending'
+      const isCancelled = b.status === 'cancelled'
+      const statusLabel = isCancelled ? ' · Cancelled — Re-book'
+        : b.approvalStatus === 'pending' ? ' · Pending'
         : b.approvalStatus === 'approved' ? ' · Confirmed'
         : ''
       const isShared = !!b.partnerFirstName
       const subtitle = isShared
         ? `${b.playerName} / ${b.partnerFirstName}${statusLabel}`
         : `${b.playerName}${statusLabel}`
+      const cancelledColor = 'bg-orange-100/70 border-orange-300 text-orange-700 opacity-75 [&]:border-dashed'
       return {
         id: b.id,
         title: b.programName,
@@ -295,7 +304,9 @@ export function EnrolledCalendar({
         dayOfWeek: b.dayOfWeek ?? 0,
         startTime: b.startTime!,
         endTime: b.endTime!,
-        color: colorMode === 'player'
+        color: isCancelled
+          ? cancelledColor
+          : colorMode === 'player'
           ? (playerColorMap.get(b.playerName) ?? PLAYER_PALETTE[0])
           : (isShared ? 'bg-purple-200 border-purple-400 text-purple-900' : PRIVATE_TYPE_COLOR),
         programType: 'private',

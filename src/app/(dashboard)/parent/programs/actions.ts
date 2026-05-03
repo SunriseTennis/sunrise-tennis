@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
-import { createClient, getSessionUser } from '@/lib/supabase/server'
+import { createClient, createServiceClient, getSessionUser } from '@/lib/supabase/server'
 import { sendPushToUser } from '@/lib/push/send'
 import { validateFormData, enrolFormSchema } from '@/lib/utils/validation'
 import { createCharge, getTermPrice, voidCharge, getExistingSessionCharge, formatChargeDescription } from '@/lib/utils/billing'
@@ -583,7 +583,7 @@ export async function unenrolFromProgram(
 
   if (!player) return { error: 'Player not found' }
 
-  // Verify the player is enrolled in this program
+  // Verify the player is enrolled in this program (JWT-scoped read for ownership)
   const { data: rosterEntry } = await supabase
     .from('program_roster')
     .select('id')
@@ -594,8 +594,11 @@ export async function unenrolFromProgram(
 
   if (!rosterEntry) return { error: 'Player is not enrolled in this program' }
 
-  // Withdraw from roster (soft delete)
-  const { error: rosterError } = await supabase
+  // No parent UPDATE policy on program_roster (parents only have INSERT + SELECT
+  // by design — admin owns lifecycle changes). Use service-client for the write
+  // AFTER the JWT-scoped ownership read above. Same pattern as cancelPrivateBooking.
+  const service = createServiceClient()
+  const { error: rosterError } = await service
     .from('program_roster')
     .update({ status: 'withdrawn' })
     .eq('id', rosterEntry.id)
@@ -605,7 +608,8 @@ export async function unenrolFromProgram(
     return { error: 'Failed to unenrol. Please try again.' }
   }
 
-  // Void all future pending charges for this player+program
+  // Void all future pending charges for this player+program. Charges may also
+  // lack a parent UPDATE path; use the service client here too.
   const today = new Date().toISOString().split('T')[0]
   const { data: futureSessionCharges } = await supabase
     .from('charges')
@@ -618,7 +622,7 @@ export async function unenrolFromProgram(
   for (const c of futureSessionCharges ?? []) {
     const session = c.sessions as unknown as { date: string } | null
     if (session && session.date > today) {
-      await voidCharge(supabase, c.id, auth.familyId)
+      await voidCharge(service, c.id, auth.familyId)
     }
   }
 

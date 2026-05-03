@@ -92,13 +92,17 @@ export default async function ParentDashboard() {
       .in('status', ['upcoming', 'in_progress'])
       .order('start_date', { ascending: true })
       .limit(4),
+    // Includes cancelled-self bookings (parent_24h / parent_late) so the
+    // overview keeps the slot visible with a Re-book affordance, parity with
+    // the privates page. Coach/admin cancels are excluded — those slots are
+    // intentionally gone.
     supabase
       .from('bookings')
-      .select('id, player_id, duration_minutes, approval_status, shared_with_booking_id, sessions:session_id(date, start_time, end_time, status, coaches:coach_id(name)), players:player_id(first_name)')
+      .select('id, player_id, duration_minutes, status, approval_status, cancellation_type, shared_with_booking_id, sessions:session_id(date, start_time, end_time, status, coach_id, coaches:coach_id(name)), players:player_id(first_name)')
       .eq('family_id', familyId)
       .eq('booking_type', 'private')
-      .in('status', ['confirmed', 'pending'])
-      .limit(20),
+      .or('status.in.(confirmed,pending),and(status.eq.cancelled,cancellation_type.in.(parent_24h,parent_late))')
+      .limit(40),
   ])
 
   // Fetch competitions the family's players are in (competition_players -> teams -> competitions)
@@ -223,6 +227,9 @@ export default async function ParentDashboard() {
   }
 
   for (const b of (privateBookings ?? [])) {
+    // Skip cancelled bookings as Next-session candidates — they remain in
+    // the list only for the calendar's "Cancelled — re-book" affordance.
+    if ((b as unknown as { status?: string }).status === 'cancelled') continue
     const session = b.sessions as unknown as { date: string; start_time: string | null; status: string; coaches: { name: string } | null } | null
     if (!session?.date || !session.start_time || session.status !== 'scheduled') continue
     if (!(session.date > todayStr || (session.date === todayStr && session.start_time > currentTime))) continue
@@ -279,8 +286,10 @@ export default async function ParentDashboard() {
         href: `/parent/programs`,
       })
     }
-    // Private bookings
+    // Private bookings — skip cancelled (they remain in the calendar feed
+    // only for the "cancelled — re-book" affordance, not as upcoming moments)
     for (const b of privateBookings ?? []) {
+      if ((b as unknown as { status?: string }).status === 'cancelled') continue
       const session = b.sessions as unknown as { date: string; start_time: string | null; status: string; coaches: { name: string } | null } | null
       const player = b.players as unknown as { first_name: string } | null
       if (!session?.date || !session.start_time || session.status !== 'scheduled' || !player?.first_name) continue
@@ -514,10 +523,11 @@ export default async function ParentDashboard() {
               }))}
               attendances={(overviewAttendances ?? []) as { session_id: string; player_id: string; status: string }[]}
               privateBookings={(privateBookings ?? []).map((b) => {
-                const session = b.sessions as unknown as { date: string; start_time: string; end_time: string; status: string; coaches: { name: string } | null } | null
+                const session = b.sessions as unknown as { date: string; start_time: string; end_time: string; status: string; coach_id: string | null; coaches: { name: string } | null } | null
                 const player = b.players as unknown as { first_name: string } | null
                 const dayOfWeek = session?.date ? new Date(session.date + 'T12:00:00').getDay() : null
                 const partner = overviewPartnerByBookingId.get(b.id)
+                const bk = b as unknown as { status?: string; cancellation_type?: string | null; session_id?: string }
                 return {
                   id: b.id,
                   playerName: player?.first_name ?? '',
@@ -526,8 +536,11 @@ export default async function ParentDashboard() {
                   startTime: session?.start_time ?? null,
                   endTime: session?.end_time ?? null,
                   date: session?.date ?? null,
-                  sessionId: (b as unknown as { session_id: string }).session_id ?? null,
+                  sessionId: bk.session_id ?? null,
+                  coachId: session?.coach_id ?? null,
                   approvalStatus: (b as unknown as { approval_status: string | null }).approval_status ?? null,
+                  status: bk.status ?? null,
+                  cancellationType: bk.cancellation_type ?? null,
                   partnerFirstName: partner?.partner_first_name ?? null,
                   partnerLastName: partner?.partner_last_name ?? null,
                   partnerFamilyName: partner?.partner_family_name ?? null,
