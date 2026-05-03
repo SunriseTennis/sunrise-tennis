@@ -34,13 +34,15 @@ type PlayerSessionPriceBreakdown = {
  *
  *   2. Base price = family override (family_pricing) or program default.
  *
- *   3. 25% multi-group discount per player. Applies when this charge is NOT
- *      for the player's oldest currently-enrolled program of an eligible type
- *      ('group','squad'). Recalculated on every billing event so dropping the
- *      "first" program promotes the next-oldest to full price going forward.
- *      For a casual booking on a program the player isn't on the roster of,
- *      having any other eligible enrolment makes the casual "additional" and
- *      qualifies it for 25% off.
+ *   3. 25% multi-group discount per player. Applies when this program is NOT
+ *      the player's *highest-base-price* eligible enrolment ('group','squad').
+ *      Tie-break: when two enrolments share the highest base price, the older
+ *      one (lower `enrolled_at`) keeps full price; the newer one is demoted.
+ *      Recalculated on every billing event so dropping a higher-priced program
+ *      promotes the next-most-expensive to full price going forward. For a
+ *      casual booking on a program the player isn't on the roster of, the rule
+ *      treats the casual as "additional" unless its base price strictly exceeds
+ *      every roster enrolment.
  *
  *   The 25% is multiplicative with early-bird (early-bird is applied by the
  *   caller on top of this per-session price for pay-now term enrolments).
@@ -71,16 +73,29 @@ export async function getPlayerSessionPriceBreakdown(
     return { priceCents: basePrice, basePriceCents: basePrice, morningSquadPartnerApplied: false, multiGroupApplied: false }
   }
 
-  const enrolments = await getPlayerEligibleEnrolments(supabase, playerId)
+  const enrolments = await getPlayerEligibleEnrolmentsWithPrices(supabase, familyId, playerId)
   if (enrolments.length === 0) {
     return { priceCents: basePrice, basePriceCents: basePrice, morningSquadPartnerApplied: false, multiGroupApplied: false }
   }
 
-  // Multi-group fires when this charge is NOT for the player's oldest eligible enrolment.
-  // For a casual booking on a non-enrolled program, the oldest will be some other program,
-  // so the rule naturally treats the casual as "additional" (25% off) — which is what we want.
-  const oldest = enrolments[0]
-  const multiGroupApplied = oldest?.program_id !== programId
+  // Sort: highest base price DESC, then enrolled_at ASC (older wins on ties).
+  const sorted = [...enrolments].sort((a, b) => {
+    if (b.base_price_cents !== a.base_price_cents) return b.base_price_cents - a.base_price_cents
+    return a.enrolled_at.localeCompare(b.enrolled_at)
+  })
+  const top = sorted[0]
+
+  // Is THIS program in the enrolment set?
+  const thisInSet = enrolments.find(e => e.program_id === programId)
+
+  let multiGroupApplied: boolean
+  if (thisInSet) {
+    // Roster billing: discount unless THIS is the top of the sort.
+    multiGroupApplied = top.program_id !== programId
+  } else {
+    // Casual on non-roster program: discount unless its base strictly exceeds the top.
+    multiGroupApplied = basePrice <= top.base_price_cents
+  }
 
   if (multiGroupApplied) {
     return {
@@ -150,11 +165,13 @@ async function getMorningSquadPartnerPrice(
 }
 
 type EnrolmentRow = { program_id: string; enrolled_at: string }
+type EnrolmentRowWithPrice = EnrolmentRow & { base_price_cents: number }
 
 /**
  * Returns the player's currently-enrolled programs of multi-group-eligible
- * types ('group','squad'), ordered oldest first. Used to compute the 25%
- * multi-group ordinal.
+ * types ('group','squad'), ordered oldest first. Retained for any caller that
+ * only needs the enrolment list (no longer used by the multi-group helper —
+ * see `getPlayerEligibleEnrolmentsWithPrices`).
  */
 export async function getPlayerEligibleEnrolments(
   supabase: Supabase,
@@ -170,6 +187,49 @@ export async function getPlayerEligibleEnrolments(
 
   if (!data) return []
   return data.map(r => ({ program_id: r.program_id, enrolled_at: r.enrolled_at as string }))
+}
+
+/**
+ * As above, but also resolves each enrolment's effective base per-session price
+ * (family_pricing override else program default). Used by the multi-group rule
+ * which sorts by price DESC instead of enrolment age. Tie-break on equal
+ * prices: older `enrolled_at` first.
+ */
+export async function getPlayerEligibleEnrolmentsWithPrices(
+  supabase: Supabase,
+  familyId: string,
+  playerId: string,
+): Promise<EnrolmentRowWithPrice[]> {
+  const { data } = await supabase
+    .from('program_roster')
+    .select('program_id, enrolled_at, programs!inner(id, type, per_session_cents)')
+    .eq('player_id', playerId)
+    .eq('status', 'enrolled')
+    .in('programs.type', MULTI_GROUP_TYPES as unknown as string[])
+    .order('enrolled_at', { ascending: true })
+
+  if (!data || data.length === 0) return []
+
+  const rows = data.map(r => {
+    const programs = r.programs as { id?: string; type?: string | null; per_session_cents?: number | null } | null
+    return {
+      program_id: r.program_id,
+      enrolled_at: r.enrolled_at as string,
+      program_type: programs?.type ?? null,
+    }
+  })
+
+  // Resolve effective base price for each enrolment via the existing RPC
+  // (handles family_pricing overrides + program defaults consistently).
+  const prices = await Promise.all(
+    rows.map(r => getSessionPrice(supabase, familyId, r.program_id, r.program_type)),
+  )
+
+  return rows.map((r, i) => ({
+    program_id: r.program_id,
+    enrolled_at: r.enrolled_at,
+    base_price_cents: prices[i],
+  }))
 }
 
 /**

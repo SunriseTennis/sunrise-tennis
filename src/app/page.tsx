@@ -290,13 +290,13 @@ export default async function Home() {
               </div>
               <div className="min-w-0 flex-1">
                 <h2 className="text-lg font-bold text-[#1A2332] sm:text-xl">
-                  More than one group? Save 25%.
+                  More than one group? Save 25% on the cheaper one.
                 </h2>
                 <p className="mt-1 text-sm leading-relaxed text-[#556270]">
-                  Every additional group your child enrols in is automatically <span className="font-semibold text-[#1A2332]">25% off — for the whole term</span>. Per child, stacks with our 15% early-bird. Designed to back the kids who are seriously into their tennis.
+                  When your child enrols in two or more groups, the higher-priced one stays full price and the cheaper one is automatically <span className="font-semibold text-[#1A2332]">25% off — for the whole term</span>. Per child, stacks with our 15% early-bird.
                 </p>
                 <p className="mt-2 text-xs text-[#8899A6]">
-                  Example: Green Ball + Friday Night Squad for one player → <span className="font-semibold text-[#1A2332] tabular-nums">$25 + $22.50/wk</span> instead of $25 + $30.
+                  Example: Green Ball + Friday Night Squad for one player → <span className="font-semibold text-[#1A2332] tabular-nums">$30 + $18.75/wk</span> instead of $30 + $25.
                 </p>
               </div>
             </div>
