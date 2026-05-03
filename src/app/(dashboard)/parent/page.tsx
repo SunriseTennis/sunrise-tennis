@@ -6,6 +6,7 @@ import { formatTime } from '@/lib/utils/dates'
 import { getTermForDate, getNextTermStart } from '@/lib/utils/school-terms'
 import { EmptyState } from '@/components/empty-state'
 import { ImageHero } from '@/components/image-hero'
+import { PendingApprovalBanner } from '@/components/pending-approval-banner'
 import { Users, GraduationCap, ChevronRight, CalendarDays, MapPin, UserPlus, CreditCard, Calendar, Megaphone, Trophy } from 'lucide-react'
 import { EnrolledCalendar } from './enrolled-calendar'
 import { PreChargeBanner } from './pre-charge-banner'
@@ -309,6 +310,15 @@ export default async function ParentDashboard() {
 
   return (
     <div className="space-y-6">
+      {/* ── Pending Approval Banner (Plan 15 Phase C) ── */}
+      {(family?.approval_status === 'pending_review' || family?.approval_status === 'changes_requested') && (
+        <PendingApprovalBanner
+          status={family.approval_status as 'pending_review' | 'changes_requested'}
+          note={family.approval_note ?? null}
+          hasPlayers={(players ?? []).length > 0}
+        />
+      )}
+
       {/* ── Hero Banner ── */}
       <ImageHero>
         <div className="flex items-center justify-between">

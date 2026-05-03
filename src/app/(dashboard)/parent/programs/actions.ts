@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
-import { createClient, createServiceClient, getSessionUser } from '@/lib/supabase/server'
+import { createClient, createServiceClient, getSessionUser, requireApprovedFamily } from '@/lib/supabase/server'
 import { sendPushToUser } from '@/lib/push/send'
 import { validateFormData, enrolFormSchema } from '@/lib/utils/validation'
 import { createCharge, getTermPrice, voidCharge, getExistingSessionCharge, formatChargeDescription } from '@/lib/utils/billing'
@@ -31,6 +31,9 @@ export async function enrolInProgram(programId: string, familyId: string, formDa
   const supabase = await createClient()
   const auth = await getParentFamilyId()
   if (!auth || auth.familyId !== familyId) redirect('/login')
+
+  // Plan 15 Phase C — gate on approval status (redirects to /parent if not approved).
+  await requireApprovedFamily()
 
   // Rate limit: 5 enrollment attempts per minute per user
   const { checkRateLimitAsync } = await import('@/lib/utils/rate-limit')
@@ -318,6 +321,18 @@ export async function bookSession(
   const supabase = await createClient()
   const auth = await getParentFamilyId()
   if (!auth) return { error: 'Not authenticated' }
+
+  // Plan 15 Phase C — gate on approval status. bookSession returns shape
+  // (not redirect) so do the check inline rather than via the helper.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: famGate } = await (supabase as any)
+    .from('families')
+    .select('approval_status')
+    .eq('id', auth.familyId)
+    .single()
+  if (famGate?.approval_status !== 'approved') {
+    return { error: 'Your account is awaiting approval. You can book once Maxim has reviewed your signup.' }
+  }
 
   const { checkRateLimitAsync } = await import('@/lib/utils/rate-limit')
   if (!await checkRateLimitAsync(`book-session:${auth.userId}`, 10, 60_000)) {

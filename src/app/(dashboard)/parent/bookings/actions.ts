@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
-import { createClient, createServiceClient, getSessionUser } from '@/lib/supabase/server'
+import { createClient, createServiceClient, getSessionUser, requireApprovedFamily } from '@/lib/supabase/server'
 import { validateFormData, requestPrivateFormSchema, cancelPrivateFormSchema } from '@/lib/utils/validation'
 import { createCharge, formatChargeDescription } from '@/lib/utils/billing'
 import {
@@ -37,6 +37,9 @@ async function getParentAuth(): Promise<{ userId: string; familyId: string }> {
 export async function requestPrivateBooking(formData: FormData) {
   const { userId, familyId } = await getParentAuth()
   const supabase = await createClient()
+
+  // Plan 15 Phase C — gate on approval status (redirects to /parent if not approved).
+  await requireApprovedFamily()
 
   // Rate limit
   const { checkRateLimitAsync } = await import('@/lib/utils/rate-limit')
@@ -229,6 +232,9 @@ export async function cancelPrivateBooking(formData: FormData) {
 export async function requestStandingPrivate(formData: FormData) {
   const { userId, familyId } = await getParentAuth()
   const supabase = await createClient()
+
+  // Plan 15 Phase C — gate on approval status.
+  await requireApprovedFamily()
 
   const { checkRateLimitAsync } = await import('@/lib/utils/rate-limit')
   if (!await checkRateLimitAsync(`booking:${userId}`, 5, 60_000)) {

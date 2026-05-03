@@ -22,6 +22,20 @@ async function getParentFamilyId(): Promise<string | null> {
   return userRole?.family_id ?? null
 }
 
+/**
+ * Plan 15 Phase B — when a parent edits anything while their family is in
+ * `changes_requested` state, flip back to `pending_review` so the admin
+ * sees it bubble up the queue. Idempotent (RPC only flips the matching state).
+ */
+async function maybeResubmitForReview(familyId: string): Promise<void> {
+  try {
+    const supabase = await createClient()
+    await supabase.rpc('resubmit_family_for_review', { p_family_id: familyId })
+  } catch {
+    // Non-fatal — edits still saved either way.
+  }
+}
+
 export async function updateContactInfo(formData: FormData) {
   const supabase = await createClient()
   const familyId = await getParentFamilyId()
@@ -59,6 +73,7 @@ export async function updateContactInfo(formData: FormData) {
     redirect(`/parent/settings?error=${encodeURIComponent(error.message)}`)
   }
 
+  await maybeResubmitForReview(familyId)
   revalidatePath('/parent/settings')
   revalidatePath('/parent')
   redirect('/parent/settings?success=Contact+info+updated')
@@ -132,6 +147,7 @@ export async function updatePlayerDetails(playerId: string, formData: FormData) 
     redirect(`/parent/players/${playerId}?error=${encodeURIComponent(error.message)}`)
   }
 
+  await maybeResubmitForReview(familyId)
   revalidatePath(`/parent/players/${playerId}`)
   revalidatePath('/parent')
   redirect(`/parent/players/${playerId}?success=Player+details+updated`)
@@ -251,6 +267,7 @@ export async function createPlayerFromParent(formData: FormData) {
     })
   } catch { /* non-blocking */ }
 
+  await maybeResubmitForReview(familyId)
   revalidatePath('/parent')
   revalidatePath('/parent/programs')
   revalidatePath('/parent/players')

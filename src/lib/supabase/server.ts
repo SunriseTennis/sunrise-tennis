@@ -102,6 +102,52 @@ export async function requireCoach(): Promise<{ user: User; coachId: string | nu
 }
 
 /**
+ * Plan 15 Phase C — booking gate for the self-signup approval flow.
+ *
+ * Returns the parent's family_id ONLY if their family has approval_status =
+ * 'approved'. For 'pending_review' or 'changes_requested' families, redirects
+ * to /parent?blocked=pending_approval (the dashboard renders a calm banner
+ * explaining what's happening). Use as the second line in any parent server
+ * action that initiates a financial commitment (enrol, book, pay).
+ *
+ * Pattern:
+ *   const supabase = await createClient()
+ *   const familyId = await requireApprovedFamily()
+ *   ...continue with the action
+ *
+ * Admin-invited families default to 'approved' and pass through immediately.
+ * Existing imported families were backfilled to 'approved' in migration 001.
+ */
+export async function requireApprovedFamily(): Promise<string> {
+  const { redirect } = await import('next/navigation')
+  const supabase = await createClient()
+  const user = await getSessionUser()
+  if (!user) return redirect('/login') as never
+
+  const { data: role } = await supabase
+    .from('user_roles')
+    .select('family_id')
+    .eq('user_id', user.id)
+    .eq('role', 'parent')
+    .single()
+
+  if (!role?.family_id) return redirect('/login') as never
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: family } = await (supabase as any)
+    .from('families')
+    .select('approval_status')
+    .eq('id', role.family_id)
+    .single()
+
+  if (family?.approval_status !== 'approved') {
+    return redirect('/parent?blocked=pending_approval') as never
+  }
+
+  return role.family_id as string
+}
+
+/**
  * Decrypt medical_notes and physical_notes for a player via the
  * authorized RPC function. Returns decrypted text or null.
  * The RPC function enforces auth: admin, parent of family, or assigned coach.

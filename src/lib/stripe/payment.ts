@@ -51,6 +51,17 @@ export async function createPaymentIntent(formData: FormData): Promise<CreatePay
     return { ok: false, error: 'Unauthorized' }
   }
 
+  // Plan 15 Phase C — gate on approval status. Pending families can't pay.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: famGate } = await (supabase as any)
+    .from('families')
+    .select('approval_status')
+    .eq('id', familyId)
+    .single()
+  if (famGate?.approval_status !== 'approved') {
+    return { ok: false, error: 'Your account is awaiting approval. You can pay once it has been approved.' }
+  }
+
   // Rate limit: 3 payment attempts per minute per user
   if (!checkRateLimit(`payment:${user.id}`, 3, 60_000)) {
     return { ok: false, error: 'Too many payment attempts. Please wait a minute.' }

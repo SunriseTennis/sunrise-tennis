@@ -44,18 +44,30 @@ export default async function DashboardPage() {
     }
   }
 
-  // No role assigned and no valid invite — show pending state
-  return (
-    <div className="gradient-sunrise flex min-h-screen items-center justify-center px-4">
-      <div className="w-full max-w-sm rounded-2xl bg-card/95 p-8 text-center shadow-elevated backdrop-blur">
-        <h1 className="text-xl font-semibold text-foreground">Welcome to Sunrise Tennis</h1>
-        <p className="mt-3 text-sm text-muted-foreground">
-          Your account is being set up. An admin will assign your access shortly.
-        </p>
-        <p className="mt-6 text-xs text-muted-foreground/60">
-          If you received an invite link, please use that link to sign up.
-        </p>
+  // No role and no invite — this is a self-signup. Create their family in
+  // pending_review state via the SECURITY DEFINER RPC, then send them to
+  // the onboarding wizard. The wizard handles the self-signup branch when
+  // family.signup_source = 'self_signup' (empty player list shows an
+  // "Add your first player" CTA instead of the coach-will-add message).
+  const fullName = (user.user_metadata?.full_name as string | undefined) ?? user.email ?? 'New family'
+  const { data: rpcResult, error: rpcError } = await supabase.rpc('create_self_signup_family', {
+    p_family_name: fullName,
+    p_primary_contact: { name: fullName, email: user.email },
+  })
+
+  if (rpcError || !(rpcResult as { success?: boolean } | null)?.success) {
+    // Fall through to the limbo card if RPC failed (shouldn't happen).
+    return (
+      <div className="gradient-sunrise flex min-h-screen items-center justify-center px-4">
+        <div className="w-full max-w-sm rounded-2xl bg-card/95 p-8 text-center shadow-elevated backdrop-blur">
+          <h1 className="text-xl font-semibold text-foreground">Welcome to Sunrise Tennis</h1>
+          <p className="mt-3 text-sm text-muted-foreground">
+            We had trouble setting up your account. Please email <a href="mailto:maxim@sunrisetennis.com.au" className="text-primary underline">maxim@sunrisetennis.com.au</a> and we&apos;ll sort it out.
+          </p>
+        </div>
       </div>
-    </div>
-  )
+    )
+  }
+
+  redirect('/parent/onboarding')
 }

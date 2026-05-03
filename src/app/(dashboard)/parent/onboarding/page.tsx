@@ -25,7 +25,7 @@ export default async function ParentOnboardingPage({
   const [{ data: family }, { data: players }] = await Promise.all([
     supabase
       .from('families')
-      .select('primary_contact, completed_onboarding')
+      .select('primary_contact, completed_onboarding, signup_source')
       .eq('id', familyId)
       .single(),
     supabase
@@ -46,6 +46,11 @@ export default async function ParentOnboardingPage({
     email?: string
   }
 
+  const signupSource = (family?.signup_source ?? 'admin_invite') as
+    | 'admin_invite'
+    | 'self_signup'
+    | 'legacy_import'
+
   const currentStep = Math.max(1, Math.min(3, parseInt(stepParam ?? '1', 10) || 1))
 
   const playerList = (players ?? []).map((p) => ({
@@ -63,6 +68,7 @@ export default async function ParentOnboardingPage({
       userEmail={user.email ?? ''}
       primaryContact={primaryContact}
       players={playerList}
+      signupSource={signupSource}
     />
   )
 }

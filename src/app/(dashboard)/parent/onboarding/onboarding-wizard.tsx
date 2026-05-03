@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useTransition } from 'react'
+import Link from 'next/link'
 import { AlertCircle, Bell, BellOff, CheckCircle2, Home, Smartphone } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -28,6 +29,7 @@ interface OnboardingWizardProps {
   userEmail: string
   primaryContact: { name?: string; phone?: string; email?: string }
   players: Player[]
+  signupSource: 'admin_invite' | 'self_signup' | 'legacy_import'
 }
 
 // ── Ball level labels ────────────────────────────────────────────────────
@@ -170,9 +172,11 @@ function StepContact({
 function StepPlayers({
   players,
   error,
+  signupSource,
 }: {
   players: Player[]
   error: string | null
+  signupSource: 'admin_invite' | 'self_signup' | 'legacy_import'
 }) {
   const [pending, startTransition] = useTransition()
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -202,9 +206,27 @@ function StepPlayers({
       )}
 
       {players.length === 0 ? (
-        <div className="rounded-xl border border-border bg-muted/40 px-4 py-6 text-center text-sm text-muted-foreground">
-          No players linked to your account yet. Your coach will add them.
-        </div>
+        signupSource === 'self_signup' ? (
+          <div className="rounded-xl border border-border bg-muted/40 px-4 py-6 text-center text-sm text-muted-foreground">
+            <p className="font-medium text-foreground">Add your first player</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              You&apos;ll be able to fill out their details after signing up.
+            </p>
+            <Link
+              href="/parent/players/new"
+              className="mt-3 inline-flex items-center gap-1 rounded-md bg-primary px-3 py-2 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+            >
+              + Add a player
+            </Link>
+            <p className="mt-3 text-[11px] text-muted-foreground/70">
+              Or skip for now and Maxim will add them after reviewing your signup.
+            </p>
+          </div>
+        ) : (
+          <div className="rounded-xl border border-border bg-muted/40 px-4 py-6 text-center text-sm text-muted-foreground">
+            No players linked to your account yet. Your coach will add them.
+          </div>
+        )
       ) : (
         <div className="space-y-3">
           {players.map((player) => {
@@ -499,6 +521,7 @@ export function OnboardingWizard({
   userEmail,
   primaryContact,
   players,
+  signupSource,
 }: OnboardingWizardProps) {
   const step = initialStep
 
@@ -536,6 +559,7 @@ export function OnboardingWizard({
             <StepPlayers
               players={players}
               error={error}
+              signupSource={signupSource}
             />
           )}
           {step === 3 && (

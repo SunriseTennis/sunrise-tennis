@@ -179,6 +179,19 @@ export async function completeOnboarding(pushSubscription: string | null) {
     }
   }
 
+  // Read family signup_source + name + player count BEFORE updating, so we can
+  // fire the right admin notification afterwards (self-signup → admins).
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: familyBefore } = await (supabase as any)
+    .from('families')
+    .select('signup_source, family_name, primary_contact')
+    .eq('id', familyId)
+    .single()
+  const { count: playerCount } = await supabase
+    .from('players')
+    .select('id', { count: 'exact', head: true })
+    .eq('family_id', familyId)
+
   // Mark onboarding complete (columns added after types generated)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { error } = await (supabase as any)
@@ -189,6 +202,22 @@ export async function completeOnboarding(pushSubscription: string | null) {
   if (error) {
     console.error('[onboarding] completeOnboarding:', error)
     redirect('/parent/onboarding?step=3&error=Failed+to+complete.+Please+try+again.')
+  }
+
+  // For self-signups, notify admins so they can review in /admin/approvals.
+  // Admin-invite path skips this — the family is already approved at invite time.
+  if (familyBefore?.signup_source === 'self_signup') {
+    try {
+      const { dispatchNotification } = await import('@/lib/notifications/dispatch')
+      const contact = (familyBefore.primary_contact ?? {}) as { name?: string }
+      await dispatchNotification('parent.signup.submitted', {
+        familyId,
+        familyName: familyBefore.family_name ?? 'A new family',
+        parentName: contact.name ?? 'a parent',
+        playerCount: String(playerCount ?? 0),
+        excludeUserId: userId,
+      })
+    } catch (e) { console.error('[onboarding] dispatch:', e) }
   }
 
   revalidatePath('/parent')

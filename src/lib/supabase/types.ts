@@ -12,6 +12,31 @@ export type Database = {
   __InternalSupabase: {
     PostgrestVersion: "14.4"
   }
+  graphql_public: {
+    Tables: {
+      [_ in never]: never
+    }
+    Views: {
+      [_ in never]: never
+    }
+    Functions: {
+      graphql: {
+        Args: {
+          extensions?: Json
+          operationName?: string
+          query?: string
+          variables?: Json
+        }
+        Returns: Json
+      }
+    }
+    Enums: {
+      [_ in never]: never
+    }
+    CompositeTypes: {
+      [_ in never]: never
+    }
+  }
   public: {
     Tables: {
       attendances: {
@@ -267,6 +292,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "bookings_family_id_fkey"
+            columns: ["family_id"]
+            isOneToOne: false
+            referencedRelation: "family_approval_queue"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "bookings_player_id_fkey"
             columns: ["player_id"]
             isOneToOne: false
@@ -285,6 +317,13 @@ export type Database = {
             columns: ["second_family_id"]
             isOneToOne: false
             referencedRelation: "families"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bookings_second_family_id_fkey"
+            columns: ["second_family_id"]
+            isOneToOne: false
+            referencedRelation: "family_approval_queue"
             referencedColumns: ["id"]
           },
           {
@@ -354,6 +393,13 @@ export type Database = {
             columns: ["family_id"]
             isOneToOne: false
             referencedRelation: "families"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cancellation_tracker_family_id_fkey"
+            columns: ["family_id"]
+            isOneToOne: false
+            referencedRelation: "family_approval_queue"
             referencedColumns: ["id"]
           },
         ]
@@ -429,6 +475,13 @@ export type Database = {
             columns: ["family_id"]
             isOneToOne: false
             referencedRelation: "families"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "charges_family_id_fkey"
+            columns: ["family_id"]
+            isOneToOne: false
+            referencedRelation: "family_approval_queue"
             referencedColumns: ["id"]
           },
           {
@@ -872,6 +925,10 @@ export type Database = {
       families: {
         Row: {
           address: string | null
+          approval_note: string | null
+          approval_status: string
+          approved_at: string | null
+          approved_by: string | null
           billing_prefs: Json | null
           calendar_token: string | null
           completed_onboarding: boolean
@@ -885,12 +942,17 @@ export type Database = {
           primary_contact: Json | null
           referred_by: string | null
           secondary_contact: Json | null
+          signup_source: string
           status: string
           terms_acknowledged_at: string | null
           updated_at: string | null
         }
         Insert: {
           address?: string | null
+          approval_note?: string | null
+          approval_status?: string
+          approved_at?: string | null
+          approved_by?: string | null
           billing_prefs?: Json | null
           calendar_token?: string | null
           completed_onboarding?: boolean
@@ -904,12 +966,17 @@ export type Database = {
           primary_contact?: Json | null
           referred_by?: string | null
           secondary_contact?: Json | null
+          signup_source?: string
           status?: string
           terms_acknowledged_at?: string | null
           updated_at?: string | null
         }
         Update: {
           address?: string | null
+          approval_note?: string | null
+          approval_status?: string
+          approved_at?: string | null
+          approved_by?: string | null
           billing_prefs?: Json | null
           calendar_token?: string | null
           completed_onboarding?: boolean
@@ -923,6 +990,7 @@ export type Database = {
           primary_contact?: Json | null
           referred_by?: string | null
           secondary_contact?: Json | null
+          signup_source?: string
           status?: string
           terms_acknowledged_at?: string | null
           updated_at?: string | null
@@ -957,6 +1025,13 @@ export type Database = {
             columns: ["family_id"]
             isOneToOne: true
             referencedRelation: "families"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "family_balance_family_id_fkey"
+            columns: ["family_id"]
+            isOneToOne: true
+            referencedRelation: "family_approval_queue"
             referencedColumns: ["id"]
           },
         ]
@@ -1017,6 +1092,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "family_pricing_family_id_fkey"
+            columns: ["family_id"]
+            isOneToOne: false
+            referencedRelation: "family_approval_queue"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "family_pricing_program_id_fkey"
             columns: ["program_id"]
             isOneToOne: false
@@ -1070,6 +1152,13 @@ export type Database = {
             referencedRelation: "families"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "invitations_family_id_fkey"
+            columns: ["family_id"]
+            isOneToOne: false
+            referencedRelation: "family_approval_queue"
+            referencedColumns: ["id"]
+          },
         ]
       }
       invoices: {
@@ -1115,6 +1204,13 @@ export type Database = {
             columns: ["family_id"]
             isOneToOne: false
             referencedRelation: "families"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "invoices_family_id_fkey"
+            columns: ["family_id"]
+            isOneToOne: false
+            referencedRelation: "family_approval_queue"
             referencedColumns: ["id"]
           },
         ]
@@ -1314,6 +1410,13 @@ export type Database = {
             columns: ["family_id"]
             isOneToOne: false
             referencedRelation: "families"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "messages_family_id_fkey"
+            columns: ["family_id"]
+            isOneToOne: false
+            referencedRelation: "family_approval_queue"
             referencedColumns: ["id"]
           },
           {
@@ -1545,6 +1648,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "payments_family_id_fkey"
+            columns: ["family_id"]
+            isOneToOne: false
+            referencedRelation: "family_approval_queue"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "payments_invoice_id_fkey"
             columns: ["invoice_id"]
             isOneToOne: false
@@ -1678,6 +1788,13 @@ export type Database = {
             columns: ["family_id"]
             isOneToOne: false
             referencedRelation: "families"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "players_family_id_fkey"
+            columns: ["family_id"]
+            isOneToOne: false
+            referencedRelation: "family_approval_queue"
             referencedColumns: ["id"]
           },
         ]
@@ -1923,6 +2040,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "referrals_referred_family_id_fkey"
+            columns: ["referred_family_id"]
+            isOneToOne: false
+            referencedRelation: "family_approval_queue"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "referrals_referred_player_id_fkey"
             columns: ["referred_player_id"]
             isOneToOne: false
@@ -1934,6 +2058,13 @@ export type Database = {
             columns: ["referring_family_id"]
             isOneToOne: false
             referencedRelation: "families"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "referrals_referring_family_id_fkey"
+            columns: ["referring_family_id"]
+            isOneToOne: false
+            referencedRelation: "family_approval_queue"
             referencedColumns: ["id"]
           },
         ]
@@ -2241,6 +2372,13 @@ export type Database = {
             referencedRelation: "families"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "user_roles_family_id_fkey"
+            columns: ["family_id"]
+            isOneToOne: false
+            referencedRelation: "family_approval_queue"
+            referencedColumns: ["id"]
+          },
         ]
       }
       venues: {
@@ -2456,6 +2594,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "vouchers_family_id_fkey"
+            columns: ["family_id"]
+            isOneToOne: false
+            referencedRelation: "family_approval_queue"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "vouchers_linked_voucher_id_fkey"
             columns: ["linked_voucher_id"]
             isOneToOne: false
@@ -2473,7 +2618,48 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      family_approval_queue: {
+        Row: {
+          address: string | null
+          approval_note: string | null
+          approval_status: string | null
+          created_at: string | null
+          family_name: string | null
+          id: string | null
+          player_count: number | null
+          preferred_name: string | null
+          primary_contact: Json | null
+          primary_parent_user_id: string | null
+          signup_source: string | null
+        }
+        Insert: {
+          address?: string | null
+          approval_note?: string | null
+          approval_status?: string | null
+          created_at?: string | null
+          family_name?: string | null
+          id?: string | null
+          player_count?: never
+          preferred_name?: string | null
+          primary_contact?: Json | null
+          primary_parent_user_id?: never
+          signup_source?: string | null
+        }
+        Update: {
+          address?: string | null
+          approval_note?: string | null
+          approval_status?: string | null
+          created_at?: string | null
+          family_name?: string | null
+          id?: string | null
+          player_count?: never
+          preferred_name?: string | null
+          primary_contact?: Json | null
+          primary_parent_user_id?: never
+          signup_source?: string | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
       add_coach_exception_range: {
@@ -2499,6 +2685,10 @@ export type Database = {
         Args: { p_coach_id: string; p_delete_ids?: string[]; p_inserts?: Json }
         Returns: Json
       }
+      approve_family: {
+        Args: { p_family_id: string; p_note?: string }
+        Returns: Json
+      }
       claim_invitation: { Args: { p_token: string }; Returns: Json }
       coach_can_read_player: {
         Args: { coach_uid: string; target_player_id: string }
@@ -2513,6 +2703,10 @@ export type Database = {
           p_url: string
         }
         Returns: string
+      }
+      create_self_signup_family: {
+        Args: { p_family_name: string; p_primary_contact?: Json }
+        Returns: Json
       }
       decrypt_medical: { Args: { ciphertext: string }; Returns: string }
       encrypt_medical: { Args: { plaintext: string }; Returns: string }
@@ -2640,6 +2834,18 @@ export type Database = {
       recalculate_family_balance: {
         Args: { target_family_id: string }
         Returns: number
+      }
+      reject_family: {
+        Args: { p_family_id: string; p_reason: string }
+        Returns: Json
+      }
+      request_family_changes: {
+        Args: { p_family_id: string; p_note: string }
+        Returns: Json
+      }
+      resubmit_family_for_review: {
+        Args: { p_family_id: string }
+        Returns: Json
       }
       search_players_for_coach: {
         Args: { query: string }
@@ -2782,6 +2988,9 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
+  graphql_public: {
+    Enums: {},
+  },
   public: {
     Enums: {},
   },
