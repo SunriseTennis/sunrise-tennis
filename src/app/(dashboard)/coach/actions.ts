@@ -362,6 +362,12 @@ export async function declinePrivateBooking(bookingId: string) {
     .update({ status: 'cancelled', cancellation_reason: 'Declined by coach' })
     .eq('id', booking.session_id!)
 
+  // Mask the coach slot so it doesn't auto-reappear as available.
+  {
+    const { maskCoachSlotOnAdminOrCoachCancel } = await import('@/lib/private-cancel')
+    await maskCoachSlotOnAdminOrCoachCancel(supabase, booking.session_id!, 'Coach declined booking')
+  }
+
   // Void charge
   const { voidCharge } = await import('@/lib/utils/billing')
   const { data: charge } = await supabase

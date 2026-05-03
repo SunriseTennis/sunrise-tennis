@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label'
 import { TimePicker12h } from '@/components/ui/time-picker-12h'
 import { Search, X } from 'lucide-react'
 import { adminCreateSharedPrivate } from '../actions'
+import { CoachRateSelect } from './coach-rate-select'
 
 interface Player {
   id: string
@@ -44,11 +45,6 @@ export function SharedPrivateForm({ families, coaches, alwaysExpanded = false }:
   const [selected, setSelected] = useState<Record<Slot, Family | null>>({ 1: null, 2: null })
   const [playerIds, setPlayerIds] = useState<Record<Slot, string>>({ 1: '', 2: '' })
   const [scheduleMode, setScheduleMode] = useState<'one_off' | 'standing'>('one_off')
-
-  const sortedCoaches = useMemo(
-    () => [...coaches].filter(c => c.rate > 0).sort((a, b) => b.rate - a.rate || a.name.localeCompare(b.name)),
-    [coaches]
-  )
 
   function filteredFor(slot: Slot): Family[] {
     const q = searches[slot].trim().toLowerCase()
@@ -188,14 +184,24 @@ export function SharedPrivateForm({ families, coaches, alwaysExpanded = false }:
           </div>
 
           <div className="grid gap-3 sm:grid-cols-2">
+            {/*
+              Coach picker. Family 1's grandfathered rate applies to the whole
+              session and is split 50/50 across both families per
+              `private-pricing-overrides.md`.
+            */}
             <div>
-              <Label htmlFor="shared_coach" className="text-xs">Coach</Label>
-              <select id="shared_coach" name="coach_id" required className="mt-1 block w-full rounded-md border border-input bg-background px-3 py-2 text-sm">
-                <option value="">Select...</option>
-                {sortedCoaches.map(c => (
-                  <option key={c.id} value={c.id}>{c.name.split(' ')[0]} - ${(c.rate / 100).toFixed(0)}/hr</option>
-                ))}
-              </select>
+              <CoachRateSelect
+                id="shared_coach"
+                name="coach_id"
+                required
+                familyId={selected[1]?.id ?? null}
+                coaches={coaches}
+              />
+              {selected[1] && (
+                <p className="mt-1 text-[11px] text-muted-foreground">
+                  Family 1 rate applies; cost split 50/50 between both families.
+                </p>
+              )}
             </div>
             <div>
               <Label htmlFor="shared_date" className="text-xs">{scheduleMode === 'standing' ? 'First date' : 'Date'}</Label>

@@ -974,8 +974,9 @@ export async function finalizeEnrolPayment(intentId: string): Promise<FinalizeRe
     .single()
 
   // Charge — match the actual paid amount on Stripe
+  let newChargeId: string | null = null
   if (booking) {
-    await createCharge(supabase, {
+    const { chargeId } = await createCharge(supabase, {
       familyId: auth.familyId,
       playerId,
       type: 'term_enrollment',
@@ -996,6 +997,7 @@ export async function finalizeEnrolPayment(intentId: string): Promise<FinalizeRe
         ? ({ ...pricingBreakdown, total_cents: intent.amount } as never)
         : null,
     })
+    newChargeId = chargeId
   }
 
   // Flip payment to received (idempotent — webhook may have done it already)
@@ -1007,8 +1009,26 @@ export async function finalizeEnrolPayment(intentId: string): Promise<FinalizeRe
       .eq('status', 'pending')
   }
 
-  // Allocate payment to the new charge (FIFO will pick it up)
-  await supabase.rpc('allocate_payment_to_charges', { target_payment_id: payment.id })
+  // Targeted-first allocation: pin the payment to THIS term-enrolment charge
+  // so older per-session charges (e.g. attendance under a prior pay_later
+  // enrolment) don't eat the payment and leave the term unpaid. Intent
+  // amount equals the charge amount by construction, so this single
+  // allocation is complete — no FIFO follow-up needed.
+  if (newChargeId) {
+    // Clear any prior allocations for this payment (idempotent on re-fire).
+    await supabase.from('payment_allocations').delete().eq('payment_id', payment.id)
+    const { error: allocErr } = await supabase
+      .from('payment_allocations')
+      .insert({ payment_id: payment.id, charge_id: newChargeId, amount_cents: intent.amount })
+    if (allocErr) {
+      console.error('targeted allocation insert failed:', allocErr.message, 'PI:', intentId)
+      // Fallback to FIFO so the payment isn't unallocated entirely.
+      await supabase.rpc('allocate_payment_to_charges', { target_payment_id: payment.id })
+    }
+  } else {
+    // No charge was created (booking insert failed) — fall back to FIFO.
+    await supabase.rpc('allocate_payment_to_charges', { target_payment_id: payment.id })
+  }
   await supabase.rpc('recalculate_family_balance', { target_family_id: auth.familyId })
 
   // Notify

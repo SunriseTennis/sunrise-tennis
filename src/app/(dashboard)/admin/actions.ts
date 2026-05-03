@@ -917,7 +917,7 @@ export async function cancelSession(sessionId: string, formData: FormData) {
   // Get session details
   const { data: session } = await supabase
     .from('sessions')
-    .select('id, program_id, date')
+    .select('id, program_id, date, session_type')
     .eq('id', sessionId)
     .single()
 
@@ -935,6 +935,21 @@ export async function cancelSession(sessionId: string, formData: FormData) {
       redirect(`/admin/programs/${pid}/sessions/${sessionId}?error=${encodeURIComponent(error.message)}`)
     }
     redirect(`/admin/programs?error=${encodeURIComponent(error.message)}`)
+  }
+
+  // Private sessions: mask the coach slot so it doesn't auto-reappear as
+  // available coach availability (group sessions don't use that machinery).
+  if (session?.session_type === 'private') {
+    const { maskCoachSlotOnAdminOrCoachCancel } = await import('@/lib/private-cancel')
+    await maskCoachSlotOnAdminOrCoachCancel(supabase, sessionId, reason ?? 'Admin cancelled session')
+
+    // Also flip any active bookings to cancelled with type='admin' so the
+    // parent UI shows them correctly. Group bookings don't follow this path.
+    await supabase
+      .from('bookings')
+      .update({ status: 'cancelled', cancellation_type: 'admin' })
+      .eq('session_id', sessionId)
+      .neq('status', 'cancelled')
   }
 
   // ── Create credits for all enrolled families ─────────────────────────

@@ -6,6 +6,7 @@ import { formatDate } from '@/lib/utils/dates'
 import { EmptyState } from '@/components/empty-state'
 import { CreditCard, ChevronDown, CheckCircle2, Clock, CloudRain, XCircle } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
+import { PricingBreakdownPanel, type PricingBreakdownData } from '@/components/pricing-breakdown-panel'
 
 // SA school terms 2026 (approximate)
 const TERMS: { label: string; start: string; end: string }[] = [
@@ -37,6 +38,8 @@ interface Allocation {
   chargeDescription: string
   sessionDate: string | null
   sessionStatus: string | null
+  /** Itemised breakdown from charges.pricing_breakdown when present (e.g. term enrolment with discount). */
+  pricingBreakdown?: PricingBreakdownData | null
 }
 
 interface Payment {
@@ -122,25 +125,34 @@ function PaymentCard({ payment }: { payment: Payment }) {
           <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground mb-1.5">
             Applied to
           </p>
-          <div className="space-y-1.5">
+          <div className="space-y-3">
             {payment.allocations.map((alloc, i) => (
-              <div key={i} className="flex items-start justify-between gap-2 text-xs">
-                <div className="flex items-start gap-1.5 min-w-0 flex-1">
-                  <span className="mt-0.5 shrink-0">
-                    <SessionStatusIcon status={alloc.sessionStatus} />
-                  </span>
-                  <div className="min-w-0">
-                    <p className="text-foreground break-words">{cleanDescription(alloc.chargeDescription)}</p>
-                    {alloc.sessionDate && (
-                      <p className="text-muted-foreground tabular-nums">
-                        {formatDate(alloc.sessionDate)}
-                      </p>
-                    )}
+              <div key={i} className="space-y-1.5">
+                <div className="flex items-start justify-between gap-2 text-xs">
+                  <div className="flex items-start gap-1.5 min-w-0 flex-1">
+                    <span className="mt-0.5 shrink-0">
+                      <SessionStatusIcon status={alloc.sessionStatus} />
+                    </span>
+                    <div className="min-w-0">
+                      <p className="text-foreground break-words">{cleanDescription(alloc.chargeDescription)}</p>
+                      {alloc.sessionDate && (
+                        <p className="text-muted-foreground tabular-nums">
+                          {formatDate(alloc.sessionDate)}
+                        </p>
+                      )}
+                    </div>
                   </div>
+                  <span className="tabular-nums text-foreground shrink-0">
+                    {formatCurrency(alloc.amountCents)}
+                  </span>
                 </div>
-                <span className="tabular-nums text-foreground shrink-0">
-                  {formatCurrency(alloc.amountCents)}
-                </span>
+                {alloc.pricingBreakdown && (
+                  <PricingBreakdownPanel
+                    breakdown={alloc.pricingBreakdown}
+                    heading={null}
+                    className="rounded-md border border-border/40 bg-card/50 px-3 py-2"
+                  />
+                )}
               </div>
             ))}
           </div>

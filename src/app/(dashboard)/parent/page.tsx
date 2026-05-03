@@ -218,7 +218,7 @@ export default async function ParentDashboard() {
       start_time: s.start_time,
       program_id: s.program_id,
       programName,
-      href: '/parent/programs',
+      href: `/parent/sessions/${s.id}`,
     })
   }
 

@@ -62,9 +62,11 @@ function isOneDayAfter(prev: string, curr: string): boolean {
 interface Props {
   exceptions: Exception[]
   onRemove: (formData: FormData) => void
+  /** Optional — when provided, included in the remove form so the action can redirect back to the coach's view. */
+  coachId?: string
 }
 
-export function GroupedExceptionList({ exceptions, onRemove }: Props) {
+export function GroupedExceptionList({ exceptions, onRemove, coachId }: Props) {
   const groups = groupExceptions(exceptions)
 
   if (groups.length === 0) {
@@ -112,9 +114,9 @@ export function GroupedExceptionList({ exceptions, onRemove }: Props) {
                   </p>
                 </div>
                 <form action={onRemove}>
-                  {/* Submit one form per id; safest is to remove all in series — for simplicity send the first id and let the DB enforce. */}
-                  {/* Actually we want to remove ALL rows in the group: send all ids comma-separated. */}
+                  {/* Send all ids in the group comma-separated; admin action handles bulk delete. */}
                   <input type="hidden" name="ids" value={g.ids.join(',')} />
+                  {coachId && <input type="hidden" name="coach_id" value={coachId} />}
                   <button
                     type="submit"
                     className="rounded p-1 text-muted-foreground transition-colors hover:bg-red-50 hover:text-red-600"

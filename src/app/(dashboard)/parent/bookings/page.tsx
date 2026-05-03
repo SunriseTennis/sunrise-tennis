@@ -68,7 +68,7 @@ export default async function ParentBookingsPage({
       .select(`
         id, player_id, session_id, booking_type, status, approval_status,
         price_cents, duration_minutes, booked_at, cancellation_type,
-        shared_with_booking_id,
+        shared_with_booking_id, standing_parent_id, is_standing,
         sessions:session_id(date, start_time, end_time, coach_id, status,
           coaches:coach_id(name)
         )
@@ -196,6 +196,27 @@ export default async function ParentBookingsPage({
     return new Date(`${b.sessions.date}T${b.sessions.start_time || '00:00'}`) <= now
   })
 
+  // Slot-taken detection for the re-book button on a cancelled-self booking.
+  // We mark a slot taken when a different scheduled session occupies the same
+  // coach + date + start_time (e.g. parent self-cancelled, admin re-booked
+  // someone else into the slot). Shared self-cancels are detected by partner
+  // presence + coverage by the still-scheduled session below.
+  const slotTakenByBookingId: Record<string, boolean> = {}
+  for (const b of allBookings) {
+    if (b.status !== 'cancelled') continue
+    if (b.cancellation_type !== 'parent_24h' && b.cancellation_type !== 'parent_late') continue
+    if (!b.sessions || !b.session_id) continue
+    const s = b.sessions
+    if (!s.date || !s.start_time || !s.coach_id) continue
+    const conflict = (allSessions ?? []).some(other =>
+      other.id !== b.session_id &&
+      other.coach_id === s.coach_id &&
+      other.date === s.date &&
+      other.start_time === s.start_time,
+    )
+    slotTakenByBookingId[b.id] = conflict
+  }
+
   return (
     <div className="space-y-6">
       <ImageHero>
@@ -254,6 +275,7 @@ export default async function ParentBookingsPage({
         privateRateOverrides={Object.fromEntries(privateOverrideMap)}
         allPrivatesOverride={allPrivatesOverride}
         partnerByBookingId={Object.fromEntries(partnerByBookingId)}
+        slotTakenByBookingId={slotTakenByBookingId}
       />
       </div>
 

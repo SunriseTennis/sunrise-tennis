@@ -91,6 +91,7 @@ export function AdminAvailabilityManager({ coaches, selectedCoachId, windows, ex
             <GroupedExceptionList
               exceptions={exceptions ?? []}
               onRemove={adminRemoveExceptionGroup}
+              coachId={selectedCoach.id}
             />
           </div>
         </div>

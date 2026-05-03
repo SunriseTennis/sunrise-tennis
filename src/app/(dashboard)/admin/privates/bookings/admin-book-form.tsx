@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label'
 import { TimePicker12h } from '@/components/ui/time-picker-12h'
 import { Search, X } from 'lucide-react'
 import { adminBookPrivate } from '../actions'
+import { CoachRateSelect } from './coach-rate-select'
 
 interface Player {
   id: string
@@ -42,12 +43,6 @@ export function AdminBookForm({ families, coaches, alwaysExpanded = false }: Pro
   const [selectedFamily, setSelectedFamily] = useState<Family | null>(null)
   const [selectedPlayerId, setSelectedPlayerId] = useState('')
   const [scheduleMode, setScheduleMode] = useState<'one_off' | 'standing'>('one_off')
-
-  // Sort coaches by price descending, then name
-  const sortedCoaches = useMemo(() =>
-    [...coaches].sort((a, b) => b.rate - a.rate || a.name.localeCompare(b.name)),
-    [coaches]
-  )
 
   // Search families by family name, parent name, or player name
   const filtered = useMemo(() => {
@@ -164,16 +159,16 @@ export function AdminBookForm({ families, coaches, alwaysExpanded = false }: Pro
             </select>
           </div>
 
-          {/* Coach */}
-          <div>
-            <Label htmlFor="coach_id" className="text-xs">Coach</Label>
-            <select id="coach_id" name="coach_id" required className="mt-1 block w-full rounded-md border border-input bg-background px-3 py-2 text-sm">
-              <option value="">Select coach...</option>
-              {sortedCoaches.filter(c => c.rate > 0).map(c => (
-                <option key={c.id} value={c.id}>{c.name.split(' ')[0]} - ${(c.rate / 100).toFixed(0)}/hr</option>
-              ))}
-            </select>
-          </div>
+          {/* Coach — shows grandfathered rate when the selected family has overrides */}
+          <CoachRateSelect
+            id="coach_id"
+            name="coach_id"
+            required
+            familyId={selectedFamily?.id ?? null}
+            coaches={coaches}
+          />
+
+
 
           <div>
             <Label htmlFor="date" className="text-xs">{scheduleMode === 'standing' ? 'First date' : 'Date'}</Label>

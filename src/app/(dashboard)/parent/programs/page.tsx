@@ -158,8 +158,6 @@ export default async function ParentProgramsPage() {
     <div>
       <PageHeader title="Programs" description="Browse sessions and enrol in programs." />
 
-      <EnrolledProgramsSection groups={enrolledGroups} />
-
       {playersWithStatus.length > 0 && (
         <MultiGroupBanner players={playersWithStatus} />
       )}
@@ -189,6 +187,10 @@ export default async function ParentProgramsPage() {
             description="Check back soon for new programs."
           />
         </div>
+      )}
+
+      {enrolledGroups.length > 0 && (
+        <EnrolledProgramsSection groups={enrolledGroups} />
       )}
     </div>
   )

@@ -108,7 +108,9 @@ export async function adminRemoveExceptionGroup(formData: FormData) {
 
   const idsRaw = (formData.get('ids') as string) ?? ''
   const ids = idsRaw.split(',').filter(Boolean)
-  if (ids.length === 0) redirect('/admin/privates/availability?error=Missing+ids')
+  const coachId = (formData.get('coach_id') as string) || ''
+  const coachQs = coachId ? `coach_id=${coachId}&` : ''
+  if (ids.length === 0) redirect(`/admin/coaches/availability?${coachQs}error=Missing+ids`)
 
   const { error } = await supabase
     .from('coach_availability_exceptions')
@@ -116,11 +118,11 @@ export async function adminRemoveExceptionGroup(formData: FormData) {
     .in('id', ids)
 
   if (error) {
-    redirect(`/admin/privates/availability?error=${encodeURIComponent('Failed to remove exceptions')}`)
+    redirect(`/admin/coaches/availability?${coachQs}error=${encodeURIComponent('Failed to remove exceptions')}`)
   }
 
-  revalidatePath('/admin/privates')
-  redirect('/admin/privates/availability')
+  revalidatePath('/admin/coaches/availability')
+  redirect(`/admin/coaches/availability?${coachQs}success=Exception+removed`)
 }
 
 // ── Admin: Stage-and-Save Availability ─────────────────────────────────
@@ -130,7 +132,7 @@ export async function adminApplyCoachAvailabilityChanges(formData: FormData) {
   const supabase = await createClient()
 
   const coachId = formData.get('coach_id') as string
-  if (!coachId) redirect('/admin/privates/availability?error=Coach+is+required')
+  if (!coachId) redirect('/admin/coaches/availability?error=Coach+is+required')
 
   const deletesRaw = (formData.get('deletes') as string) ?? ''
   const insertsRaw = (formData.get('inserts') as string) ?? '[]'
@@ -144,7 +146,7 @@ export async function adminApplyCoachAvailabilityChanges(formData: FormData) {
   }
 
   if (deleteIds.length === 0 && inserts.length === 0) {
-    redirect(`/admin/privates/availability?coach_id=${coachId}`)
+    redirect(`/admin/coaches/availability?coach_id=${coachId}`)
   }
 
   const { error } = await supabase.rpc('apply_coach_availability_changes', {
@@ -154,11 +156,11 @@ export async function adminApplyCoachAvailabilityChanges(formData: FormData) {
   })
 
   if (error) {
-    redirect(`/admin/privates/availability?coach_id=${coachId}&error=${encodeURIComponent(error.message ?? 'Failed to save')}`)
+    redirect(`/admin/coaches/availability?coach_id=${coachId}&error=${encodeURIComponent(error.message ?? 'Failed to save')}`)
   }
 
-  revalidatePath('/admin/privates/availability')
-  redirect(`/admin/privates/availability?coach_id=${coachId}`)
+  revalidatePath('/admin/coaches/availability')
+  redirect(`/admin/coaches/availability?coach_id=${coachId}&success=Availability+updated`)
 }
 
 export async function adminAddExceptionRange(formData: FormData) {
@@ -166,7 +168,7 @@ export async function adminAddExceptionRange(formData: FormData) {
   const supabase = await createClient()
 
   const coachId = formData.get('coach_id') as string
-  if (!coachId) redirect('/admin/privates/availability?error=Coach+is+required')
+  if (!coachId) redirect('/admin/coaches/availability?error=Coach+is+required')
 
   const startDate = formData.get('start_date') as string
   const endDate = (formData.get('end_date') as string) || startDate
@@ -176,7 +178,7 @@ export async function adminAddExceptionRange(formData: FormData) {
   const reason = (formData.get('reason') as string) || null
 
   if (!startDate) {
-    redirect(`/admin/privates/availability?coach_id=${coachId}&error=Start+date+is+required`)
+    redirect(`/admin/coaches/availability?coach_id=${coachId}&error=Start+date+is+required`)
   }
 
   const { error } = await supabase.rpc('add_coach_exception_range', {
@@ -189,11 +191,11 @@ export async function adminAddExceptionRange(formData: FormData) {
   })
 
   if (error) {
-    redirect(`/admin/privates/availability?coach_id=${coachId}&error=${encodeURIComponent(error.message ?? 'Failed to add')}`)
+    redirect(`/admin/coaches/availability?coach_id=${coachId}&error=${encodeURIComponent(error.message ?? 'Failed to add')}`)
   }
 
-  revalidatePath('/admin/privates/availability')
-  redirect(`/admin/privates/availability?coach_id=${coachId}`)
+  revalidatePath('/admin/coaches/availability')
+  redirect(`/admin/coaches/availability?coach_id=${coachId}&success=Exception+added`)
 }
 
 // ── Admin: Player Allowed Coaches ──────────────────────────────────────
@@ -236,6 +238,51 @@ export async function setPlayerAllowedCoaches(formData: FormData) {
   revalidatePath('/admin/families')
   revalidatePath('/admin/privates')
   redirect(`/admin/privates?success=Updated+allowed+coaches`)
+}
+
+// ── Admin: Family private-rate overrides (read) ────────────────────────
+
+export type FamilyPrivateOverride = {
+  coachId: string | null
+  per30Cents: number
+  validUntil: string | null
+}
+
+/**
+ * Returns active per-coach private-rate overrides for a family. Used by the
+ * admin Book Private modal to display the family's grandfathered rate next
+ * to (and instead of) the coach default rate.
+ *
+ * Rows with `coach_id` set are per-coach overrides. A row with `coach_id IS NULL`
+ * is the family-wide all-private override and applies to coaches without a
+ * specific row. `per_session_cents` is interpreted as PER 30 MIN.
+ */
+export async function getFamilyPrivateRateOverrides(familyId: string): Promise<FamilyPrivateOverride[]> {
+  await requireAdmin()
+  const supabase = await createClient()
+  const today = new Date().toISOString().split('T')[0]
+
+  const { data, error } = await supabase
+    .from('family_pricing')
+    .select('coach_id, per_session_cents, valid_until, valid_from')
+    .eq('family_id', familyId)
+    .eq('program_type', 'private')
+    .lte('valid_from', today)
+    .or(`valid_until.is.null,valid_until.gte.${today}`)
+    .not('per_session_cents', 'is', null)
+
+  if (error) {
+    console.error('getFamilyPrivateRateOverrides failed:', error.message)
+    return []
+  }
+
+  return (data ?? [])
+    .filter(r => r.per_session_cents != null)
+    .map(r => ({
+      coachId: r.coach_id ?? null,
+      per30Cents: r.per_session_cents as number,
+      validUntil: r.valid_until ?? null,
+    }))
 }
 
 // ── Admin: Confirm/Decline Private Booking ────────────────────────────
@@ -332,6 +379,12 @@ export async function adminDeclineBooking(bookingId: string) {
     .from('sessions')
     .update({ status: 'cancelled', cancellation_reason: 'Declined by admin' })
     .eq('id', booking.session_id!)
+
+  // Mask the coach slot so it doesn't auto-reappear as available.
+  {
+    const { maskCoachSlotOnAdminOrCoachCancel } = await import('@/lib/private-cancel')
+    await maskCoachSlotOnAdminOrCoachCancel(supabase, booking.session_id!, 'Admin declined booking')
+  }
 
   // Void charge
   const { voidCharge } = await import('@/lib/utils/billing')
@@ -436,6 +489,7 @@ export async function adminBatchDecline(formData: FormData) {
   let declined = 0
   const { voidCharge } = await import('@/lib/utils/billing')
   const { sendPushToUser } = await import('@/lib/push/send')
+  const { maskCoachSlotOnAdminOrCoachCancel } = await import('@/lib/private-cancel')
 
   for (const bookingId of ids) {
     const { data: booking } = await supabase
@@ -448,6 +502,7 @@ export async function adminBatchDecline(formData: FormData) {
 
     await supabase.from('bookings').update({ status: 'cancelled', approval_status: 'declined' }).eq('id', bookingId)
     await supabase.from('sessions').update({ status: 'cancelled', cancellation_reason: 'Declined by admin' }).eq('id', booking.session_id!)
+    await maskCoachSlotOnAdminOrCoachCancel(supabase, booking.session_id!, 'Admin declined booking')
 
     const { data: charge } = await supabase.from('charges').select('id').eq('booking_id', bookingId).in('status', ['pending', 'confirmed']).single()
     if (charge) await voidCharge(supabase, charge.id, booking.family_id)
@@ -951,6 +1006,14 @@ export async function cancelPrivateSeries(formData: FormData) {
     .update({ status: 'cancelled', cancellation_type: 'admin' })
     .in('id', bookingIds)
     .in('session_id', scheduledIds)
+
+  // Mask each cancelled slot so it doesn't auto-restore on coach availability.
+  {
+    const { maskCoachSlotOnAdminOrCoachCancel } = await import('@/lib/private-cancel')
+    for (const sid of scheduledIds) {
+      await maskCoachSlotOnAdminOrCoachCancel(supabase, sid, 'Admin cancelled series')
+    }
+  }
 
   // Void charges for those sessions
   const { voidCharge } = await import('@/lib/utils/billing')

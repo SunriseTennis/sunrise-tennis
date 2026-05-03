@@ -43,7 +43,7 @@ export default async function ParentPaymentsPage({
 
   const [balanceRes, paymentsRes, chargesRes, vouchersRes, playersRes, familyRes] = await Promise.all([
     supabase.from('family_balance').select('balance_cents, confirmed_balance_cents, projected_balance_cents').eq('family_id', familyId).single(),
-    supabase.from('payments').select('*, payment_allocations(amount_cents, charge_id, charges:charge_id(description, session_id, sessions:session_id(date, status)))').eq('family_id', familyId).neq('status', 'voided').neq('status', 'pending').order('created_at', { ascending: false }).limit(100),
+    supabase.from('payments').select('*, payment_allocations(amount_cents, charge_id, charges:charge_id(description, session_id, pricing_breakdown, sessions:session_id(date, status)))').eq('family_id', familyId).neq('status', 'voided').neq('status', 'pending').order('created_at', { ascending: false }).limit(100),
     supabase.from('charges').select('id, type, source_type, description, amount_cents, status, program_id, session_id, booking_id, player_id, created_at, pricing_breakdown, sessions:session_id(date, status), players:player_id(first_name), payment_allocations(amount_cents)').eq('family_id', familyId).in('status', ['pending', 'confirmed', 'paid', 'credited']).order('created_at', { ascending: false }).limit(150),
     supabase.from('vouchers').select('id, child_first_name, child_surname, amount_cents, status, submitted_at, rejection_reason, voucher_number, submission_method').eq('family_id', familyId).order('submitted_at', { ascending: false }).limit(20),
     supabase.from('players').select('id, first_name, last_name, dob, gender').eq('family_id', familyId).eq('status', 'active').order('first_name'),
@@ -113,7 +113,12 @@ export default async function ParentPaymentsPage({
     const allocations = (payment.payment_allocations ?? []) as unknown as {
       amount_cents: number
       charge_id: string
-      charges: { description: string; session_id: string | null; sessions: { date: string; status: string } | null } | null
+      charges: {
+        description: string
+        session_id: string | null
+        pricing_breakdown: unknown | null
+        sessions: { date: string; status: string } | null
+      } | null
     }[]
     return {
       id: payment.id,
@@ -127,6 +132,7 @@ export default async function ParentPaymentsPage({
         chargeDescription: a.charges?.description ?? 'Unknown charge',
         sessionDate: a.charges?.sessions?.date ?? null,
         sessionStatus: a.charges?.sessions?.status ?? null,
+        pricingBreakdown: (a.charges?.pricing_breakdown as { total_cents: number } | null) ?? null,
       })),
     }
   })

@@ -214,3 +214,60 @@ function formatTime12(time: string): string {
   const displayHours = hours % 12 || 12
   return `${displayHours}:${String(minutes).padStart(2, '0')} ${period}`
 }
+
+/**
+ * When admin or coach cancels a private session, mask the coach's slot at
+ * that exact date+time with a `coach_availability_exceptions` row so the
+ * weekly availability window doesn't auto-restore the slot for parents to
+ * re-book. Parent self-cancels (parent_24h / parent_late) intentionally
+ * do NOT call this — the slot should restore for the family to rebook.
+ *
+ * Idempotent: returns silently if a matching exception already exists or
+ * the session has missing fields.
+ */
+export async function maskCoachSlotOnAdminOrCoachCancel(
+  service: Supabase,
+  sessionId: string,
+  reason: string,
+): Promise<void> {
+  const { data: session } = await service
+    .from('sessions')
+    .select('id, date, start_time, end_time, coach_id, session_type')
+    .eq('id', sessionId)
+    .single()
+
+  if (!session?.coach_id || !session.date || !session.start_time || !session.end_time) {
+    return
+  }
+
+  // Skip group sessions — those use program scheduling, not coach availability.
+  if (session.session_type && session.session_type !== 'private') {
+    return
+  }
+
+  // Bail if an exception already covers this exact slot (idempotency).
+  const { data: existing } = await service
+    .from('coach_availability_exceptions')
+    .select('id')
+    .eq('coach_id', session.coach_id)
+    .eq('exception_date', session.date)
+    .eq('start_time', session.start_time)
+    .eq('end_time', session.end_time)
+    .limit(1)
+
+  if (existing && existing.length > 0) return
+
+  const { error } = await service
+    .from('coach_availability_exceptions')
+    .insert({
+      coach_id: session.coach_id,
+      exception_date: session.date,
+      start_time: session.start_time,
+      end_time: session.end_time,
+      reason,
+    })
+
+  if (error) {
+    console.error('maskCoachSlotOnAdminOrCoachCancel insert failed:', error.message)
+  }
+}

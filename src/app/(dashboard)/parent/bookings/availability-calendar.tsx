@@ -90,6 +90,12 @@ interface Props {
   allPrivatesOverride?: PrivateOverride | null
   /** Partner-summary lookup for shared private bookings (booking_id → partner). */
   partnerByBookingId?: Record<string, PartnerSummary>
+  /**
+   * For each cancelled-eligible booking, true when the slot has been taken
+   * by another scheduled session (different family, same coach+date+time).
+   * Used to suppress the "Re-book this slot" affordance.
+   */
+  slotTakenByBookingId?: Record<string, boolean>
 }
 
 type ActiveTab = 'yours' | 'availabilities'
@@ -444,6 +450,7 @@ export function AvailabilityCalendar({
   privateRateOverrides = {},
   allPrivatesOverride = null,
   partnerByBookingId = {},
+  slotTakenByBookingId = {},
 }: Props) {
   const [activeTab, setActiveTab] = useState<ActiveTab>('yours')
   const [viewMode, setViewMode] = useState<ViewMode>('week')
@@ -880,13 +887,21 @@ export function AvailabilityCalendar({
 
             {viewPopup.status === 'cancelled' &&
               (viewPopup.cancellation_type === 'parent_24h' || viewPopup.cancellation_type === 'parent_late') &&
-              viewPopup.sessions?.coach_id && (
+              viewPopup.sessions?.coach_id &&
+              !slotTakenByBookingId[viewPopup.id] && (
               <Button type="button" size="sm" className="mt-3 w-full" onClick={() => {
                 setViewPopup(null)
                 setBookingPopup({ slot: { date: viewPopup.sessions!.date, startTime: viewPopup.sessions!.start_time!, endTime: viewPopup.sessions!.end_time! }, coachId: viewPopup.sessions!.coach_id! })
                 setSelectedPlayerId(null)
                 setIsStanding(false)
               }}>Re-book this slot</Button>
+            )}
+            {viewPopup.status === 'cancelled' &&
+              (viewPopup.cancellation_type === 'parent_24h' || viewPopup.cancellation_type === 'parent_late') &&
+              slotTakenByBookingId[viewPopup.id] && (
+              <p className="mt-3 text-center text-xs text-muted-foreground">
+                This slot has been taken by another booking.
+              </p>
             )}
           </div>
         </div>
