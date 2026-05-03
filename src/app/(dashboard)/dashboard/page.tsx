@@ -46,13 +46,18 @@ export default async function DashboardPage() {
 
   // No role and no invite — this is a self-signup. Create their family in
   // pending_review state via the SECURITY DEFINER RPC, then send them to
-  // the onboarding wizard. The wizard handles the self-signup branch when
-  // family.signup_source = 'self_signup' (empty player list shows an
-  // "Add your first player" CTA instead of the coach-will-add message).
+  // the onboarding wizard. The wizard branches on signup_source for the
+  // 6-step self-signup intake (vs the 3-step admin-invite flow).
   const fullName = (user.user_metadata?.full_name as string | undefined) ?? user.email ?? 'New family'
-  const { data: rpcResult, error: rpcError } = await supabase.rpc('create_self_signup_family', {
+  const referralSource = user.user_metadata?.referral_source as string | undefined
+  const referralSourceDetail = user.user_metadata?.referral_source_detail as string | undefined
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: rpcResult, error: rpcError } = await (supabase as any).rpc('create_self_signup_family', {
     p_family_name: fullName,
     p_primary_contact: { name: fullName, email: user.email },
+    p_referral_source: referralSource ?? null,
+    p_referral_source_detail: referralSourceDetail ?? null,
   })
 
   if (rpcError || !(rpcResult as { success?: boolean } | null)?.success) {

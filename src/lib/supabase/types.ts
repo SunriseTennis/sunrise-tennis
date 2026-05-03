@@ -12,31 +12,6 @@ export type Database = {
   __InternalSupabase: {
     PostgrestVersion: "14.4"
   }
-  graphql_public: {
-    Tables: {
-      [_ in never]: never
-    }
-    Views: {
-      [_ in never]: never
-    }
-    Functions: {
-      graphql: {
-        Args: {
-          extensions?: Json
-          operationName?: string
-          query?: string
-          variables?: Json
-        }
-        Returns: Json
-      }
-    }
-    Enums: {
-      [_ in never]: never
-    }
-    CompositeTypes: {
-      [_ in never]: never
-    }
-  }
   public: {
     Tables: {
       attendances: {
@@ -940,6 +915,8 @@ export type Database = {
           notification_preferences: Json | null
           preferred_name: string | null
           primary_contact: Json | null
+          referral_source: string | null
+          referral_source_detail: string | null
           referred_by: string | null
           secondary_contact: Json | null
           signup_source: string
@@ -964,6 +941,8 @@ export type Database = {
           notification_preferences?: Json | null
           preferred_name?: string | null
           primary_contact?: Json | null
+          referral_source?: string | null
+          referral_source_detail?: string | null
           referred_by?: string | null
           secondary_contact?: Json | null
           signup_source?: string
@@ -988,6 +967,8 @@ export type Database = {
           notification_preferences?: Json | null
           preferred_name?: string | null
           primary_contact?: Json | null
+          referral_source?: string | null
+          referral_source_detail?: string | null
           referred_by?: string | null
           secondary_contact?: Json | null
           signup_source?: string
@@ -2630,6 +2611,8 @@ export type Database = {
           preferred_name: string | null
           primary_contact: Json | null
           primary_parent_user_id: string | null
+          referral_source: string | null
+          referral_source_detail: string | null
           signup_source: string | null
         }
         Insert: {
@@ -2643,6 +2626,8 @@ export type Database = {
           preferred_name?: string | null
           primary_contact?: Json | null
           primary_parent_user_id?: never
+          referral_source?: string | null
+          referral_source_detail?: string | null
           signup_source?: string | null
         }
         Update: {
@@ -2656,6 +2641,8 @@ export type Database = {
           preferred_name?: string | null
           primary_contact?: Json | null
           primary_parent_user_id?: never
+          referral_source?: string | null
+          referral_source_detail?: string | null
           signup_source?: string | null
         }
         Relationships: []
@@ -2705,7 +2692,12 @@ export type Database = {
         Returns: string
       }
       create_self_signup_family: {
-        Args: { p_family_name: string; p_primary_contact?: Json }
+        Args: {
+          p_family_name: string
+          p_primary_contact?: Json
+          p_referral_source?: string
+          p_referral_source_detail?: string
+        }
         Returns: Json
       }
       decrypt_medical: { Args: { ciphertext: string }; Returns: string }
@@ -2988,9 +2980,6 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
-  graphql_public: {
-    Enums: {},
-  },
   public: {
     Enums: {},
   },

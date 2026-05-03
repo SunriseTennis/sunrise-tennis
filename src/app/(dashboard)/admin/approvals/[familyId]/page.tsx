@@ -37,7 +37,7 @@ export default async function ApprovalDetailPage({ params, searchParams }: PageP
   const [{ data: family }, { data: players }] = await Promise.all([
     supabase
       .from('families')
-      .select('id, display_id, family_name, primary_contact, secondary_contact, address, approval_status, signup_source, approval_note, created_at')
+      .select('id, display_id, family_name, primary_contact, secondary_contact, address, approval_status, signup_source, approval_note, created_at, referral_source, referral_source_detail')
       .eq('id', familyId)
       .single(),
     supabase
@@ -62,6 +62,20 @@ export default async function ApprovalDetailPage({ params, searchParams }: PageP
 
   const contact = (family.primary_contact ?? {}) as { name?: string; email?: string; phone?: string }
   const isPending = family.approval_status === 'pending_review' || family.approval_status === 'changes_requested'
+
+  const REFERRAL_LABEL: Record<string, string> = {
+    word_of_mouth: 'Friend or family',
+    google: 'Google search',
+    social: 'Instagram or Facebook',
+    school: 'School',
+    walked_past: 'Walked past',
+    event: 'Event',
+    other: 'Other',
+  }
+  const referralLabel = (family as { referral_source?: string }).referral_source
+    ? REFERRAL_LABEL[(family as { referral_source: string }).referral_source] ?? (family as { referral_source: string }).referral_source
+    : null
+  const referralDetail = (family as { referral_source_detail?: string }).referral_source_detail || null
 
   const approveBound = approveFamilyAction.bind(null, familyId)
   const requestChangesBound = requestChangesAction.bind(null, familyId)
@@ -138,6 +152,15 @@ export default async function ApprovalDetailPage({ params, searchParams }: PageP
               <dt className="text-xs font-medium text-muted-foreground">Address</dt>
               <dd className="text-sm text-foreground">{family.address ?? '—'}</dd>
             </div>
+            {referralLabel && (
+              <div className="sm:col-span-2">
+                <dt className="text-xs font-medium text-muted-foreground">How they heard about us</dt>
+                <dd className="text-sm text-foreground">
+                  {referralLabel}
+                  {referralDetail ? <span className="text-muted-foreground"> — {referralDetail}</span> : null}
+                </dd>
+              </div>
+            )}
           </dl>
         </CardContent>
       </Card>

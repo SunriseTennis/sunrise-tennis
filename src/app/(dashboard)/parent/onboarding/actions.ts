@@ -5,11 +5,16 @@ import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
 import { createClient, getSessionUser } from '@/lib/supabase/server'
 import { checkRateLimitAsync } from '@/lib/utils/rate-limit'
-import { validateFormData } from '@/lib/utils/validation'
+import {
+  validateFormData,
+  wizardAddPlayerSchema,
+  wizardContactSchema,
+  wizardTermsAckSchema,
+} from '@/lib/utils/validation'
 
 // ── Shared auth helper ──────────────────────────────────────────────────
 
-async function getOnboardingAuth(): Promise<{ userId: string; familyId: string }> {
+async function getOnboardingAuth(): Promise<{ userId: string; familyId: string; signupSource: 'admin_invite' | 'self_signup' | 'legacy_import' }> {
   const supabase = await createClient()
   const user = await getSessionUser()
   if (!user) redirect('/login')
@@ -22,63 +27,112 @@ async function getOnboardingAuth(): Promise<{ userId: string; familyId: string }
     .single()
 
   if (!userRole?.family_id) redirect('/login')
-  return { userId: user.id, familyId: userRole.family_id }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: family } = await (supabase as any)
+    .from('families')
+    .select('signup_source')
+    .eq('id', userRole.family_id)
+    .single()
+
+  return {
+    userId: user.id,
+    familyId: userRole.family_id,
+    signupSource: (family?.signup_source ?? 'admin_invite') as 'admin_invite' | 'self_signup' | 'legacy_import',
+  }
 }
 
-// ── Validation schemas ──────────────────────────────────────────────────
+// ── Validation schemas (legacy admin-invite path) ───────────────────────
 
-const onboardingContactSchema = z.object({
+const adminInviteContactSchema = z.object({
   contact_name: z.string().trim().min(1, 'Full name is required').max(500),
   contact_phone: z.string().trim().max(50).optional().or(z.literal('')),
 })
 
-const onboardingPlayerSchema = z.object({
+const adminInvitePlayerSchema = z.object({
   player_id: z.string().uuid('Invalid player ID'),
   first_name: z.string().trim().min(1, 'First name is required').max(200),
   dob: z.string().trim().max(20).optional().or(z.literal('')),
 })
 
 // ── Step 1: Update contact details ─────────────────────────────────────
+//
+// Branches on signup_source: self-signup wizard captures address (3 fields),
+// admin-invite wizard sticks to name + phone (2 fields, byte-identical to today).
+// Both paths advance to step 2.
 
 export async function updateOnboardingContact(formData: FormData) {
-  const { userId, familyId } = await getOnboardingAuth()
+  const { userId, familyId, signupSource } = await getOnboardingAuth()
   const supabase = await createClient()
 
-  // Rate limit: 10 saves per minute
   if (!await checkRateLimitAsync(`onboarding-contact:${userId}`, 10, 60_000)) {
     redirect('/parent/onboarding?step=1&error=Too+many+requests.+Please+wait.')
   }
 
-  const parsed = validateFormData(formData, onboardingContactSchema)
-  if (!parsed.success) {
-    redirect(`/parent/onboarding?step=1&error=${encodeURIComponent(parsed.error)}`)
-  }
+  if (signupSource === 'self_signup') {
+    const parsed = validateFormData(formData, wizardContactSchema)
+    if (!parsed.success) {
+      redirect(`/parent/onboarding?step=1&error=${encodeURIComponent(parsed.error)}`)
+    }
 
-  const { contact_name, contact_phone } = parsed.data
+    const { contact_name, contact_phone, address } = parsed.data
 
-  // Read current family to preserve email in primary_contact
-  const { data: family } = await supabase
-    .from('families')
-    .select('primary_contact')
-    .eq('id', familyId)
-    .single()
+    const { data: family } = await supabase
+      .from('families')
+      .select('primary_contact')
+      .eq('id', familyId)
+      .single()
+    const existing = (family?.primary_contact ?? {}) as Record<string, string>
 
-  const existing = (family?.primary_contact ?? {}) as Record<string, string>
+    const primaryContact = {
+      ...existing,
+      name: contact_name,
+      phone: contact_phone || existing.phone || undefined,
+    }
 
-  const primaryContact = {
-    ...existing,
-    name: contact_name,
-    phone: contact_phone || existing.phone || undefined,
-  }
+    const { error } = await supabase
+      .from('families')
+      .update({
+        primary_contact: primaryContact,
+        family_name: contact_name,
+        ...(address ? { address } : {}),
+      })
+      .eq('id', familyId)
 
-  const { error } = await supabase
-    .from('families')
-    .update({ primary_contact: primaryContact })
-    .eq('id', familyId)
+    if (error) {
+      console.error('[onboarding] updateOnboardingContact (self):', error)
+      redirect('/parent/onboarding?step=1&error=Failed+to+save.+Please+try+again.')
+    }
+  } else {
+    const parsed = validateFormData(formData, adminInviteContactSchema)
+    if (!parsed.success) {
+      redirect(`/parent/onboarding?step=1&error=${encodeURIComponent(parsed.error)}`)
+    }
 
-  if (error) {
-    console.error('[onboarding] updateOnboardingContact:', error)
-    redirect('/parent/onboarding?step=1&error=Failed+to+save.+Please+try+again.')
+    const { contact_name, contact_phone } = parsed.data
+
+    const { data: family } = await supabase
+      .from('families')
+      .select('primary_contact')
+      .eq('id', familyId)
+      .single()
+    const existing = (family?.primary_contact ?? {}) as Record<string, string>
+
+    const primaryContact = {
+      ...existing,
+      name: contact_name,
+      phone: contact_phone || existing.phone || undefined,
+    }
+
+    const { error } = await supabase
+      .from('families')
+      .update({ primary_contact: primaryContact })
+      .eq('id', familyId)
+
+    if (error) {
+      console.error('[onboarding] updateOnboardingContact (invite):', error)
+      redirect('/parent/onboarding?step=1&error=Failed+to+save.+Please+try+again.')
+    }
   }
 
   revalidatePath('/parent/onboarding')
@@ -86,17 +140,19 @@ export async function updateOnboardingContact(formData: FormData) {
 }
 
 // ── Step 2: Update player details ──────────────────────────────────────
+//
+// Admin-invite branch: bulk-update name + DOB on existing pre-created players
+// (the migration cohort path). Self-signup branch: this action isn't called
+// — self_signup uses addOnboardingPlayer / removeOnboardingPlayer instead.
 
 export async function updateOnboardingPlayers(formData: FormData) {
   const { userId, familyId } = await getOnboardingAuth()
   const supabase = await createClient()
 
-  // Rate limit: 10 saves per minute
   if (!await checkRateLimitAsync(`onboarding-players:${userId}`, 10, 60_000)) {
     redirect('/parent/onboarding?step=2&error=Too+many+requests.+Please+wait.')
   }
 
-  // Collect all player_id_* entries from formData
   const playerIds: string[] = []
   formData.forEach((_, key) => {
     const match = key.match(/^player_id_(.+)$/)
@@ -112,7 +168,7 @@ export async function updateOnboardingPlayers(formData: FormData) {
         slice.append('dob', formData.get(`dob_${playerId}`) as string ?? '')
         return slice
       })(),
-      onboardingPlayerSchema,
+      adminInvitePlayerSchema,
     )
 
     if (!parsed.success) {
@@ -121,7 +177,6 @@ export async function updateOnboardingPlayers(formData: FormData) {
 
     const { player_id, first_name, dob } = parsed.data
 
-    // Verify parent owns this player
     const { data: owned } = await supabase
       .from('players')
       .select('id')
@@ -129,7 +184,7 @@ export async function updateOnboardingPlayers(formData: FormData) {
       .eq('family_id', familyId)
       .single()
 
-    if (!owned) continue // silently skip players not owned by this family
+    if (!owned) continue
 
     const { error } = await supabase
       .from('players')
@@ -149,18 +204,182 @@ export async function updateOnboardingPlayers(formData: FormData) {
   redirect('/parent/onboarding?step=3')
 }
 
-// ── Step 3: Complete onboarding ─────────────────────────────────────────
+// ── Self-signup: Add a player from wizard step 2 ─────────────────────────
+
+export async function addOnboardingPlayer(formData: FormData) {
+  const { userId, familyId } = await getOnboardingAuth()
+  const supabase = await createClient()
+
+  if (!await checkRateLimitAsync(`onboarding-add-player:${userId}`, 10, 60_000)) {
+    redirect('/parent/onboarding?step=2&error=Too+many+requests.+Please+wait.')
+  }
+
+  const parsed = validateFormData(formData, wizardAddPlayerSchema)
+  if (!parsed.success) {
+    redirect(`/parent/onboarding?step=2&error=${encodeURIComponent(parsed.error)}`)
+  }
+
+  const {
+    first_name,
+    last_name,
+    preferred_name,
+    dob,
+    gender,
+    ball_color,
+    classifications,
+    medical_notes,
+    physical_notes,
+  } = parsed.data
+
+  const VALID_CLASSES = new Set(['blue', 'red', 'orange', 'green', 'yellow', 'advanced', 'elite'])
+  const parsedClassifications = classifications
+    ? classifications.split(',').map((s) => s.trim()).filter((s) => VALID_CLASSES.has(s))
+    : []
+
+  const { error } = await supabase
+    .from('players')
+    .insert({
+      family_id: familyId,
+      first_name,
+      last_name,
+      preferred_name: preferred_name || null,
+      dob: dob || null,
+      gender: gender || null,
+      ball_color: ball_color || null,
+      level: ball_color || null,
+      classifications: parsedClassifications,
+      track: 'participation',
+      medical_notes: medical_notes || null,
+      physical_notes: physical_notes || null,
+      media_consent: false,
+      status: 'active',
+    })
+
+  if (error) {
+    console.error('[onboarding] addOnboardingPlayer:', error)
+    redirect(`/parent/onboarding?step=2&error=${encodeURIComponent(error.message)}`)
+  }
+
+  revalidatePath('/parent/onboarding')
+  redirect('/parent/onboarding?step=3')
+}
+
+// ── Self-signup: Remove a player added during the wizard ────────────────
+//
+// Restricted to families that haven't completed onboarding yet — once the
+// family is in pending_review or approved, players can only be archived,
+// not deleted (privacy + audit rule).
+
+export async function removeOnboardingPlayer(playerId: string) {
+  const { userId, familyId } = await getOnboardingAuth()
+  const supabase = await createClient()
+
+  if (!await checkRateLimitAsync(`onboarding-remove-player:${userId}`, 10, 60_000)) {
+    redirect('/parent/onboarding?step=3&error=Too+many+requests.+Please+wait.')
+  }
+
+  const { data: family } = await supabase
+    .from('families')
+    .select('completed_onboarding')
+    .eq('id', familyId)
+    .single()
+  if (family?.completed_onboarding) {
+    redirect('/parent/onboarding?step=3&error=Cannot+remove+after+onboarding+complete')
+  }
+
+  const { data: owned } = await supabase
+    .from('players')
+    .select('id')
+    .eq('id', playerId)
+    .eq('family_id', familyId)
+    .single()
+  if (!owned) {
+    redirect('/parent/onboarding?step=3&error=Player+not+found')
+  }
+
+  const { error } = await supabase.from('players').delete().eq('id', playerId)
+  if (error) {
+    console.error('[onboarding] removeOnboardingPlayer:', error)
+    redirect(`/parent/onboarding?step=3&error=${encodeURIComponent(error.message)}`)
+  }
+
+  revalidatePath('/parent/onboarding')
+  redirect('/parent/onboarding?step=3')
+}
+
+// ── Self-signup: Acknowledge T&C + per-player media consent (step 4) ────
+
+export async function acknowledgeOnboardingTerms(formData: FormData) {
+  const { userId, familyId } = await getOnboardingAuth()
+  const supabase = await createClient()
+
+  if (!await checkRateLimitAsync(`onboarding-terms:${userId}`, 10, 60_000)) {
+    redirect('/parent/onboarding?step=4&error=Too+many+requests.+Please+wait.')
+  }
+
+  const parsed = validateFormData(formData, wizardTermsAckSchema)
+  if (!parsed.success) {
+    redirect(`/parent/onboarding?step=4&error=${encodeURIComponent(parsed.error)}`)
+  }
+
+  // Per-player media consent — keys look like `media_consent_<playerId>`.
+  const consentByPlayerId = new Map<string, boolean>()
+  formData.forEach((value, key) => {
+    const match = key.match(/^media_consent_(.+)$/)
+    if (match) consentByPlayerId.set(match[1], value === 'on')
+  })
+
+  const { data: players } = await supabase
+    .from('players')
+    .select('id')
+    .eq('family_id', familyId)
+
+  for (const player of players ?? []) {
+    const consent = consentByPlayerId.get(player.id) ?? false
+    const { error } = await supabase
+      .from('players')
+      .update({ media_consent: consent })
+      .eq('id', player.id)
+    if (error) {
+      console.error(`[onboarding] media_consent player ${player.id}:`, error)
+    }
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error: famErr } = await (supabase as any)
+    .from('families')
+    .update({ terms_acknowledged_at: new Date().toISOString() })
+    .eq('id', familyId)
+  if (famErr) {
+    console.error('[onboarding] terms ack:', famErr)
+    redirect('/parent/onboarding?step=4&error=Failed+to+save.+Please+try+again.')
+  }
+
+  revalidatePath('/parent/onboarding')
+  redirect('/parent/onboarding?step=5')
+}
+
+// ── Step 5 (A2HS) advance — no DB write, just navigation ────────────────
+
+export async function advancePastA2HS() {
+  await getOnboardingAuth()
+  redirect('/parent/onboarding?step=6')
+}
+
+// ── Final step: Complete onboarding (both flows) ────────────────────────
+//
+// Self-signup: fires parent.signup.submitted to admins so the family hits
+// /admin/approvals immediately. Admin-invite: skips the dispatch — the family
+// is already approved at invite time.
 
 export async function completeOnboarding(pushSubscription: string | null) {
   const { userId, familyId } = await getOnboardingAuth()
   const supabase = await createClient()
 
-  // Rate limit: 5 completes per minute (shouldn't be hit normally)
   if (!await checkRateLimitAsync(`onboarding-complete:${userId}`, 5, 60_000)) {
-    redirect('/parent/onboarding?step=3&error=Too+many+requests.')
+    redirect('/parent/onboarding?error=Too+many+requests.')
   }
 
-  // Save push subscription if provided
   if (pushSubscription) {
     try {
       const parsed = JSON.parse(pushSubscription) as { endpoint?: string }
@@ -175,16 +394,14 @@ export async function completeOnboarding(pushSubscription: string | null) {
         )
       }
     } catch {
-      // Non-fatal — push subscription is optional
+      // Non-fatal — push subscription is optional.
     }
   }
 
-  // Read family signup_source + name + player count BEFORE updating, so we can
-  // fire the right admin notification afterwards (self-signup → admins).
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: familyBefore } = await (supabase as any)
     .from('families')
-    .select('signup_source, family_name, primary_contact')
+    .select('signup_source, family_name, primary_contact, terms_acknowledged_at')
     .eq('id', familyId)
     .single()
   const { count: playerCount } = await supabase
@@ -192,20 +409,21 @@ export async function completeOnboarding(pushSubscription: string | null) {
     .select('id', { count: 'exact', head: true })
     .eq('family_id', familyId)
 
-  // Mark onboarding complete (columns added after types generated)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { error } = await (supabase as any)
     .from('families')
-    .update({ completed_onboarding: true, terms_acknowledged_at: new Date().toISOString() })
+    .update({
+      completed_onboarding: true,
+      // Backfill terms_acknowledged_at for legacy paths that didn't go through step 4.
+      ...(familyBefore?.terms_acknowledged_at ? {} : { terms_acknowledged_at: new Date().toISOString() }),
+    })
     .eq('id', familyId)
 
   if (error) {
     console.error('[onboarding] completeOnboarding:', error)
-    redirect('/parent/onboarding?step=3&error=Failed+to+complete.+Please+try+again.')
+    redirect('/parent/onboarding?error=Failed+to+complete.+Please+try+again.')
   }
 
-  // For self-signups, notify admins so they can review in /admin/approvals.
-  // Admin-invite path skips this — the family is already approved at invite time.
   if (familyBefore?.signup_source === 'self_signup') {
     try {
       const { dispatchNotification } = await import('@/lib/notifications/dispatch')

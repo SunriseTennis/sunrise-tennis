@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation'
 import { createClient, getSessionUser } from '@/lib/supabase/server'
 import { OnboardingWizard } from './onboarding-wizard'
+import { SelfSignupWizard, SELF_SIGNUP_TOTAL_STEPS } from './self-signup-wizard'
 
 export default async function ParentOnboardingPage({
   searchParams,
@@ -25,17 +26,16 @@ export default async function ParentOnboardingPage({
   const [{ data: family }, { data: players }] = await Promise.all([
     supabase
       .from('families')
-      .select('primary_contact, completed_onboarding, signup_source')
+      .select('primary_contact, completed_onboarding, signup_source, address, terms_acknowledged_at')
       .eq('id', familyId)
       .single(),
     supabase
       .from('players')
-      .select('id, first_name, last_name, dob, ball_color, level')
+      .select('id, first_name, last_name, dob, gender, ball_color, level, media_consent')
       .eq('family_id', familyId)
       .order('first_name'),
   ])
 
-  // If already completed, skip to /parent
   if (family?.completed_onboarding) {
     redirect('/parent')
   }
@@ -51,15 +51,42 @@ export default async function ParentOnboardingPage({
     | 'self_signup'
     | 'legacy_import'
 
-  const currentStep = Math.max(1, Math.min(3, parseInt(stepParam ?? '1', 10) || 1))
-
   const playerList = (players ?? []).map((p) => ({
     id: p.id,
     first_name: p.first_name,
     last_name: p.last_name,
     dob: p.dob ?? null,
+    gender: (p.gender ?? null) as string | null,
     level: (p.ball_color ?? p.level ?? null) as string | null,
+    media_consent: !!p.media_consent,
   }))
+
+  if (signupSource === 'self_signup') {
+    const requestedStep = parseInt(stepParam ?? '1', 10) || 1
+    let currentStep = Math.max(1, Math.min(SELF_SIGNUP_TOTAL_STEPS, requestedStep))
+
+    // Soft step gates: don't let parents skip ahead past required steps.
+    // - Step 3 (players summary) requires at least one player.
+    // - Step 5/6 require terms ack.
+    if (currentStep >= 3 && playerList.length === 0) currentStep = 2
+    const termsAck = family?.terms_acknowledged_at ?? null
+    if (currentStep >= 5 && !termsAck) currentStep = 4
+
+    return (
+      <SelfSignupWizard
+        initialStep={currentStep}
+        error={error ?? null}
+        userEmail={user.email ?? ''}
+        primaryContact={primaryContact}
+        address={family?.address ?? null}
+        players={playerList}
+        termsAcknowledgedAt={termsAck}
+      />
+    )
+  }
+
+  // Admin-invite + legacy_import paths use the original 3-step wizard.
+  const currentStep = Math.max(1, Math.min(3, parseInt(stepParam ?? '1', 10) || 1))
 
   return (
     <OnboardingWizard

@@ -118,7 +118,14 @@ export async function signup(formData: FormData) {
     redirect(`/signup?error=${encodeURIComponent(parsed.error)}`)
   }
 
-  const { email, password, full_name: fullName, invite_token: inviteToken } = parsed.data
+  const {
+    email,
+    password,
+    full_name: fullName,
+    invite_token: inviteToken,
+    referral_source: referralSource,
+    referral_source_detail: referralSourceDetail,
+  } = parsed.data
 
   // Rate limit: 3 signup attempts per minute per email
   if (!await checkRateLimitAsync(`signup:${email}`, 3, 60_000)) {
@@ -134,6 +141,11 @@ export async function signup(formData: FormData) {
         accepted_terms: true,
         accepted_terms_at: new Date().toISOString(),
         ...(inviteToken ? { invite_token: inviteToken } : {}),
+        // Plan 15 Phase D — funnel signal. Read by /dashboard at first
+        // confirmed-email visit, then passed into create_self_signup_family.
+        // Skipped for invite-token paths (admin already knows the source).
+        ...(!inviteToken && referralSource ? { referral_source: referralSource } : {}),
+        ...(!inviteToken && referralSourceDetail ? { referral_source_detail: referralSourceDetail } : {}),
       },
       emailRedirectTo: `${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'}/auth/callback`,
     },

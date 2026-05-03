@@ -95,12 +95,21 @@ export const loginFormSchema = z.object({
   password: requiredString('Password is required', 200),
 })
 
+// Plan 15 Phase D — soft funnel filter on /signup. Optional, captured into
+// families.referral_source via the create_self_signup_family RPC (handled in
+// /dashboard handoff). Invite-token signups skip this entirely.
+export const referralSourceSchema = z.enum([
+  'word_of_mouth', 'google', 'social', 'school', 'walked_past', 'event', 'other',
+])
+
 export const signupFormSchema = z.object({
   email: z.string().email('Valid email is required'),
   password: z.string().min(8, 'Password must be at least 8 characters').max(200),
   full_name: requiredString('Full name is required'),
   invite_token: optionalString(),
   accepted_terms: z.literal('on', { message: 'You must accept the Privacy Policy and Terms of Service' }),
+  referral_source: referralSourceSchema.optional().or(z.literal('')),
+  referral_source_detail: optionalString(500),
 })
 
 export const magicLinkFormSchema = z.object({
@@ -306,6 +315,38 @@ export const parentCreatePlayerFormSchema = z.object({
   media_consent: z.string().optional(),
   /** Required acknowledgement that the parent has read the media-consent explanation. */
   media_consent_acknowledged: z.string().refine((v) => v === 'on', { message: 'Please acknowledge the media consent statement before continuing' }),
+})
+
+// Plan 15 Phase D — wizard add-player intake (self-signup flow). Trims the
+// requirements vs `parentCreatePlayerFormSchema`: media-consent ack moves to
+// its own dedicated wizard step (across all players at once), so it isn't
+// required here. ball_color allows empty ("I'm not sure" UI option) → NULL.
+export const wizardAddPlayerSchema = z.object({
+  first_name: requiredString('First name is required'),
+  last_name: requiredString('Last name is required'),
+  preferred_name: optionalString(),
+  dob: requiredString('Date of birth is required'),
+  gender: genderSchema.refine((v) => !!v, { message: 'Gender is required' }),
+  ball_color: ballColorSchema.optional().or(z.literal('')),
+  classifications: optionalString(500),
+  medical_notes: optionalString(5000),
+  physical_notes: optionalString(5000),
+})
+
+// Plan 15 Phase D — onboarding contact details for self-signup wizard step 1.
+// Adds address vs the existing admin-invite contact step which doesn't ask.
+export const wizardContactSchema = z.object({
+  contact_name: z.string().trim().min(1, 'Full name is required').max(500),
+  contact_phone: z.string().trim().max(50).optional().or(z.literal('')),
+  address: optionalString(1000),
+})
+
+// Plan 15 Phase D — terms + media-consent acknowledgement step (wizard step 4).
+// One T&C checkbox plus one media_consent_<playerId> checkbox per player.
+// Player consents are read dynamically from formData (key prefix scan), so
+// no schema entries — only the T&C ack is constrained.
+export const wizardTermsAckSchema = z.object({
+  terms_accepted: z.literal('on', { message: 'Please acknowledge the Terms & Conditions to continue' }),
 })
 
 // Parent - Programs

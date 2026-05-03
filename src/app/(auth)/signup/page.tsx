@@ -1,6 +1,6 @@
 'use client'
 
-import { Suspense } from 'react'
+import { Suspense, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { Sun } from 'lucide-react'
@@ -11,10 +11,27 @@ import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 
+const REFERRAL_OPTIONS: { value: string; label: string }[] = [
+  { value: '', label: 'Select one (optional)' },
+  { value: 'word_of_mouth', label: 'Friend or family told me' },
+  { value: 'google', label: 'Google search' },
+  { value: 'social', label: 'Instagram or Facebook' },
+  { value: 'school', label: 'My child’s school' },
+  { value: 'walked_past', label: 'Walked past the courts' },
+  { value: 'event', label: 'Saw you at an event' },
+  { value: 'other', label: 'Other' },
+]
+
 function SignupForm() {
   const searchParams = useSearchParams()
   const error = searchParams.get('error')
   const invite = searchParams.get('invite')
+  const [referral, setReferral] = useState('')
+
+  // 'school' wants the school name, 'other' wants the free-text detail.
+  const wantsDetail = referral === 'school' || referral === 'other'
+  const detailLabel = referral === 'school' ? 'Which school?' : 'Tell us a bit more'
+  const detailPlaceholder = referral === 'school' ? 'e.g. McAuley Community School' : 'Optional'
 
   return (
     <>
@@ -71,6 +88,34 @@ function SignupForm() {
           />
         </div>
 
+        {!invite && (
+          <div className="space-y-2">
+            <Label htmlFor="referral_source" className="text-sm">How did you hear about us?</Label>
+            <select
+              id="referral_source"
+              name="referral_source"
+              value={referral}
+              onChange={(e) => setReferral(e.target.value)}
+              className="block w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+            >
+              {REFERRAL_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
+            {wantsDetail && (
+              <Input
+                name="referral_source_detail"
+                type="text"
+                placeholder={detailPlaceholder}
+                aria-label={detailLabel}
+                className="mt-2"
+                required={referral === 'school'}
+                maxLength={500}
+              />
+            )}
+          </div>
+        )}
+
         <div className="flex items-start gap-2.5">
           <input
             id="accepted_terms"
@@ -101,7 +146,7 @@ function SignupForm() {
 
 export default function SignupPage() {
   return (
-    <div className="gradient-sunrise flex min-h-screen items-center justify-center px-4">
+    <div className="gradient-sunrise flex min-h-screen items-center justify-center px-4 py-10">
       <Card className="w-full max-w-sm border-0 shadow-elevated">
         <CardHeader className="text-center">
           <div className="mx-auto flex size-12 items-center justify-center rounded-full bg-primary/10">
