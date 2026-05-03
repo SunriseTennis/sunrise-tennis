@@ -20,19 +20,19 @@ const ROWS = [
     meta: '60-90 min — Red/Orange $25, Green/Yellow/Adv/Elite $30',
     amount: 25,
     amountSuffix: '–30',
-    ballColors: ['#2B5EA7', '#1A2332'],
+    ballColors: ['#8B5A2B', '#1A2332'],
   },
   {
     label: 'Morning squads (Tue/Wed)',
     meta: '6:45-8am — Advanced/Elite. $15 if both days',
     amount: 25,
-    ballColors: ['#2B5EA7'],
+    ballColors: ['#8B5A2B'],
   },
   {
     label: 'Schools program',
     meta: '45 min group session',
     amount: 20,
-    ballColors: ['#2B5EA7'],
+    ballColors: ['#2B5EA7', '#C53030'],
   },
 ]
 
@@ -40,15 +40,14 @@ export function PriceStrip() {
   return (
     <section id="pricing" className="scroll-mt-20 bg-gradient-to-b from-[#FFFBF7] to-[#FFF6ED] px-4 py-12 sm:py-16">
       <div className="mx-auto max-w-4xl">
-        <div className="overflow-hidden rounded-2xl border border-[#E0D0BE]/40 bg-white shadow-sm">
-          {/* Header */}
-          <div className="flex items-center justify-between border-b border-[#E0D0BE]/30 bg-gradient-to-r from-[#FFF6ED] to-[#FFEAD8] px-5 py-4 sm:px-6">
-            <div>
-              <h2 className="text-base font-semibold text-[#1A2332] sm:text-lg">Group session pricing</h2>
-              <p className="text-xs text-[#8899A6] sm:text-sm">All prices per player, per session (AUD, incl. GST)</p>
-            </div>
-          </div>
+        <div className="mb-6 text-center sm:mb-8">
+          <h2 className="text-2xl font-bold text-[#1A2332] sm:text-3xl">Pricing</h2>
+          <p className="mx-auto mt-2 max-w-2xl text-sm text-[#556270]">
+            All prices visible up front. Per player, per session (AUD, incl. GST).
+          </p>
+        </div>
 
+        <div className="overflow-hidden rounded-2xl border border-[#E0D0BE]/40 bg-white shadow-sm">
           {/* Rows */}
           <ul className="divide-y divide-[#E0D0BE]/30">
             {ROWS.map((row) => (
@@ -81,7 +80,7 @@ export function PriceStrip() {
           <div className="border-t border-[#E0D0BE]/30 bg-[#FFFBF7] px-5 py-3.5 sm:px-6">
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <p className="text-xs text-[#556270]">
-                <span className="font-medium text-[#1A2332]">25% off the 2nd group, per child</span> ·
+                <span className="font-medium text-[#1A2332]">25% off the cheaper group, per child</span> ·
                 <span className="ml-1 font-medium text-[#1A2332]">15% early-bird</span> until Mon 4 May ·
                 <span className="ml-1 font-medium text-[#1A2332]">10%</span> until Sun 10 May
               </p>

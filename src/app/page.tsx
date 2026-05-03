@@ -1,12 +1,11 @@
 import type { Metadata } from 'next'
 import Image from 'next/image'
-import { Sun, Users, Calendar, BarChart3, MapPin, Phone, ChevronRight, ChevronDown, Trophy, Star, GraduationCap, Heart } from 'lucide-react'
+import { Sun, Users, Calendar, BarChart3, MapPin, Phone, MessageSquare, Mail, ChevronRight, ChevronDown, Trophy, Star, GraduationCap, Heart } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { PublicHeader } from '@/components/public-header'
 import { PublicFooter } from '@/components/public-footer'
 import { StickyMobileCTA } from '@/components/sticky-mobile-cta'
 import { TrialBookingForm } from '@/components/trial-booking-form'
-import { OurApproach } from '@/components/our-approach'
 import { PriceStrip } from '@/components/price-strip'
 import { ProgramsSection } from './programs-section'
 import { createClient } from '@supabase/supabase-js'
@@ -51,9 +50,9 @@ async function getPrograms() {
 
   const { data } = await supabase
     .from('programs')
-    .select('id, name, type, level, day_of_week, start_time, end_time, per_session_cents')
+    .select('id, name, type, level, day_of_week, start_time, end_time, per_session_cents, track_required, allowed_classifications')
     .eq('status', 'active')
-    .in('type', ['group', 'squad'])
+    .in('type', ['group', 'squad', 'school'])
     .order('level')
     .order('day_of_week')
 
@@ -274,10 +273,7 @@ export default async function Home() {
         </div>
       </section>
 
-      {/* ── Our Approach (coaching philosophy) ────────────────────── */}
-      <OurApproach />
-
-      {/* ── Price Strip ───────────────────────────────────────────── */}
+      {/* ── Pricing ───────────────────────────────────────────────── */}
       <PriceStrip />
 
       {/* ── Multi-Group Discount Spotlight ────────────────────────── */}
@@ -364,8 +360,39 @@ export default async function Home() {
               <p className="mt-2 text-sm text-[#556270]">
                 Fill in the details below and we&apos;ll get back to you within 24 hours to arrange your child&apos;s first session.
               </p>
+
+              {/* Contact-direct alternative */}
+              <div className="mt-5 rounded-xl border border-[#E0D0BE]/40 bg-gradient-to-br from-[#FFF6ED] to-[#FFFBF7] px-4 py-3.5 sm:px-5">
+                <p className="text-xs font-medium text-[#556270]">
+                  Prefer not to fill out the form? Get in touch directly:
+                </p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <a
+                    href="tel:0431368752"
+                    className="inline-flex items-center gap-1.5 rounded-full border border-[#E87450]/30 bg-white px-3 py-1.5 text-xs font-semibold text-[#E87450] shadow-sm transition-all hover:border-[#E87450]/60 hover:shadow-md"
+                  >
+                    <Phone className="size-3.5" />
+                    Call Maxim
+                  </a>
+                  <a
+                    href="sms:0431368752"
+                    className="inline-flex items-center gap-1.5 rounded-full border border-[#2B5EA7]/30 bg-white px-3 py-1.5 text-xs font-semibold text-[#2B5EA7] shadow-sm transition-all hover:border-[#2B5EA7]/60 hover:shadow-md"
+                  >
+                    <MessageSquare className="size-3.5" />
+                    Text Maxim
+                  </a>
+                  <a
+                    href="mailto:info@sunrisetennis.com.au"
+                    className="inline-flex items-center gap-1.5 rounded-full border border-[#2D8A4E]/30 bg-white px-3 py-1.5 text-xs font-semibold text-[#2D8A4E] shadow-sm transition-all hover:border-[#2D8A4E]/60 hover:shadow-md"
+                  >
+                    <Mail className="size-3.5" />
+                    Email Maxim
+                  </a>
+                </div>
+              </div>
+
               <div className="mt-6">
-                <TrialBookingForm />
+                <TrialBookingForm programs={programs} />
               </div>
             </div>
           </div>
@@ -442,7 +469,7 @@ export default async function Home() {
                 <Phone className="size-5 text-[#E87450]" />
               </div>
               <div className="min-w-0 sm:mt-3">
-                <h3 className="text-sm font-semibold text-[#1A2332] sm:text-base">Call Coach Maxim</h3>
+                <h3 className="text-sm font-semibold text-[#1A2332] sm:text-base">Call Maxim</h3>
                 <p className="truncate text-xs text-[#556270] sm:mt-1 sm:text-sm">
                   0431 368 752
                 </p>

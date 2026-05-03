@@ -1,8 +1,9 @@
 'use client'
 
-import { useState } from 'react'
-import { ChevronDown, ChevronRight, LayoutGrid, Calendar, Sparkles } from 'lucide-react'
+import { useMemo, useState } from 'react'
+import { ChevronDown, ChevronRight, LayoutGrid, Calendar, Sparkles, Trophy } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { isPerformanceOnly } from '@/lib/utils/eligibility'
 
 interface Program {
   id: string
@@ -13,10 +14,25 @@ interface Program {
   start_time: string | null
   end_time: string | null
   per_session_cents: number | null
+  track_required?: string | null
+  allowed_classifications?: string[] | null
 }
 
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+const FULL_DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 const CALENDAR_DAYS = [1, 2, 3, 4, 5, 6] // Mon-Sat
+
+const SCHOOL_BUCKET = 'school'
+
+const CLASSIFICATION_COLORS: Record<string, string> = {
+  blue: '#4A90D9',
+  red: '#C53030',
+  orange: '#E86A20',
+  green: '#2D8A4E',
+  yellow: '#D4A20A',
+  advanced: '#8B5A2B',
+  elite: '#1A2332',
+}
 
 const LEVEL_CONFIG: Record<string, {
   label: string
@@ -28,9 +44,19 @@ const LEVEL_CONFIG: Record<string, {
   ballColor: string
   ballHighlight: string
 }> = {
+  [SCHOOL_BUCKET]: {
+    label: 'Afterschool Programs',
+    ages: 'School-based, ages 5-12',
+    description: 'On-site coaching at partner primary schools. Term-fee billing, parents collect after the session.',
+    color: 'text-[#2B5EA7]',
+    bgLight: 'bg-[#2B5EA7]/8',
+    border: 'border-[#2B5EA7]/25',
+    ballColor: '#2B5EA7',
+    ballHighlight: '#C53030', // red accent — overridden by dynamic dual ball
+  },
   blue: {
     label: 'Blue Ball',
-    ages: 'Ages 3–5',
+    ages: 'Ages 3-5',
     description: 'First steps on court. Fun games, coordination, and confidence building with soft blue balls.',
     color: 'text-[#4A90D9]',
     bgLight: 'bg-[#4A90D9]/10',
@@ -40,7 +66,7 @@ const LEVEL_CONFIG: Record<string, {
   },
   red: {
     label: 'Red Ball',
-    ages: 'Ages 5–8',
+    ages: 'Ages 5-8',
     description: 'Learning the basics. Shorter court, red balls, and building fundamental strokes.',
     color: 'text-[#C53030]',
     bgLight: 'bg-[#C53030]/10',
@@ -50,7 +76,7 @@ const LEVEL_CONFIG: Record<string, {
   },
   orange: {
     label: 'Orange Ball',
-    ages: 'Ages 8–10',
+    ages: 'Ages 8-10',
     description: 'Developing rallying skills, game play, and match-ready technique on a mid-size court.',
     color: 'text-[#E86A20]',
     bgLight: 'bg-[#E86A20]/10',
@@ -60,7 +86,7 @@ const LEVEL_CONFIG: Record<string, {
   },
   green: {
     label: 'Green Ball',
-    ages: 'Ages 10–12',
+    ages: 'Ages 10-12',
     description: 'Transitioning to full court. Advanced technique, tactics, and competitive play.',
     color: 'text-[#2D8A4E]',
     bgLight: 'bg-[#2D8A4E]/10',
@@ -82,11 +108,11 @@ const LEVEL_CONFIG: Record<string, {
     label: 'Advanced Squad',
     ages: 'UTR 4.5+',
     description: 'Performance squad for advanced juniors — invitation-based. Trains alongside Yellow and Elite squads on Thursdays.',
-    color: 'text-[#2B5EA7]',
-    bgLight: 'bg-[#2B5EA7]/10',
-    border: 'border-[#2B5EA7]/30',
-    ballColor: '#2B5EA7',
-    ballHighlight: '#4A7EC7',
+    color: 'text-[#8B5A2B]',
+    bgLight: 'bg-[#8B5A2B]/10',
+    border: 'border-[#8B5A2B]/30',
+    ballColor: '#8B5A2B',
+    ballHighlight: '#B07840',
   },
   elite: {
     label: 'Elite Squad',
@@ -102,7 +128,8 @@ const LEVEL_CONFIG: Record<string, {
 
 // Canonical display level — orange-green is not its own level; show under both orange AND green (cards)
 // and render with orange styling in the calendar (still one row per program, NAME conveys the dual nature).
-function displayLevelForCalendar(level: string): string {
+function displayLevelForCalendar(level: string, type?: string | null): string {
+  if (type === 'school') return SCHOOL_BUCKET
   if (level === 'orange-green') return 'orange'
   return level
 }
@@ -129,11 +156,45 @@ function TennisBall({ color, highlight, size = 64 }: { color: string; highlight:
   )
 }
 
+// Two-half-circle ball used by multi-classification cards (currently the
+// schools card). Falls back to the regular ball when fewer than two colours.
+function MultiBall({ colors, size = 56 }: { colors: string[]; size?: number }) {
+  if (colors.length < 2) {
+    return <TennisBall color={colors[0] ?? '#2B5EA7'} highlight="#FFFFFF" size={size} />
+  }
+  const [left, right] = colors
+  return (
+    <svg width={size} height={size} viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <clipPath id="leftHalf"><rect x="0" y="0" width="32" height="64" /></clipPath>
+        <clipPath id="rightHalf"><rect x="32" y="0" width="32" height="64" /></clipPath>
+        <radialGradient id="multiBallShine" cx="0.35" cy="0.3" r="0.65">
+          <stop offset="0%" stopColor="white" stopOpacity="0.3" />
+          <stop offset="100%" stopColor="white" stopOpacity="0" />
+        </radialGradient>
+      </defs>
+      <circle cx="32" cy="32" r="30" fill={left} clipPath="url(#leftHalf)" />
+      <circle cx="32" cy="32" r="30" fill={right} clipPath="url(#rightHalf)" />
+      <circle cx="32" cy="32" r="30" fill="url(#multiBallShine)" />
+      <path d="M32 2 L32 62" stroke="white" strokeWidth="1.5" opacity="0.45" />
+    </svg>
+  )
+}
+
 function GirlsPill() {
   return (
     <span className="inline-flex items-center gap-0.5 rounded-full bg-[#E87AA8]/15 px-2 py-0.5 text-[10px] font-semibold text-[#C04F82]">
       <Sparkles className="size-2.5" />
       Girls only
+    </span>
+  )
+}
+
+function PerformancePill() {
+  return (
+    <span className="inline-flex items-center gap-0.5 rounded-full bg-[#2B5EA7]/12 px-2 py-0.5 text-[10px] font-semibold text-[#2B5EA7]">
+      <Trophy className="size-2.5" />
+      Performance only
     </span>
   )
 }
@@ -153,11 +214,25 @@ function formatPrice(cents: number | null) {
 export function ProgramsSection({ programs }: { programs: Program[] }) {
   const [view, setView] = useState<'cards' | 'calendar'>('cards')
   const [expandedLevel, setExpandedLevel] = useState<string | null>(null)
+  // Mobile-only weekly accordion state. Initialise to the next non-empty
+  // calendar day from today so the surface isn't fully collapsed on first paint.
+  const initialMobileDay = useMemo(() => {
+    const today = new Date().getDay()
+    const order = [...CALENDAR_DAYS]
+    const rotated = [...order.slice(order.indexOf(today)), ...order.slice(0, order.indexOf(today))]
+      .filter(d => d !== -1) as number[]
+    const first = rotated.find(d => programs.some(p => p.day_of_week === d))
+    return first ?? CALENDAR_DAYS.find(d => programs.some(p => p.day_of_week === d)) ?? null
+  }, [programs])
+  const [expandedMobileDay, setExpandedMobileDay] = useState<number | null>(initialMobileDay)
 
   // Cards view: bucket by level. orange-green programs appear in BOTH orange and green buckets.
+  // Schools (type='school') get their own bucket regardless of `level`.
   const byLevel = new Map<string, Program[]>()
   for (const p of programs) {
-    const buckets = p.level === 'orange-green' ? ['orange', 'green'] : [p.level]
+    const buckets = p.type === 'school'
+      ? [SCHOOL_BUCKET]
+      : (p.level === 'orange-green' ? ['orange', 'green'] : [p.level])
     for (const bucket of buckets) {
       const list = byLevel.get(bucket) ?? []
       list.push(p)
@@ -165,8 +240,8 @@ export function ProgramsSection({ programs }: { programs: Program[] }) {
     }
   }
 
-  // Known level order: blue, red, orange, green, yellow, advanced, elite. Everything else sorts to end.
-  const levelOrder = ['blue', 'red', 'orange', 'green', 'yellow', 'advanced', 'elite']
+  // Schools first, then standard ball-level pathway, then performance squads.
+  const levelOrder = [SCHOOL_BUCKET, 'blue', 'red', 'orange', 'green', 'yellow', 'advanced', 'elite']
   const sortedLevels = [...byLevel.entries()]
     // Only render buckets that have a LEVEL_CONFIG entry — unknowns (e.g. "competitive") skip the card view.
     .filter(([level]) => LEVEL_CONFIG[level])
@@ -222,6 +297,25 @@ export function ProgramsSection({ programs }: { programs: Program[] }) {
               const isExpanded = expandedLevel === level
               const minPrice = Math.min(...progs.map((p) => p.per_session_cents ?? Infinity))
               const sessionCount = progs.length
+              const allPerformance = progs.every(p => isPerformanceOnly({
+                day_of_week: p.day_of_week,
+                allowed_classifications: p.allowed_classifications,
+                track_required: p.track_required,
+                gender_restriction: null,
+              }))
+              // For the schools card header, derive dot palette from the union
+              // of allowed_classifications across all schools programs.
+              const isSchoolBucket = level === SCHOOL_BUCKET
+              const schoolDotColors = isSchoolBucket
+                ? (() => {
+                    const all = new Set<string>()
+                    for (const p of progs) (p.allowed_classifications ?? []).forEach(c => all.add(c))
+                    if (all.size === 0) return ['#2B5EA7', '#C53030']
+                    return Array.from(all)
+                      .map(c => CLASSIFICATION_COLORS[c])
+                      .filter((c): c is string => Boolean(c))
+                  })()
+                : []
 
               return (
                 <div
@@ -234,7 +328,9 @@ export function ProgramsSection({ programs }: { programs: Program[] }) {
                     className="flex w-full items-start gap-4 p-4 text-left"
                   >
                     <div className="flex size-16 shrink-0 items-center justify-center rounded-lg sm:size-20">
-                      <TennisBall color={config.ballColor} highlight={config.ballHighlight} size={56} />
+                      {isSchoolBucket
+                        ? <MultiBall colors={schoolDotColors} size={56} />
+                        : <TennisBall color={config.ballColor} highlight={config.ballHighlight} size={56} />}
                     </div>
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-2">
@@ -242,6 +338,7 @@ export function ProgramsSection({ programs }: { programs: Program[] }) {
                         {config.ages && (
                           <span className="text-xs text-[#8899A6]">{config.ages}</span>
                         )}
+                        {allPerformance && <PerformancePill />}
                       </div>
                       <p className="mt-0.5 text-sm leading-relaxed text-[#556270] line-clamp-2">
                         {config.description}
@@ -264,28 +361,37 @@ export function ProgramsSection({ programs }: { programs: Program[] }) {
                   {isExpanded && (
                     <div className={`border-t ${config.border} ${config.bgLight} px-4 py-3`}>
                       <div className="space-y-2">
-                        {progs.map((p) => (
-                          <div
-                            key={`${level}-${p.id}`}
-                            className="flex items-center justify-between rounded-lg bg-white/80 px-3 py-2 shadow-sm"
-                          >
-                            <div className="min-w-0 flex-1">
-                              <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                                <p className="text-sm font-medium text-[#1A2332]">
-                                  {DAYS[p.day_of_week ?? 0]}{' '}
-                                  {p.start_time && formatTime(p.start_time)}
-                                  {p.end_time && ` – ${formatTime(p.end_time)}`}
+                        {progs.map((p) => {
+                          const performance = isPerformanceOnly({
+                            day_of_week: p.day_of_week,
+                            allowed_classifications: p.allowed_classifications,
+                            track_required: p.track_required,
+                            gender_restriction: null,
+                          })
+                          return (
+                            <div
+                              key={`${level}-${p.id}`}
+                              className="flex items-center justify-between rounded-lg bg-white/80 px-3 py-2 shadow-sm"
+                            >
+                              <div className="min-w-0 flex-1">
+                                <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                                  <p className="text-sm font-medium text-[#1A2332]">
+                                    {p.type === 'school' ? p.name : DAYS[p.day_of_week ?? 0]}{' '}
+                                    {p.start_time && formatTime(p.start_time)}
+                                    {p.end_time && ` – ${formatTime(p.end_time)}`}
+                                  </p>
+                                  {isGirlsOnly(p.name) && <GirlsPill />}
+                                  {performance && !allPerformance && <PerformancePill />}
+                                </div>
+                                <p className="mt-0.5 text-xs text-[#8899A6]">
+                                  {p.type === 'squad' ? 'Squad' : p.type === 'school' ? 'Afterschool' : 'Group'}
+                                  {p.per_session_cents ? ` · ${formatPrice(p.per_session_cents)}/session` : ''}
+                                  {p.level === 'orange-green' ? ' · Orange/Green bridging' : ''}
                                 </p>
-                                {isGirlsOnly(p.name) && <GirlsPill />}
                               </div>
-                              <p className="mt-0.5 text-xs text-[#8899A6]">
-                                {p.type === 'squad' ? 'Squad' : 'Group'}
-                                {p.per_session_cents ? ` · ${formatPrice(p.per_session_cents)}/session` : ''}
-                                {p.level === 'orange-green' ? ' · Orange/Green bridging' : ''}
-                              </p>
                             </div>
-                          </div>
-                        ))}
+                          )
+                        })}
                       </div>
                     </div>
                   )}
@@ -343,17 +449,25 @@ export function ProgramsSection({ programs }: { programs: Program[] }) {
                   return (
                     <div key={d} className="min-h-[200px] space-y-1.5 p-2">
                       {dayProgs.map((p) => {
-                        const displayLevel = displayLevelForCalendar(p.level)
+                        const displayLevel = displayLevelForCalendar(p.level, p.type)
                         const config = LEVEL_CONFIG[displayLevel]
                         if (!config) return null
-                        const label = p.level === 'orange-green' ? 'Orange/Green' : config.label
+                        const label = p.type === 'school'
+                          ? 'Afterschool'
+                          : (p.level === 'orange-green' ? 'Orange/Green' : config.label)
+                        const performance = isPerformanceOnly({
+                          day_of_week: p.day_of_week,
+                          allowed_classifications: p.allowed_classifications,
+                          track_required: p.track_required,
+                          gender_restriction: null,
+                        })
                         return (
                           <a
                             key={p.id}
                             href="#trial"
                             className={`block rounded-lg p-2 text-left transition-all hover:scale-[1.02] hover:shadow-sm ${config.bgLight} border ${config.border}`}
                           >
-                            <div className="flex items-start justify-between gap-1">
+                            <div className="flex flex-wrap items-start justify-between gap-1">
                               <p className={`text-xs font-semibold ${config.color}`}>{label}</p>
                               {isGirlsOnly(p.name) && <GirlsPill />}
                             </div>
@@ -366,6 +480,9 @@ export function ProgramsSection({ programs }: { programs: Program[] }) {
                                 {formatPrice(p.per_session_cents)}/session
                               </p>
                             )}
+                            {performance && (
+                              <div className="mt-1"><PerformancePill /></div>
+                            )}
                           </a>
                         )
                       })}
@@ -375,46 +492,71 @@ export function ProgramsSection({ programs }: { programs: Program[] }) {
               </div>
             </div>
 
-            {/* Mobile calendar (stacked by day) */}
-            <div className="space-y-4 sm:hidden">
+            {/* Mobile calendar — accordion (one day open at a time) */}
+            <div className="space-y-2 sm:hidden">
               {CALENDAR_DAYS.map((d) => {
                 const dayProgs = programs
                   .filter((p) => p.day_of_week === d)
                   .sort((a, b) => (a.start_time ?? '').localeCompare(b.start_time ?? ''))
 
                 if (dayProgs.length === 0) return null
+                const isOpen = expandedMobileDay === d
 
                 return (
-                  <div key={d}>
-                    <h3 className="mb-2 text-sm font-semibold text-[#1A2332]">{DAYS[d]}day</h3>
-                    <div className="space-y-2">
-                      {dayProgs.map((p) => {
-                        const displayLevel = displayLevelForCalendar(p.level)
-                        const config = LEVEL_CONFIG[displayLevel]
-                        if (!config) return null
-                        const label = p.level === 'orange-green' ? 'Orange/Green' : config.label
-                        return (
-                          <a
-                            key={p.id}
-                            href="#trial"
-                            className={`flex items-center justify-between rounded-lg p-3 ${config.bgLight} border ${config.border}`}
-                          >
-                            <div className="min-w-0 flex-1">
-                              <div className="flex flex-wrap items-center gap-2">
-                                <p className={`text-sm font-semibold ${config.color}`}>{label}</p>
-                                {isGirlsOnly(p.name) && <GirlsPill />}
+                  <div key={d} className="overflow-hidden rounded-xl border border-[#E0D0BE]/40 bg-white shadow-sm">
+                    <button
+                      onClick={() => setExpandedMobileDay(isOpen ? null : d)}
+                      className="flex w-full items-center justify-between px-4 py-3 text-left"
+                    >
+                      <span className="flex items-center gap-2">
+                        <span className="text-sm font-semibold text-[#1A2332]">{FULL_DAYS[d]}</span>
+                        <span className="rounded-full bg-[#FFF6ED] px-2 py-0.5 text-[10px] font-medium text-[#8899A6]">
+                          {dayProgs.length}
+                        </span>
+                      </span>
+                      <ChevronDown
+                        className={`size-4 text-[#8899A6] transition-transform ${isOpen ? 'rotate-180' : ''}`}
+                      />
+                    </button>
+                    {isOpen && (
+                      <div className="space-y-2 border-t border-[#E0D0BE]/30 bg-[#FFFBF7] px-3 py-3">
+                        {dayProgs.map((p) => {
+                          const displayLevel = displayLevelForCalendar(p.level, p.type)
+                          const config = LEVEL_CONFIG[displayLevel]
+                          if (!config) return null
+                          const label = p.type === 'school'
+                            ? 'Afterschool'
+                            : (p.level === 'orange-green' ? 'Orange/Green' : config.label)
+                          const performance = isPerformanceOnly({
+                            day_of_week: p.day_of_week,
+                            allowed_classifications: p.allowed_classifications,
+                            track_required: p.track_required,
+                            gender_restriction: null,
+                          })
+                          return (
+                            <a
+                              key={p.id}
+                              href="#trial"
+                              className={`flex items-center justify-between rounded-lg p-3 ${config.bgLight} border ${config.border}`}
+                            >
+                              <div className="min-w-0 flex-1">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <p className={`text-sm font-semibold ${config.color}`}>{label}</p>
+                                  {isGirlsOnly(p.name) && <GirlsPill />}
+                                  {performance && <PerformancePill />}
+                                </div>
+                                <p className="text-xs text-[#556270]">
+                                  {p.start_time && formatTime(p.start_time)}
+                                  {p.end_time && ` – ${formatTime(p.end_time)}`}
+                                  {p.per_session_cents ? ` · ${formatPrice(p.per_session_cents)}/session` : ''}
+                                </p>
                               </div>
-                              <p className="text-xs text-[#556270]">
-                                {p.start_time && formatTime(p.start_time)}
-                                {p.end_time && ` – ${formatTime(p.end_time)}`}
-                                {p.per_session_cents ? ` · ${formatPrice(p.per_session_cents)}/session` : ''}
-                              </p>
-                            </div>
-                            <ChevronRight className="size-4 shrink-0 text-[#8899A6]" />
-                          </a>
-                        )
-                      })}
-                    </div>
+                              <ChevronRight className="size-4 shrink-0 text-[#8899A6]" />
+                            </a>
+                          )
+                        })}
+                      </div>
+                    )}
                   </div>
                 )
               })}

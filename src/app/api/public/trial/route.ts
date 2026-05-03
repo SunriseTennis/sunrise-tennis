@@ -4,15 +4,32 @@ import { createClient } from '@supabase/supabase-js'
 import { checkRateLimitAsync } from '@/lib/utils/rate-limit'
 import { sendPushToAdmins } from '@/lib/push/send'
 
+const programInterest = z.object({
+  interestType: z.literal('program'),
+  programId: z.string().uuid(),
+  programName: z.string().max(200),
+  programDay: z.number().int().min(0).max(6).nullable().optional(),
+  programStart: z.string().max(10).nullable().optional(),
+  programEnd: z.string().max(10).nullable().optional(),
+})
+
+const privateInterest = z.object({
+  interestType: z.literal('private'),
+  preferredSlots: z.array(z.object({
+    day: z.string().max(20),
+    times: z.array(z.string().max(10)).max(28),
+  })).min(1).max(7),
+})
+
 const trialSchema = z.object({
   parentName: z.string().trim().min(1, 'Name is required').max(200),
   email: z.string().email('Valid email required').max(200),
   phone: z.string().trim().min(1, 'Phone is required').max(30),
   childName: z.string().trim().min(1, "Child's name is required").max(200),
-  childAge: z.number().int().min(3).max(16),
+  childAge: z.number().int().min(3).max(18),
   childGender: z.enum(['male', 'female']),
-  preferredDays: z.array(z.string()).max(7).default([]),
   message: z.string().trim().max(2000).optional(),
+  interest: z.union([programInterest, privateInterest]).nullable().optional(),
 })
 
 function getServiceClient() {
@@ -20,6 +37,33 @@ function getServiceClient() {
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
   )
+}
+
+function formatTime(time: string) {
+  const [h, m] = time.split(':').map(Number)
+  if (Number.isNaN(h)) return time
+  const ampm = h >= 12 ? 'PM' : 'AM'
+  const hour = h % 12 || 12
+  return m === 0 ? `${hour}${ampm}` : `${hour}:${String(m).padStart(2, '0')}${ampm}`
+}
+
+function formatInterest(interest: z.infer<typeof trialSchema>['interest']): string | null {
+  if (!interest) return null
+  if (interest.interestType === 'program') {
+    const day = typeof interest.programDay === 'number'
+      ? ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][interest.programDay]
+      : null
+    const time = interest.programStart
+      ? `${formatTime(interest.programStart)}${interest.programEnd ? `–${formatTime(interest.programEnd)}` : ''}`
+      : null
+    const tail = [day, time].filter(Boolean).join(' ')
+    return `Interested in: ${interest.programName}${tail ? ` (${tail})` : ''}`
+  }
+  const lines = interest.preferredSlots.map(s => {
+    const times = s.times.map(formatTime).join(', ')
+    return `${s.day}: ${times || 'any time'}`
+  })
+  return `Private enquiry — preferred slots:\n  ${lines.join('\n  ')}`
 }
 
 export async function POST(request: NextRequest) {
@@ -48,7 +92,7 @@ export async function POST(request: NextRequest) {
     )
   }
 
-  const { parentName, email, phone, childName, childAge, childGender, preferredDays, message } = parsed.data
+  const { parentName, email, phone, childName, childAge, childGender, message, interest } = parsed.data
   const supabase = getServiceClient()
 
   // Check for duplicate lead (same email)
@@ -81,6 +125,7 @@ export async function POST(request: NextRequest) {
   const displayId = `C${String(nextNum).padStart(3, '0')}`
 
   // Create lead family
+  const interestSummary = formatInterest(interest)
   const { data: family, error: familyError } = await supabase
     .from('families')
     .insert({
@@ -91,7 +136,7 @@ export async function POST(request: NextRequest) {
       notes: [
         `Trial booking via website`,
         `Gender: ${childGender}`,
-        preferredDays.length > 0 ? `Preferred days: ${preferredDays.join(', ')}` : null,
+        interestSummary,
         message ? `Message: ${message}` : null,
       ].filter(Boolean).join('\n'),
     })
@@ -119,9 +164,14 @@ export async function POST(request: NextRequest) {
   }
 
   // Notify admin
+  const interestLine = interest?.interestType === 'program'
+    ? ` — ${interest.programName}`
+    : interest?.interestType === 'private'
+      ? ' — private enquiry'
+      : ''
   sendPushToAdmins({
     title: 'New trial booking',
-    body: `${childName} (age ${childAge}) — parent: ${parentName}`,
+    body: `${childName} (age ${childAge})${interestLine} — parent: ${parentName}`,
     url: `/admin/families/${family.id}`,
   }).catch((err) => console.error('Trial push notification failed:', err))
 

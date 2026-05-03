@@ -142,9 +142,32 @@ export function isEligible(
  * player is eligible. Used so that morning squads + Thursday performance
  * squads stay invisible in "All" view for families they will never apply to,
  * while the rest of the catalogue stays browseable.
+ *
+ * Two signals trip strict-hide:
+ *   - `track_required` is set (covers Thursday performance squads)
+ *   - `allowed_classifications` is set and contains only advanced/elite
+ *     (covers morning squads after their `track_required` was dropped so
+ *     elite players without a `performance` track flag can still enrol).
  */
 export function isStrictlyGated(program: ProgramEligibilityFields): boolean {
-  return Boolean(program.track_required)
+  if (program.track_required) return true
+  const classes = program.allowed_classifications ?? []
+  if (classes.length > 0 && classes.every(c => c === 'advanced' || c === 'elite')) {
+    return true
+  }
+  return false
+}
+
+/**
+ * Predicate for the public "Performance only" pill on the landing page.
+ * Same shape as `isStrictlyGated` — performance-only programs are the same
+ * surface as strict-gated ones from the audience-segmentation perspective.
+ * Kept as a separate export for legibility at call sites.
+ */
+export function isPerformanceOnly(program: ProgramEligibilityFields): boolean {
+  if (program.track_required === 'performance') return true
+  const classes = program.allowed_classifications ?? []
+  return classes.length > 0 && classes.every(c => c === 'advanced' || c === 'elite')
 }
 
 // ── Early-bird tiers ──────────────────────────────────────────────────────────

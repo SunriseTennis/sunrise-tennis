@@ -40,7 +40,7 @@ export function PublicFooter() {
                   <Phone className="mt-0.5 size-4 shrink-0" />
                   <span>
                     0431 368 752
-                    <span className="block text-xs text-white/50">Coach Maxim</span>
+                    <span className="block text-xs text-white/50">Maxim</span>
                   </span>
                 </a>
               </li>
