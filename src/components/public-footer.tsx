@@ -56,14 +56,19 @@ export function PublicFooter() {
           {/* Location */}
           <div>
             <h3 className="mb-3 text-sm font-semibold tracking-wide text-white/90 uppercase">Location</h3>
-            <div className="flex items-start gap-2 text-sm">
+            <a
+              href="https://maps.google.com/?q=Somerton+Park+Tennis+Club+40+Wilton+Ave+Somerton+Park+SA+5044"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-start gap-2 text-sm transition-colors hover:text-white"
+            >
               <MapPin className="mt-0.5 size-4 shrink-0" />
               <div>
                 <p>Somerton Park Tennis Club</p>
                 <p>40 Wilton Ave</p>
                 <p>Somerton Park SA 5044</p>
               </div>
-            </div>
+            </a>
           </div>
         </div>
 
