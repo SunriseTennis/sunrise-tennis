@@ -68,8 +68,12 @@ export async function updateSession(request: NextRequest) {
 
   const { pathname } = request.nextUrl
 
-  // Public routes that don't require auth
-  const publicPaths = ['/', '/philosophy', '/contact', '/privacy', '/terms', '/login', '/signup', '/verify']
+  // Public routes that don't require auth.
+  // /forgot-password is for unauthenticated users who forgot their password
+  // (Plan 15 Phase E). /auth/update-password is reached via /auth/callback
+  // which sets a recovery session, so the !user check below already lets it
+  // through — no need to whitelist here.
+  const publicPaths = ['/', '/philosophy', '/contact', '/privacy', '/terms', '/login', '/signup', '/verify', '/forgot-password']
   // Webhook endpoints — must be reachable without cookies (Stripe posts
   // from its own servers with no auth context; signature verification
   // happens inside the handler).
@@ -77,17 +81,21 @@ export async function updateSession(request: NextRequest) {
   const isPublicPath = isWebhook || publicPaths.some(
     (path) => pathname === path || pathname.startsWith('/api/public')
   )
-  const isAuthCallback = pathname.startsWith('/auth/callback')
+  // /auth/* routes (callback + update-password) handle their own session
+  // requirements via the page-level redirect — bypass the proxy gate so
+  // recovery flows can land on update-password with a fresh recovery session.
+  const isAuthRoute = pathname.startsWith('/auth/')
 
   // Unauthenticated user on protected route → login
-  if (!user && !isPublicPath && !isAuthCallback) {
+  if (!user && !isPublicPath && !isAuthRoute) {
     const url = request.nextUrl.clone()
     url.pathname = '/login'
     return NextResponse.redirect(url)
   }
 
-  // Authenticated user on auth pages → redirect to dashboard
-  if (user && (pathname === '/login' || pathname === '/signup')) {
+  // Authenticated user on auth pages → redirect to dashboard.
+  // /forgot-password too — logged-in users don't need a reset link.
+  if (user && (pathname === '/login' || pathname === '/signup' || pathname === '/forgot-password')) {
     const url = request.nextUrl.clone()
     url.pathname = '/dashboard'
     return NextResponse.redirect(url)
