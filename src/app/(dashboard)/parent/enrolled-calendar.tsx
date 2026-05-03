@@ -6,6 +6,7 @@ import { WeeklyCalendar, type CalendarEvent, type CalendarPlayer, type EnrolledP
 import { markSessionAway, cancelSessionBooking, bookSession } from './programs/actions'
 import { cancelPrivateFromOverview } from './overview-actions'
 import { isEligible } from '@/lib/utils/eligibility'
+import { formatCalendarTitle } from '@/lib/utils/program-display'
 import { Users, Layers } from 'lucide-react'
 
 // Brand palette colors for players (from the sunrise gradient)
@@ -53,24 +54,6 @@ const PRIVATE_TYPE_COLOR = 'bg-[#E87450] border-[#E87450] text-white border-dash
 
 // Competition style in "by type" mode — gold
 const COMP_TYPE_COLOR = 'bg-[#F7CD5D] border-[#F7CD5D] text-deep-navy'
-
-const DAY_PREFIXES = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
-
-function formatCalendarTitle(name: string): string {
-  let result = name
-  const lower = result.toLowerCase()
-
-  for (const prefix of DAY_PREFIXES) {
-    if (lower.startsWith(prefix + ' ')) {
-      result = result.slice(prefix.length + 1)
-      break
-    }
-  }
-
-  result = result.replace(/\s+Ball\b/gi, '')
-
-  return result
-}
 
 type Enrollment = {
   id: string

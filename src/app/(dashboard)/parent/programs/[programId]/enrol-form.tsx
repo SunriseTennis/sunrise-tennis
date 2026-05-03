@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { enrolInProgram } from '../actions'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
@@ -13,6 +13,7 @@ import { getActiveEarlyBird } from '@/lib/utils/eligibility'
 import { CreditChip } from '@/components/credit-chip'
 import { MultiGroupChip } from '@/components/multi-group-chip'
 import { MULTI_GROUP_DISCOUNT_PCT } from '@/lib/utils/player-pricing'
+import { EnrolPayModal } from './enrol-pay-modal'
 
 type PlayerOption = {
   id: string
@@ -53,8 +54,24 @@ export function EnrolForm({
   const [selectedPlayerIds, setSelectedPlayerIds] = useState<string[]>(players.length === 1 ? [players[0].id] : [])
   const [bookingType, setBookingType] = useState('term')
   const [paymentOption, setPaymentOption] = useState<'pay_now' | 'pay_later'>('pay_later')
+  const [payModalOpen, setPayModalOpen] = useState(false)
+  const [payModalFormData, setPayModalFormData] = useState<FormData | null>(null)
+  const formRef = useRef<HTMLFormElement>(null)
 
   const enrolWithIds = enrolInProgram.bind(null, programId, familyId)
+
+  const isInlineStripePayNow =
+    bookingType === 'term'
+    && paymentOption === 'pay_now'
+    && selectedPlayerIds.length === 1
+
+  function onSubmitIntercept(e: React.FormEvent<HTMLFormElement>) {
+    if (!isInlineStripePayNow) return // let the form action run
+    e.preventDefault()
+    const fd = new FormData(e.currentTarget)
+    setPayModalFormData(fd)
+    setPayModalOpen(true)
+  }
 
   const showPaymentOptions = bookingType === 'term'
   const eb = getActiveEarlyBird({
@@ -97,7 +114,8 @@ export function EnrolForm({
     : termPrice
 
   return (
-    <form action={enrolWithIds}>
+    <>
+    <form ref={formRef} action={enrolWithIds} onSubmit={onSubmitIntercept}>
       <Card>
         <CardContent className="pt-6">
           <h2 className="text-lg font-semibold text-foreground">Enrol Players</h2>
@@ -172,38 +190,44 @@ export function EnrolForm({
                       : 'border-border hover:border-primary/30'
                   }`}
                 >
-                  <div className="flex items-center gap-3">
-                    <div className={`flex size-8 items-center justify-center rounded-lg ${
+                  <div className="flex items-start gap-3">
+                    <div className={`flex size-8 items-center justify-center rounded-lg shrink-0 ${
                       paymentOption === 'pay_now' ? 'bg-primary/15' : 'bg-muted'
                     }`}>
                       <CheckCircle className={`size-4 ${paymentOption === 'pay_now' ? 'text-primary' : 'text-muted-foreground'}`} />
                     </div>
-                    <div>
+                    <div className="min-w-0 flex-1">
                       <p className="font-medium text-foreground">Pay now</p>
-                      {hasDiscount && discountedPrice ? (
-                        <div className="mt-0.5">
-                          <span className="text-sm font-bold text-primary tabular-nums">
-                            {formatCurrency(discountedPrice)}
-                          </span>
-                          <span className="ml-1.5 text-xs text-muted-foreground line-through tabular-nums">
-                            {formatCurrency(termPrice)}
-                          </span>
-                          <span className="ml-1.5 text-xs font-medium text-success">
-                            {activeDiscountPct}% off
-                          </span>
-                          {remainingSessions && (
-                            <p className="text-xs text-muted-foreground">{remainingSessions} sessions remaining</p>
+                      {/* Layered breakdown */}
+                      {(termPriceGross && termPriceGross > 0) ? (
+                        <div className="mt-1 space-y-0.5 text-xs">
+                          {remainingSessions && perSessionCents && playerCount > 0 && (
+                            <div className="flex justify-between text-muted-foreground">
+                              <span>{remainingSessions} sessions × {formatCurrency(perSessionCents)}{playerCount > 1 ? ` × ${playerCount} players` : ''}</span>
+                              <span className="tabular-nums">{formatCurrency(termPriceGross)}</span>
+                            </div>
                           )}
+                          {anySelectedGetsMultiGroup && multiGroupSavings > 0 && (
+                            <div className="flex justify-between text-success">
+                              <span>– Multi-group ({MULTI_GROUP_DISCOUNT_PCT}%)</span>
+                              <span className="tabular-nums">−{formatCurrency(multiGroupSavings)}</span>
+                            </div>
+                          )}
+                          {hasDiscount && discountedPrice && termPrice && discountedPrice < termPrice && (
+                            <div className="flex justify-between text-success">
+                              <span>– Early-bird ({activeDiscountPct}%)</span>
+                              <span className="tabular-nums">−{formatCurrency(termPrice - discountedPrice)}</span>
+                            </div>
+                          )}
+                          <div className="flex justify-between border-t border-border/50 pt-0.5 text-sm font-bold text-primary">
+                            <span>Total</span>
+                            <span className="tabular-nums">{formatCurrency(discountedPrice ?? termPrice ?? 0)}</span>
+                          </div>
                         </div>
                       ) : (
-                        <div className="mt-0.5">
-                          <p className="text-sm font-bold text-primary tabular-nums">
-                            {formatCurrency(termPrice)}
-                          </p>
-                          {remainingSessions && (
-                            <p className="text-xs text-muted-foreground">{remainingSessions} sessions remaining</p>
-                          )}
-                        </div>
+                        <p className="mt-0.5 text-sm font-bold text-primary tabular-nums">
+                          {formatCurrency(termPrice ?? 0)}
+                        </p>
                       )}
                     </div>
                   </div>
@@ -304,6 +328,14 @@ export function EnrolForm({
             </div>
           )}
 
+          {/* Multi-player + Pay Now: Stripe inline modal handles one player at a time;
+              fall back to old redirect-to-payments flow until per-multi-player intent lands. */}
+          {bookingType === 'term' && paymentOption === 'pay_now' && selectedPlayerIds.length > 1 && (
+            <p className="mt-3 rounded-lg border border-warning/30 bg-warning-light/40 px-3 py-2 text-xs text-warning-foreground">
+              Multi-player Pay Now will create the bookings now and send you to the payments page to pay. To pay inline at the card prompt, enrol players one at a time.
+            </p>
+          )}
+
           <div className="mt-4">
             <Button type="submit" disabled={selectedPlayerIds.length === 0}>
               {bookingType === 'term' && paymentOption === 'pay_now'
@@ -316,5 +348,17 @@ export function EnrolForm({
         </CardContent>
       </Card>
     </form>
+
+    <EnrolPayModal
+      open={payModalOpen}
+      onClose={() => setPayModalOpen(false)}
+      programId={programId}
+      programName={'this program'}
+      playerName={
+        selectedPlayers[0]?.firstName ?? ''
+      }
+      formData={payModalFormData}
+    />
+    </>
   )
 }

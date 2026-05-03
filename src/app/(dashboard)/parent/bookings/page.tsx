@@ -58,6 +58,7 @@ export default async function ParentBookingsPage({
       .from('coaches')
       .select('id, name, is_owner, hourly_rate')
       .eq('status', 'active')
+      .eq('delivers_privates', true)
       .order('name'),
     supabase
       .from('player_allowed_coaches')

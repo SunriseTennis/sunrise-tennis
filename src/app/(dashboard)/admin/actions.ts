@@ -25,7 +25,7 @@ import {
   recalculateBalance,
   formatChargeDescription,
 } from '@/lib/utils/billing'
-import { getPlayerSessionPriceBreakdown, formatDiscountSuffix } from '@/lib/utils/player-pricing'
+import { getPlayerSessionPriceBreakdown, formatDiscountSuffix, buildPricingBreakdown } from '@/lib/utils/player-pricing'
 import { getTermLabel } from '@/lib/utils/school-terms'
 
 // ── Families ────────────────────────────────────────────────────────────
@@ -726,6 +726,13 @@ export async function updateAttendance(sessionId: string, formData: FormData) {
               amountCents: sessionPrice,
               status: 'confirmed',
               createdBy: user.id,
+              pricingBreakdown: buildPricingBreakdown({
+                basePriceCents: priceBreakdown.basePriceCents,
+                perSessionPriceCents: priceBreakdown.priceCents,
+                morningSquadPartnerApplied: priceBreakdown.morningSquadPartnerApplied,
+                multiGroupApplied: priceBreakdown.multiGroupApplied,
+                sessions: 1,
+              }) as never,
             })
             // Increment sessions_charged
             await supabase.from('bookings').update({
@@ -1680,6 +1687,13 @@ export async function adminAddWalkInAttendance(formData: FormData) {
       amountCents: breakdown.priceCents,
       status: 'confirmed',
       createdBy: user.id,
+      pricingBreakdown: buildPricingBreakdown({
+        basePriceCents: breakdown.basePriceCents,
+        perSessionPriceCents: breakdown.priceCents,
+        morningSquadPartnerApplied: breakdown.morningSquadPartnerApplied,
+        multiGroupApplied: breakdown.multiGroupApplied,
+        sessions: 1,
+      }) as never,
     })
   }
 

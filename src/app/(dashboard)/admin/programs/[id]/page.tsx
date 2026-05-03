@@ -10,6 +10,7 @@ import { ProgramEditForm } from './program-edit-form'
 import { AdminEnrolForm } from './admin-enrol-form'
 import { BulkEnrolForm } from './bulk-enrol-form'
 import { RosterTable } from './roster-table'
+import { EditableCoaches } from './editable-coaches'
 import { PageHeader } from '@/components/page-header'
 import { StatusBadge } from '@/components/status-badge'
 import { TermPicker } from '@/components/term-picker'
@@ -268,41 +269,21 @@ export default async function ProgramDetailPage({
             </CardContent>
           </Card>
 
-          {/* Coaches */}
-          <Card>
-            <CardContent className="pt-6">
-              <h2 className="text-lg font-semibold text-foreground">Coaches</h2>
-              <div className="mt-4 space-y-3">
-                {leadCoachData ? (
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-medium">{leadCoachData.name}</p>
-                      <p className="text-xs text-muted-foreground">Lead coach</p>
-                    </div>
-                    <Link href={`/admin/coaches/${leadCoachData.id}`} className="text-xs text-primary hover:underline">View</Link>
-                  </div>
-                ) : (
-                  <p className="text-sm text-muted-foreground">No lead coach assigned</p>
-                )}
-                {assistantCoaches.map(ac => {
-                  const c = ac.coaches as unknown as { id: string; name: string } | null
-                  if (!c) return null
-                  return (
-                    <div key={ac.id} className="flex items-center justify-between">
-                      <div>
-                        <p className="text-sm font-medium">{c.name}</p>
-                        <p className="text-xs text-muted-foreground">Assistant</p>
-                      </div>
-                      <Link href={`/admin/coaches/${c.id}`} className="text-xs text-primary hover:underline">View</Link>
-                    </div>
-                  )
-                })}
-                {assistantCoaches.length === 0 && leadCoachData && (
-                  <p className="text-xs text-muted-foreground">No assistant coaches</p>
-                )}
-              </div>
-            </CardContent>
-          </Card>
+          {/* Coaches (editable) */}
+          <EditableCoaches
+            programId={id}
+            leadCoach={leadCoachData ? { coachId: leadCoachData.id, coachName: leadCoachData.name } : null}
+            assistants={assistantCoaches.map(ac => {
+              const c = ac.coaches as unknown as { id: string; name: string } | null
+              return c ? {
+                programCoachId: ac.id,
+                coachId: c.id,
+                coachName: c.name,
+                role: ac.role,
+              } : null
+            }).filter((x): x is NonNullable<typeof x> => !!x)}
+            allActiveCoaches={(allCoaches ?? []).map(c => ({ id: c.id, name: c.name }))}
+          />
         </div>
 
         {/* Session status summary */}
@@ -485,6 +466,7 @@ export default async function ProgramDetailPage({
             </h2>
             {roster && roster.length > 0 ? (
               <RosterTable
+                programId={id}
                 roster={roster.map((r) => {
                   const player = r.players as unknown as { id: string; first_name: string; last_name: string; ball_color: string | null; current_focus: string[] | null; families: { display_id: string; family_name: string } | null } | null
                   return {

@@ -8,7 +8,7 @@ import { validateFormData, enrolFormSchema } from '@/lib/utils/validation'
 import { createCharge, getTermPrice, voidCharge, getExistingSessionCharge, formatChargeDescription } from '@/lib/utils/billing'
 import { getTermLabel } from '@/lib/utils/school-terms'
 import { isEligible, getActiveEarlyBird } from '@/lib/utils/eligibility'
-import { getPlayerSessionPrice, getPlayerSessionPriceBreakdown, formatDiscountSuffix } from '@/lib/utils/player-pricing'
+import { getPlayerSessionPrice, getPlayerSessionPriceBreakdown, formatDiscountSuffix, buildPricingBreakdown } from '@/lib/utils/player-pricing'
 import { dispatchNotification } from '@/lib/notifications/dispatch'
 
 async function getParentFamilyId(): Promise<{ userId: string; familyId: string } | null> {
@@ -127,6 +127,8 @@ export async function enrolInProgram(programId: string, familyId: string, formDa
   let discountCents = 0
   let activeDiscountPct = 0
   let multiGroupApplied = false
+  let termPriceBreakdown: ReturnType<typeof buildPricingBreakdown> | null = null
+  let casualBreakdown: ReturnType<typeof buildPricingBreakdown> | null = null
 
   if (isTermEnrollment && effectivePaymentOption === 'pay_now') {
     // Term fee (may be overridden per family)
@@ -151,6 +153,20 @@ export async function enrolInProgram(programId: string, familyId: string, formDa
       discountCents = Math.round(priceCents * (eb.pct / 100))
       activeDiscountPct = eb.pct
     }
+
+    // Only build a breakdown for the per-session × sessions case; term-fee
+    // overrides are opaque (a flat number set per family), so the
+    // sessions-itemised view doesn't apply.
+    if (termPrice <= 0 && sessionsTotal > 0) {
+      termPriceBreakdown = buildPricingBreakdown({
+        basePriceCents: breakdown.basePriceCents,
+        perSessionPriceCents: breakdown.priceCents,
+        morningSquadPartnerApplied: breakdown.morningSquadPartnerApplied,
+        multiGroupApplied: breakdown.multiGroupApplied,
+        sessions: sessionsTotal,
+        earlyBirdPct: activeDiscountPct,
+      })
+    }
   } else if (isTermEnrollment && effectivePaymentOption === 'pay_later') {
     // Projected total only — actual charges created per-session at attendance
     // time and re-priced then via the same helper (recalc).
@@ -164,6 +180,13 @@ export async function enrolInProgram(programId: string, familyId: string, formDa
     )
     priceCents = breakdown.priceCents
     multiGroupApplied = breakdown.multiGroupApplied
+    casualBreakdown = buildPricingBreakdown({
+      basePriceCents: breakdown.basePriceCents,
+      perSessionPriceCents: breakdown.priceCents,
+      morningSquadPartnerApplied: breakdown.morningSquadPartnerApplied,
+      multiGroupApplied: breakdown.multiGroupApplied,
+      sessions: 1,
+    })
   }
   // trial = free, priceCents stays 0
 
@@ -212,6 +235,9 @@ export async function enrolInProgram(programId: string, familyId: string, formDa
       amountCents: chargeAmount,
       status: 'confirmed',
       createdBy: auth.userId,
+      pricingBreakdown: termPriceBreakdown
+        ? { ...termPriceBreakdown, total_cents: chargeAmount } as never
+        : null,
     })
   }
 
@@ -234,6 +260,7 @@ export async function enrolInProgram(programId: string, familyId: string, formDa
       amountCents: priceCents,
       status: 'pending',
       createdBy: auth.userId,
+      pricingBreakdown: casualBreakdown ? (casualBreakdown as never) : null,
     })
   }
 
@@ -373,6 +400,13 @@ export async function bookSession(
 
     // Create charge
     if (sessionPrice > 0) {
+      const sessionBreakdown = buildPricingBreakdown({
+        basePriceCents: breakdown.basePriceCents,
+        perSessionPriceCents: breakdown.priceCents,
+        morningSquadPartnerApplied: breakdown.morningSquadPartnerApplied,
+        multiGroupApplied: breakdown.multiGroupApplied,
+        sessions: 1,
+      })
       await createCharge(supabase, {
         familyId: auth.familyId,
         playerId,
@@ -391,6 +425,7 @@ export async function bookSession(
         amountCents: sessionPrice,
         status: 'confirmed',
         createdBy: auth.userId,
+        pricingBreakdown: sessionBreakdown as never,
       })
     }
   }
@@ -602,4 +637,393 @@ export async function unenrolFromProgram(
   revalidatePath('/parent')
   revalidatePath('/parent/payments')
   return {}
+}
+
+// ── Pay-Now Stripe Inline Flow ─────────────────────────────────────────
+//
+// Two-step flow for term-enrolment pay-now:
+//
+//   1. prepareEnrolPayment: validates + creates Stripe PaymentIntent + inserts
+//      a `pending` payment row keyed on the intent id. NO booking/charge yet.
+//   2. (client confirms via Stripe Elements)
+//   3. finalizeEnrolPayment: re-validates capacity, creates booking + roster +
+//      charge, marks payment 'received', allocates payment to the new charge.
+//
+// If the parent abandons the modal: the PaymentIntent expires on Stripe's side,
+// no booking ever lands. The pending payment row stays as an audit hint that
+// someone tried — it's filtered out of the "Recent" admin list by the existing
+// `.neq('status', 'pending')` predicate.
+
+type PreparedPayment =
+  | {
+      ok: true
+      clientSecret: string
+      intentId: string
+      amountCents: number
+      breakdown: ReturnType<typeof buildPricingBreakdown> | null
+    }
+  | { ok: false; error: string }
+
+export async function prepareEnrolPayment(
+  programId: string,
+  formData: FormData,
+): Promise<PreparedPayment> {
+  const supabase = await createClient()
+  const auth = await getParentFamilyId()
+  if (!auth) return { ok: false, error: 'Not signed in' }
+
+  const { checkRateLimitAsync } = await import('@/lib/utils/rate-limit')
+  if (!await checkRateLimitAsync(`prepare-enrol:${auth.userId}`, 5, 60_000)) {
+    return { ok: false, error: 'Too many requests. Please wait a moment.' }
+  }
+
+  const parsed = validateFormData(formData, enrolFormSchema)
+  if (!parsed.success) return { ok: false, error: parsed.error }
+
+  const { player_id: playerId, booking_type: bookingType } = parsed.data
+
+  // This action is only for term enrolment pay-now. Casual / trial / pay-later
+  // continue through the existing enrolInProgram path.
+  if (bookingType !== 'term' && bookingType !== 'term_enrollment') {
+    return { ok: false, error: 'Inline payment is only for term enrolments' }
+  }
+
+  // Player ownership + eligibility
+  const { data: player } = await supabase
+    .from('players')
+    .select('id, first_name, gender, classifications, track')
+    .eq('id', playerId)
+    .eq('family_id', auth.familyId)
+    .single()
+  if (!player) return { ok: false, error: 'Player not found' }
+
+  const { data: program } = await supabase
+    .from('programs')
+    .select('id, name, type, day_of_week, term_fee_cents, per_session_cents, max_capacity, early_pay_discount_pct, early_bird_deadline, early_pay_discount_pct_tier2, early_bird_deadline_tier2, allowed_classifications, gender_restriction, track_required')
+    .eq('id', programId)
+    .single()
+  if (!program) return { ok: false, error: 'Program not found' }
+
+  const eligibility = isEligible(
+    { gender: player.gender as 'male' | 'female' | 'non_binary' | null, classifications: player.classifications, track: player.track },
+    { day_of_week: program.day_of_week, allowed_classifications: program.allowed_classifications, gender_restriction: program.gender_restriction, track_required: program.track_required },
+  )
+  if (!eligibility.ok) return { ok: false, error: eligibility.message ?? 'Not eligible' }
+
+  // Capacity check
+  const { count: enrolledCount } = await supabase
+    .from('program_roster')
+    .select('*', { count: 'exact', head: true })
+    .eq('program_id', programId)
+    .eq('status', 'enrolled')
+  if (program.max_capacity && (enrolledCount ?? 0) >= program.max_capacity) {
+    return { ok: false, error: 'This program is full' }
+  }
+
+  // Already enrolled?
+  const { data: existing } = await supabase
+    .from('program_roster')
+    .select('id')
+    .eq('program_id', programId)
+    .eq('player_id', playerId)
+    .eq('status', 'enrolled')
+    .maybeSingle()
+  if (existing) return { ok: false, error: 'Player already enrolled' }
+
+  // Compute price + breakdown
+  const { count: sessionsRemaining } = await supabase
+    .from('sessions')
+    .select('*', { count: 'exact', head: true })
+    .eq('program_id', programId)
+    .gte('date', new Date().toISOString().split('T')[0])
+    .eq('status', 'scheduled')
+
+  const sessionsTotal = sessionsRemaining ?? 0
+  const termPrice = await getTermPrice(supabase, auth.familyId, programId, program.type)
+  const breakdown = await getPlayerSessionPriceBreakdown(
+    supabase, auth.familyId, programId, program.type, playerId,
+  )
+
+  let priceCents = termPrice > 0 ? termPrice : breakdown.priceCents * sessionsTotal
+  let activeDiscountPct = 0
+  const eb = getActiveEarlyBird({
+    early_pay_discount_pct: program.early_pay_discount_pct ?? null,
+    early_bird_deadline: program.early_bird_deadline ?? null,
+    early_pay_discount_pct_tier2: program.early_pay_discount_pct_tier2 ?? null,
+    early_bird_deadline_tier2: program.early_bird_deadline_tier2 ?? null,
+  })
+  if (eb.pct > 0 && priceCents > 0) {
+    priceCents = priceCents - Math.round(priceCents * (eb.pct / 100))
+    activeDiscountPct = eb.pct
+  }
+
+  if (priceCents < 100) {
+    return { ok: false, error: 'Total is below the minimum payable amount ($1)' }
+  }
+
+  const pricingBreakdown = (termPrice <= 0 && sessionsTotal > 0)
+    ? buildPricingBreakdown({
+        basePriceCents: breakdown.basePriceCents,
+        perSessionPriceCents: breakdown.priceCents,
+        morningSquadPartnerApplied: breakdown.morningSquadPartnerApplied,
+        multiGroupApplied: breakdown.multiGroupApplied,
+        sessions: sessionsTotal,
+        earlyBirdPct: activeDiscountPct,
+      })
+    : null
+
+  // Create Stripe PaymentIntent
+  const { getStripe } = await import('@/lib/stripe/client')
+  const stripe = getStripe()
+  let intent
+  try {
+    intent = await stripe.paymentIntents.create({
+      amount: priceCents,
+      currency: 'aud',
+      automatic_payment_methods: { enabled: true },
+      description: `${program.name} — Term enrolment for ${player.first_name}`,
+      metadata: {
+        purpose: 'term_enrolment_pay_now',
+        family_id: auth.familyId,
+        user_id: auth.userId,
+        program_id: programId,
+        player_id: playerId,
+      },
+    })
+  } catch (e) {
+    console.error('Stripe createPaymentIntent failed (term enrol pay-now):', e instanceof Error ? e.message : e)
+    return { ok: false, error: 'Payment could not be initialised. Please try again.' }
+  }
+
+  if (!intent.client_secret) return { ok: false, error: 'Payment could not be initialised.' }
+
+  // Insert pending payment row keyed on intent. Webhook will idempotently flip
+  // it to 'received' if `finalizeEnrolPayment` doesn't get there first.
+  const { error: payErr } = await supabase
+    .from('payments')
+    .insert({
+      family_id: auth.familyId,
+      amount_cents: priceCents,
+      payment_method: 'stripe',
+      status: 'pending',
+      stripe_payment_intent_id: intent.id,
+      description: `${program.name} — Term enrolment for ${player.first_name}`,
+      recorded_by: auth.userId,
+    })
+  if (payErr) {
+    console.error('pending payment insert failed (intent already created):', payErr.message, 'PI:', intent.id)
+    return { ok: false, error: 'Payment could not be recorded. Please contact admin.' }
+  }
+
+  return {
+    ok: true,
+    clientSecret: intent.client_secret,
+    intentId: intent.id,
+    amountCents: priceCents,
+    breakdown: pricingBreakdown,
+  }
+}
+
+type FinalizeResult = { ok: true; programId: string } | { ok: false; error: string }
+
+export async function finalizeEnrolPayment(intentId: string): Promise<FinalizeResult> {
+  const supabase = await createClient()
+  const auth = await getParentFamilyId()
+  if (!auth) return { ok: false, error: 'Not signed in' }
+
+  // Pull intent from Stripe and verify it succeeded
+  const { getStripe } = await import('@/lib/stripe/client')
+  const stripe = getStripe()
+  let intent
+  try {
+    intent = await stripe.paymentIntents.retrieve(intentId)
+  } catch (e) {
+    console.error('Stripe paymentIntents.retrieve failed:', e instanceof Error ? e.message : e)
+    return { ok: false, error: 'Could not verify payment.' }
+  }
+
+  if (intent.status !== 'succeeded') {
+    return { ok: false, error: `Payment not complete (status: ${intent.status})` }
+  }
+
+  // Metadata sanity — ensure it's our intent and matches the caller
+  const md = intent.metadata ?? {}
+  if (md.purpose !== 'term_enrolment_pay_now') {
+    return { ok: false, error: 'Wrong payment purpose' }
+  }
+  if (md.family_id !== auth.familyId || md.user_id !== auth.userId) {
+    return { ok: false, error: 'Payment metadata does not match caller' }
+  }
+
+  const programId = md.program_id as string
+  const playerId = md.player_id as string
+
+  // Find the pending payment row for this intent
+  const { data: payment } = await supabase
+    .from('payments')
+    .select('id, status')
+    .eq('stripe_payment_intent_id', intentId)
+    .single()
+  if (!payment) {
+    return { ok: false, error: 'Payment record not found' }
+  }
+
+  // Idempotency: if a booking for this intent already exists, just redirect.
+  // We use the booking notes field to stash the intent id so we can detect re-fires.
+  const { data: priorBooking } = await supabase
+    .from('bookings')
+    .select('id')
+    .eq('family_id', auth.familyId)
+    .eq('program_id', programId)
+    .eq('player_id', playerId)
+    .eq('booking_type', 'term')
+    .like('notes', `%[stripe_intent:${intentId}]%`)
+    .maybeSingle()
+  if (priorBooking) {
+    return { ok: true, programId }
+  }
+
+  // Re-check eligibility + capacity (race-safe)
+  const { data: player } = await supabase
+    .from('players')
+    .select('id, first_name, gender, classifications, track')
+    .eq('id', playerId)
+    .eq('family_id', auth.familyId)
+    .single()
+  if (!player) return { ok: false, error: 'Player not found' }
+
+  const { data: program } = await supabase
+    .from('programs')
+    .select('id, name, type, day_of_week, term_fee_cents, per_session_cents, max_capacity, early_pay_discount_pct, early_bird_deadline, early_pay_discount_pct_tier2, early_bird_deadline_tier2, allowed_classifications, gender_restriction, track_required')
+    .eq('id', programId)
+    .single()
+  if (!program) return { ok: false, error: 'Program not found' }
+
+  const eligibility = isEligible(
+    { gender: player.gender as 'male' | 'female' | 'non_binary' | null, classifications: player.classifications, track: player.track },
+    { day_of_week: program.day_of_week, allowed_classifications: program.allowed_classifications, gender_restriction: program.gender_restriction, track_required: program.track_required },
+  )
+  if (!eligibility.ok) return { ok: false, error: 'Eligibility changed since payment — contact admin for refund' }
+
+  const { count: enrolledCount } = await supabase
+    .from('program_roster')
+    .select('*', { count: 'exact', head: true })
+    .eq('program_id', programId)
+    .eq('status', 'enrolled')
+  if (program.max_capacity && (enrolledCount ?? 0) >= program.max_capacity) {
+    return { ok: false, error: 'Program filled while you were paying — contact admin for refund' }
+  }
+
+  // Add to roster
+  await supabase.from('program_roster').insert({
+    program_id: programId,
+    player_id: playerId,
+    status: 'enrolled',
+  })
+
+  // Recompute pricing breakdown for the charge — trust intent.amount as the locked amount paid
+  const { count: sessionsRemaining } = await supabase
+    .from('sessions')
+    .select('*', { count: 'exact', head: true })
+    .eq('program_id', programId)
+    .gte('date', new Date().toISOString().split('T')[0])
+    .eq('status', 'scheduled')
+
+  const sessionsTotal = sessionsRemaining ?? 0
+  const breakdown = await getPlayerSessionPriceBreakdown(
+    supabase, auth.familyId, programId, program.type, playerId,
+  )
+
+  const eb = getActiveEarlyBird({
+    early_pay_discount_pct: program.early_pay_discount_pct ?? null,
+    early_bird_deadline: program.early_bird_deadline ?? null,
+    early_pay_discount_pct_tier2: program.early_pay_discount_pct_tier2 ?? null,
+    early_bird_deadline_tier2: program.early_bird_deadline_tier2 ?? null,
+  })
+  const earlyPct = eb.pct
+
+  const pricingBreakdown = sessionsTotal > 0
+    ? buildPricingBreakdown({
+        basePriceCents: breakdown.basePriceCents,
+        perSessionPriceCents: breakdown.priceCents,
+        morningSquadPartnerApplied: breakdown.morningSquadPartnerApplied,
+        multiGroupApplied: breakdown.multiGroupApplied,
+        sessions: sessionsTotal,
+        earlyBirdPct: earlyPct,
+      })
+    : null
+
+  // Booking row — embed intent id in notes for idempotency on future calls
+  const { data: booking } = await supabase
+    .from('bookings')
+    .insert({
+      family_id: auth.familyId,
+      player_id: playerId,
+      program_id: programId,
+      booking_type: 'term',
+      status: 'confirmed',
+      booked_by: auth.userId,
+      notes: `Pay-now via Stripe [stripe_intent:${intentId}]`,
+      payment_option: 'pay_now',
+      price_cents: intent.amount,
+      discount_cents: 0,
+      sessions_total: sessionsTotal,
+      sessions_charged: 0,
+    })
+    .select('id')
+    .single()
+
+  // Charge — match the actual paid amount on Stripe
+  if (booking) {
+    await createCharge(supabase, {
+      familyId: auth.familyId,
+      playerId,
+      type: 'term_enrollment',
+      sourceType: 'enrollment',
+      sourceId: booking.id,
+      programId,
+      bookingId: booking.id,
+      description: formatChargeDescription({
+        playerName: player.first_name,
+        label: `${program.name} - Term enrolment`,
+        suffix: formatDiscountSuffix({ multiGroupApplied: breakdown.multiGroupApplied, earlyPayPct: earlyPct }),
+        term: getTermLabel(new Date()),
+      }),
+      amountCents: intent.amount,
+      status: 'confirmed',
+      createdBy: auth.userId,
+      pricingBreakdown: pricingBreakdown
+        ? ({ ...pricingBreakdown, total_cents: intent.amount } as never)
+        : null,
+    })
+  }
+
+  // Flip payment to received (idempotent — webhook may have done it already)
+  if (payment.status === 'pending') {
+    await supabase
+      .from('payments')
+      .update({ status: 'received', received_at: new Date().toISOString() })
+      .eq('id', payment.id)
+      .eq('status', 'pending')
+  }
+
+  // Allocate payment to the new charge (FIFO will pick it up)
+  await supabase.rpc('allocate_payment_to_charges', { target_payment_id: payment.id })
+  await supabase.rpc('recalculate_family_balance', { target_family_id: auth.familyId })
+
+  // Notify
+  try {
+    await sendPushToUser(auth.userId, {
+      title: 'Enrolled and Paid',
+      body: `Successfully enrolled in ${program.name}. Payment received.`,
+      url: `/parent/programs/${programId}`,
+    })
+  } catch { /* non-fatal */ }
+
+  revalidatePath(`/parent/programs/${programId}`)
+  revalidatePath('/parent/programs')
+  revalidatePath('/parent')
+  revalidatePath('/parent/payments')
+
+  return { ok: true, programId }
 }

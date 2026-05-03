@@ -178,6 +178,27 @@ export function formatChargeDescription(input: ChargeDescriptionInput): string {
 
 // ── Charges ─────────────────────────────────────────────────────────────
 
+export interface PricingBreakdown {
+  /** Number of sessions covered by this charge (term enrol). 1 for single-session. */
+  sessions?: number
+  /** Per-session base price in cents (after family override + morning-squad partner, before multi-group/early-bird). */
+  per_session_cents?: number
+  /** sessions × per_session_cents — pre-discount subtotal in cents. */
+  subtotal_cents?: number
+  /** True when the morning-squad cross-day partner rate ($15) replaced the base price. */
+  morning_squad_partner_applied?: boolean
+  /** Multi-group discount percent (typically 25). Omitted when not applied. */
+  multi_group_pct?: number
+  /** Multi-group discount in cents (positive number — amount saved). */
+  multi_group_cents_off?: number
+  /** Early-bird percent (e.g. 10 or 15). Omitted when not applied. */
+  early_bird_pct?: number
+  /** Early-bird discount in cents (positive number — amount saved). */
+  early_bird_cents_off?: number
+  /** Final amount in cents — should equal amount_cents on the row. */
+  total_cents: number
+}
+
 export interface CreateChargeParams {
   familyId: string
   playerId?: string | null
@@ -192,6 +213,7 @@ export interface CreateChargeParams {
   status?: string
   invoiceId?: string | null
   createdBy?: string | null
+  pricingBreakdown?: PricingBreakdown | null
 }
 
 /**
@@ -218,6 +240,7 @@ export async function createCharge(
       status: params.status || 'pending',
       invoice_id: params.invoiceId || null,
       created_by: params.createdBy || null,
+      pricing_breakdown: (params.pricingBreakdown ?? null) as never,
     })
     .select('id')
     .single()

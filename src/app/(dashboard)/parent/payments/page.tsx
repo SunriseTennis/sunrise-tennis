@@ -44,7 +44,7 @@ export default async function ParentPaymentsPage({
   const [balanceRes, paymentsRes, chargesRes, vouchersRes, playersRes, familyRes] = await Promise.all([
     supabase.from('family_balance').select('balance_cents, confirmed_balance_cents, projected_balance_cents').eq('family_id', familyId).single(),
     supabase.from('payments').select('*, payment_allocations(amount_cents, charge_id, charges:charge_id(description, session_id, sessions:session_id(date, status)))').eq('family_id', familyId).neq('status', 'voided').neq('status', 'pending').order('created_at', { ascending: false }).limit(100),
-    supabase.from('charges').select('id, type, source_type, description, amount_cents, status, program_id, session_id, booking_id, player_id, created_at, sessions:session_id(date, status), players:player_id(first_name), payment_allocations(amount_cents)').eq('family_id', familyId).in('status', ['pending', 'confirmed', 'paid', 'credited']).order('created_at', { ascending: false }).limit(150),
+    supabase.from('charges').select('id, type, source_type, description, amount_cents, status, program_id, session_id, booking_id, player_id, created_at, pricing_breakdown, sessions:session_id(date, status), players:player_id(first_name), payment_allocations(amount_cents)').eq('family_id', familyId).in('status', ['pending', 'confirmed', 'paid', 'credited']).order('created_at', { ascending: false }).limit(150),
     supabase.from('vouchers').select('id, child_first_name, child_surname, amount_cents, status, submitted_at, rejection_reason, voucher_number, submission_method').eq('family_id', familyId).order('submitted_at', { ascending: false }).limit(20),
     supabase.from('players').select('id, first_name, last_name, dob, gender').eq('family_id', familyId).eq('status', 'active').order('first_name'),
     supabase.from('families').select('primary_contact, address, family_name').eq('id', familyId).single(),
@@ -101,6 +101,7 @@ export default async function ParentPaymentsPage({
       player_name: player?.first_name ?? null,
       session_date: session?.date ?? null,
       session_status: session?.status ?? null,
+      pricing_breakdown: (c.pricing_breakdown as unknown as { total_cents: number } | null) ?? null,
     }
   })
 

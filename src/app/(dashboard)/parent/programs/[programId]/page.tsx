@@ -10,11 +10,11 @@ import { Calendar, MapPin, DollarSign, Users, CheckCircle } from 'lucide-react'
 import { UnenrolButton } from './unenrol-button'
 import { isEligible } from '@/lib/utils/eligibility'
 import { isMultiGroupEligibleType } from '@/lib/utils/player-pricing'
+import { stripDayPrefix } from '@/lib/utils/program-display'
 
 const MORNING_SQUAD_SLUGS = ['tue-morning-squad', 'wed-morning-squad']
 
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
-const DAY_PREFIXES = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
 
 const LEVEL_BAR: Record<string, string> = {
   blue: 'bg-ball-blue',
@@ -24,18 +24,6 @@ const LEVEL_BAR: Record<string, string> = {
   yellow: 'bg-ball-yellow',
   advanced: 'bg-primary',
   elite: 'bg-foreground',
-}
-
-function stripDayPrefix(name: string, type: string): string {
-  const lower = name.toLowerCase()
-  for (const prefix of DAY_PREFIXES) {
-    if (lower.startsWith(prefix + ' ')) {
-      const stripped = name.slice(prefix.length + 1)
-      const suffix = type === 'group' ? ' Group' : type === 'squad' ? ' Squad' : ''
-      return stripped + suffix
-    }
-  }
-  return name
 }
 
 export default async function ParentProgramDetailPage({

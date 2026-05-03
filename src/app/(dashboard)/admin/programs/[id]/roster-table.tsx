@@ -1,6 +1,7 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useTransition } from 'react'
+import { useRouter } from 'next/navigation'
 import { StatusBadge } from '@/components/status-badge'
 import {
   Table,
@@ -10,7 +11,8 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { ChevronDown, ChevronRight } from 'lucide-react'
+import { ChevronDown, ChevronRight, UserMinus } from 'lucide-react'
+import { adminUnenrolFromProgram } from '../../actions'
 
 type RosterPlayer = {
   rosterId: string
@@ -27,12 +29,14 @@ type RosterPlayer = {
 type AttendanceTotals = { present: number; absent: number; noshow: number }
 
 export function RosterTable({
+  programId,
   roster,
   maxCapacity,
   attendanceTotals,
   completedCount,
   latestNotes,
 }: {
+  programId: string
   roster: RosterPlayer[]
   maxCapacity: number | null
   attendanceTotals: Record<string, AttendanceTotals>
@@ -40,6 +44,19 @@ export function RosterTable({
   latestNotes: Record<string, { focus: string | null; progress: string | null }>
 }) {
   const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [isPending, startTransition] = useTransition()
+  const router = useRouter()
+
+  function onUnenrol(playerId: string, playerName: string) {
+    if (!confirm(`Unenrol ${playerName} from this program? Future scheduled charges will be voided.`)) return
+    const fd = new FormData()
+    fd.set('program_id', programId)
+    fd.set('player_id', playerId)
+    startTransition(async () => {
+      await adminUnenrolFromProgram(fd)
+      router.refresh()
+    })
+  }
 
   return (
     <div className="mt-4 overflow-hidden rounded-lg border border-border">
@@ -60,7 +77,8 @@ export function RosterTable({
             const totalMarked = totals ? totals.present + totals.absent + totals.noshow : 0
             const rate = totalMarked > 0 ? Math.round((totals.present / totalMarked) * 100) : null
             const notes = latestNotes[r.playerId]
-            const hasExtra = (r.currentFocus && r.currentFocus.length > 0) || notes || rate !== null
+            const canUnenrol = r.rosterStatus === 'enrolled'
+            const hasExtra = (r.currentFocus && r.currentFocus.length > 0) || notes || rate !== null || canUnenrol
 
             return (
               <>
@@ -123,6 +141,18 @@ export function RosterTable({
                           <div>
                             <span className="text-muted-foreground">Last progress: </span>
                             <span className="text-foreground">{notes.progress}</span>
+                          </div>
+                        )}
+                        {r.rosterStatus === 'enrolled' && (
+                          <div className="pt-1">
+                            <button
+                              type="button"
+                              onClick={() => onUnenrol(r.playerId, `${r.firstName} ${r.lastName}`)}
+                              disabled={isPending}
+                              className="inline-flex items-center gap-1 rounded-md border border-danger/30 bg-danger/5 px-2 py-1 text-xs text-danger hover:bg-danger/10 disabled:opacity-50"
+                            >
+                              <UserMinus className="size-3" /> Unenrol
+                            </button>
                           </div>
                         )}
                       </div>

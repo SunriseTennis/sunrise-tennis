@@ -16,21 +16,9 @@ import {
   GraduationCap,
 } from 'lucide-react'
 import { ParentPlayerEditForm } from './player-edit-form'
+import { stripDayPrefix } from '@/lib/utils/program-display'
 
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
-const DAY_PREFIXES = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
-
-function stripDayPrefix(name: string, type: string): string {
-  const lower = name.toLowerCase()
-  for (const prefix of DAY_PREFIXES) {
-    if (lower.startsWith(prefix + ' ')) {
-      const stripped = name.slice(prefix.length + 1)
-      const suffix = type === 'group' ? ' Group' : type === 'squad' ? ' Squad' : ''
-      return stripped + suffix
-    }
-  }
-  return name
-}
 
 const LEVEL_ACCENTS: Record<string, { bg: string; border: string; text: string }> = {
   red:    { bg: 'bg-ball-red', border: 'border-ball-red/80', text: 'text-white' },

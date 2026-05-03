@@ -509,6 +509,45 @@ export async function addBulkFamilyPricing(formData: FormData) {
   redirect('/admin/payments?success=' + encodeURIComponent(`Grandfathered ${familyIds.length} ${familyIds.length === 1 ? 'family' : 'families'}`))
 }
 
+// ── Cancel a Family Pricing Override ───────────────────────────────────
+
+export async function cancelFamilyPricing(formData: FormData) {
+  await requireAdmin()
+  const supabase = await createClient()
+
+  const pricingId = (formData.get('pricing_id') as string) ?? ''
+  if (!pricingId) {
+    redirect('/admin/payments?error=' + encodeURIComponent('Pricing id missing'))
+  }
+
+  // Soft-end: set valid_until to today. Preserves audit trail of "this family
+  // had this rate for this period". Hard-delete would lose that.
+  const today = new Date().toISOString().split('T')[0]
+
+  const { data: row, error: fetchError } = await supabase
+    .from('family_pricing')
+    .select('id, family_id')
+    .eq('id', pricingId)
+    .single()
+
+  if (fetchError || !row) {
+    redirect('/admin/payments?error=' + encodeURIComponent('Override not found'))
+  }
+
+  const { error } = await supabase
+    .from('family_pricing')
+    .update({ valid_until: today })
+    .eq('id', pricingId)
+
+  if (error) {
+    redirect('/admin/payments?error=' + encodeURIComponent(error.message))
+  }
+
+  revalidatePath('/admin/payments')
+  revalidatePath(`/admin/families/${row.family_id}`)
+  redirect('/admin/payments?success=' + encodeURIComponent('Grandfathered rate ended'))
+}
+
 // ── Waive a Charge ────────────────────────────────────────────────────
 
 export async function waiveChargeAction(chargeId: string, reason?: string) {

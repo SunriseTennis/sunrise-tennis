@@ -7,6 +7,7 @@ import { calculateGroupCoachPay } from '@/lib/utils/billing'
 import { AttendanceForm } from './attendance-form'
 import { CancelSessionForm } from './cancel-session-form'
 import { MarkCompleteForm } from './mark-complete-form'
+import { WalkInForm } from './walk-in-form'
 import { Suspense } from 'react'
 import { PageHeader } from '@/components/page-header'
 import { StatusBadge } from '@/components/status-badge'
@@ -64,13 +65,42 @@ export default async function SessionDetailPage({
     rosterPlayers = roster?.map(r => r.players as unknown as { id: string; first_name: string; last_name: string }).filter(Boolean) ?? []
   }
 
-  // Get existing attendance records
+  // Get existing attendance records (full join so we can render walk-ins not on roster)
   const { data: attendances } = await supabase
     .from('attendances')
-    .select('player_id, status, notes')
+    .select('player_id, status, notes, players:player_id(id, first_name, last_name)')
     .eq('session_id', sessionId)
 
   const attendanceMap = new Map(attendances?.map(a => [a.player_id, a.status]) ?? [])
+
+  // Walk-in players = on attendance but not on the program roster
+  const rosterIds = new Set(rosterPlayers.map(p => p.id))
+  const walkInPlayers = (attendances ?? [])
+    .map(a => a.players as unknown as { id: string; first_name: string; last_name: string } | null)
+    .filter((p): p is { id: string; first_name: string; last_name: string } => !!p && !rosterIds.has(p.id))
+
+  const attendanceFormPlayers = [...rosterPlayers, ...walkInPlayers]
+  const presentInSession = new Set(attendanceFormPlayers.map(p => p.id))
+
+  // Candidate players for the walk-in picker = all active players not already on attendance
+  const { data: allActivePlayers } = await supabase
+    .from('players')
+    .select('id, first_name, last_name, family_id, families:family_id(display_id, family_name)')
+    .eq('status', 'active')
+    .order('first_name')
+
+  const walkInCandidates = (allActivePlayers ?? [])
+    .filter(p => !presentInSession.has(p.id))
+    .map(p => {
+      const family = p.families as unknown as { display_id: string; family_name: string } | null
+      return {
+        id: p.id,
+        firstName: p.first_name,
+        lastName: p.last_name,
+        familyDisplayId: family?.display_id ?? '',
+        familyName: family?.family_name ?? '',
+      }
+    })
 
   // ── Financial data ──
   // Charges for this session
@@ -365,24 +395,33 @@ export default async function SessionDetailPage({
           </Card>
         )}
 
-        {/* Attendance */}
-        {session.status !== 'cancelled' && rosterPlayers.length > 0 && (
+        {/* Attendance (roster + walk-ins) */}
+        {session.status !== 'cancelled' && attendanceFormPlayers.length > 0 && (
           <Suspense>
             <AttendanceForm
               sessionId={sessionId}
-              players={rosterPlayers}
+              players={attendanceFormPlayers}
               attendanceMap={Object.fromEntries(attendanceMap)}
             />
           </Suspense>
         )}
 
-        {session.status !== 'cancelled' && rosterPlayers.length === 0 && (
+        {session.status !== 'cancelled' && attendanceFormPlayers.length === 0 && (
           <Card>
             <CardContent className="pt-6">
               <h2 className="text-lg font-semibold text-foreground">Attendance</h2>
-              <p className="mt-2 text-sm text-muted-foreground">No players on the roster for this session.</p>
+              <p className="mt-2 text-sm text-muted-foreground">No players on the roster for this session. Use the walk-in form below to add one.</p>
             </CardContent>
           </Card>
+        )}
+
+        {/* Walk-in form */}
+        {session.status !== 'cancelled' && (
+          <WalkInForm
+            sessionId={sessionId}
+            programId={programId}
+            candidatePlayers={walkInCandidates}
+          />
         )}
 
         {/* Mark complete / Cancel session */}

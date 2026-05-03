@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { formatCurrency } from '@/lib/utils/currency'
 import { Gift, MinusCircle, ChevronRight } from 'lucide-react'
 import { formatDateFriendly } from '@/lib/utils/dates'
-import { ChargeRow, type ChargeRowData, type ChargeBadge } from './charge-row'
+import { ChargeRow, type ChargeRowData, type ChargeBadge, type PricingBreakdownData } from './charge-row'
 import { usePayment } from './payment-context'
 import { cn } from '@/lib/utils/cn'
 
@@ -30,6 +30,7 @@ interface Charge {
   player_name?: string | null
   session_date?: string | null
   session_status?: string | null
+  pricing_breakdown?: PricingBreakdownData | null
 }
 
 function classifyBadge(c: Charge): ChargeBadge {
@@ -54,6 +55,7 @@ function toRowData(c: Charge): ChargeRowData {
     programId: c.program_id,
     bookingId: c.booking_id,
     programType: c.program_type ?? null,
+    pricingBreakdown: c.pricing_breakdown ?? null,
   }
 }
 

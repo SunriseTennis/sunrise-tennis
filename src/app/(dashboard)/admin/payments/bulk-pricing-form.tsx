@@ -14,6 +14,10 @@ interface FamilyOption {
   id: string
   display_id: string
   family_name: string
+  /** Primary contact (parent) name from families.primary_contact.name. */
+  parent_name: string | null
+  /** Active players in this family — first names. */
+  player_names: string[]
 }
 
 interface CoachOption {
@@ -73,7 +77,9 @@ export function BulkPricingForm({
       .filter(f => !selectedIds.has(f.id))
       .filter(f =>
         f.display_id.toLowerCase().includes(q) ||
-        f.family_name.toLowerCase().includes(q),
+        f.family_name.toLowerCase().includes(q) ||
+        (f.parent_name?.toLowerCase().includes(q) ?? false) ||
+        f.player_names.some(n => n.toLowerCase().includes(q))
       )
       .slice(0, 8)
   }, [search, families, selectedIds])
@@ -223,17 +229,28 @@ export function BulkPricingForm({
             />
             {matches.length > 0 && (
               <div className="mt-2 max-h-56 overflow-y-auto rounded-md border border-border bg-card divide-y divide-border/50">
-                {matches.map(f => (
-                  <button
-                    key={f.id}
-                    type="button"
-                    onClick={() => addFamily(f.id)}
-                    className="flex w-full items-center justify-between px-3 py-2 text-sm text-left hover:bg-muted/50 transition-colors"
-                  >
-                    <span className="font-medium text-foreground">{f.family_name}</span>
-                    <span className="text-xs text-muted-foreground">{f.display_id}</span>
-                  </button>
-                ))}
+                {matches.map(f => {
+                  const subtitle = [
+                    f.parent_name ? `${f.parent_name} (parent)` : null,
+                    f.player_names.length > 0 ? f.player_names.join(', ') : null,
+                  ].filter(Boolean).join(' · ')
+                  return (
+                    <button
+                      key={f.id}
+                      type="button"
+                      onClick={() => addFamily(f.id)}
+                      className="flex w-full items-center justify-between gap-3 px-3 py-2 text-sm text-left hover:bg-muted/50 transition-colors"
+                    >
+                      <div className="min-w-0">
+                        <p className="font-medium text-foreground">{f.family_name}</p>
+                        {subtitle && (
+                          <p className="truncate text-xs text-muted-foreground">{subtitle}</p>
+                        )}
+                      </div>
+                      <span className="shrink-0 text-xs text-muted-foreground">{f.display_id}</span>
+                    </button>
+                  )
+                })}
               </div>
             )}
           </div>

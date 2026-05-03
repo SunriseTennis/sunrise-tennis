@@ -188,3 +188,59 @@ export function formatDiscountSuffix({
   if (earlyPayPct > 0) parts.push(`${earlyPayPct}% early-pay`)
   return parts.length ? parts.join(' + ') : null
 }
+
+/**
+ * Build the pricing_breakdown JSONB payload for a charge from a per-session
+ * breakdown + (optional) sessions count + (optional) early-bird percent.
+ *
+ *  - For a single session: pass `sessions = 1` (or omit) and no early-bird.
+ *  - For a term enrolment pay-now charge: pass `sessions = N` (term length)
+ *    and the active early-bird percent.
+ *
+ * The total returned matches the math used at the call site so it can be
+ * cross-checked against `amount_cents`.
+ */
+export function buildPricingBreakdown({
+  basePriceCents,
+  perSessionPriceCents,
+  morningSquadPartnerApplied,
+  multiGroupApplied,
+  sessions,
+  earlyBirdPct,
+}: {
+  /** The per-session base before multi-group (post-override, post-morning-squad-partner). */
+  basePriceCents: number
+  /** Final per-session price in cents (after multi-group). */
+  perSessionPriceCents: number
+  morningSquadPartnerApplied: boolean
+  multiGroupApplied: boolean
+  /** How many sessions this charge covers. Defaults to 1. */
+  sessions?: number
+  /** Active early-bird percent (e.g. 10, 15). 0 / undefined when not applied. */
+  earlyBirdPct?: number
+}) {
+  const n = sessions ?? 1
+  const subtotal = basePriceCents * n
+  const multiGroupOff = multiGroupApplied ? subtotal - perSessionPriceCents * n : 0
+  const afterMultiGroup = subtotal - multiGroupOff
+  const ebPct = earlyBirdPct ?? 0
+  const earlyBirdOff = ebPct > 0 ? Math.round(afterMultiGroup * (ebPct / 100)) : 0
+  const total = afterMultiGroup - earlyBirdOff
+
+  const breakdown: Record<string, unknown> = {
+    sessions: n,
+    per_session_cents: basePriceCents,
+    subtotal_cents: subtotal,
+    morning_squad_partner_applied: morningSquadPartnerApplied,
+    total_cents: total,
+  }
+  if (multiGroupApplied) {
+    breakdown.multi_group_pct = MULTI_GROUP_DISCOUNT_PCT
+    breakdown.multi_group_cents_off = multiGroupOff
+  }
+  if (ebPct > 0) {
+    breakdown.early_bird_pct = ebPct
+    breakdown.early_bird_cents_off = earlyBirdOff
+  }
+  return breakdown
+}

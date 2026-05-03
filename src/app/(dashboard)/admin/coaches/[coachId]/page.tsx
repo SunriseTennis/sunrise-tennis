@@ -8,7 +8,8 @@ import { getCurrentTermRange } from '@/lib/utils/school-terms'
 import { PageHeader } from '@/components/page-header'
 import { Card, CardContent } from '@/components/ui/card'
 import { CoachEditForm } from './coach-edit-form'
-import { Clock, GraduationCap, Users, DollarSign, Calendar } from 'lucide-react'
+import { AssistantProgramsEditor } from './assistant-programs-editor'
+import { Clock, GraduationCap, Calendar } from 'lucide-react'
 
 const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
@@ -39,8 +40,8 @@ export default async function CoachDetailPage({
     { data: earnings },
     { data: completedSessions },
     { data: scheduledSessions },
-    { data: privateBookings },
     { data: allProgramCoaches },
+    { data: allActivePrograms },
   ] = await Promise.all([
     supabase.from('coach_availability').select('*').eq('coach_id', coachId).order('day_of_week').order('start_time'),
     supabase.from('program_coaches').select('program_id, role, programs:program_id(name, type, level, day_of_week, start_time, end_time, status)').eq('coach_id', coachId),
@@ -56,11 +57,8 @@ export default async function CoachDetailPage({
       .eq('coach_id', coachId)
       .gte('date', termStart)
       .lte('date', termEnd),
-    supabase.from('bookings')
-      .select('id, status, approval_status, sessions:session_id(date, start_time, status)')
-      .eq('booking_type', 'private')
-      .neq('approval_status', 'declined'),
     supabase.from('program_coaches').select('program_id, coach_id'),
+    supabase.from('programs').select('id, name, type, day_of_week, start_time').eq('status', 'active').order('name'),
   ])
 
   const groupRate = (coach.hourly_rate as { group_rate_cents?: number } | null)?.group_rate_cents ?? 0
@@ -123,6 +121,7 @@ export default async function CoachDetailPage({
                 groupRateCents: groupRate,
                 privateRateCents: privateRate,
                 payPeriod: coach.pay_period ?? 'weekly',
+                deliversPrivates: coach.delivers_privates ?? true,
               }} />
             </div>
             <div className="space-y-2 text-sm">
@@ -145,6 +144,12 @@ export default async function CoachDetailPage({
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Private rate</span>
                 <span>{privateRate > 0 ? `${formatCurrency(privateRate)}/hr` : '-'}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Delivers privates</span>
+                <span className={coach.delivers_privates === false ? 'text-muted-foreground' : 'text-success'}>
+                  {coach.delivers_privates === false ? 'No (hidden from parents)' : 'Yes'}
+                </span>
               </div>
             </div>
           </CardContent>
@@ -200,40 +205,31 @@ export default async function CoachDetailPage({
       </Card>
 
       {/* Programs */}
-      <Card>
-        <CardContent className="p-4">
-          <h2 className="mb-3 text-sm font-semibold text-foreground flex items-center gap-2">
-            <GraduationCap className="size-4" /> Assigned Programs
-          </h2>
-          {(programAssignments ?? []).length > 0 ? (
-            <div className="space-y-2">
-              {(programAssignments ?? []).map(pa => {
-                const prog = pa.programs as unknown as { name: string; type: string; level: string | null; day_of_week: number | null; start_time: string | null; end_time: string | null; status: string } | null
-                if (!prog) return null
-                return (
-                  <Link key={pa.program_id} href={`/admin/programs/${pa.program_id}`} className="flex items-center justify-between rounded-lg border border-border p-3 transition-colors hover:bg-muted/50">
-                    <div>
-                      <p className="text-sm font-medium">{prog.name}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {prog.day_of_week != null ? DAY_NAMES[prog.day_of_week] : ''}
-                        {prog.start_time && ` ${formatTime(prog.start_time)}`}
-                        {prog.end_time && ` - ${formatTime(prog.end_time)}`}
-                        {' · '}{prog.type}
-                        {pa.role !== 'primary' && ' · Assistant'}
-                      </p>
-                    </div>
-                    <span className={`text-xs ${prog.status === 'active' ? 'text-success' : 'text-muted-foreground'}`}>
-                      {prog.status}
-                    </span>
-                  </Link>
-                )
-              })}
-            </div>
-          ) : (
-            <p className="text-sm text-muted-foreground">Not assigned to any programs</p>
-          )}
-        </CardContent>
-      </Card>
+      <AssistantProgramsEditor
+        coachId={coachId}
+        currentAssignments={(programAssignments ?? []).map(pa => {
+          const prog = pa.programs as unknown as { name: string; type: string; level: string | null; day_of_week: number | null; start_time: string | null; end_time: string | null; status: string } | null
+          return prog ? {
+            programId: pa.program_id,
+            name: prog.name,
+            type: prog.type,
+            day: prog.day_of_week,
+            startTime: prog.start_time,
+            endTime: prog.end_time,
+            status: prog.status,
+            role: pa.role,
+          } : null
+        }).filter((x): x is NonNullable<typeof x> => !!x)}
+        availableToAssist={(allActivePrograms ?? [])
+          .filter(p => !(programAssignments ?? []).some(pa => pa.program_id === p.id))
+          .map(p => ({
+            id: p.id,
+            name: p.name,
+            type: p.type,
+            day: p.day_of_week,
+            startTime: p.start_time,
+          }))}
+      />
 
       {/* Session stats */}
       <Card>

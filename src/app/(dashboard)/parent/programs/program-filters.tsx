@@ -11,10 +11,9 @@ import { WeeklyCalendar, type CalendarEvent, type EnrolledPlayersMap, type Eligi
 import { Calendar, Layers, Tag, ChevronRight, Users, Filter, Lock } from 'lucide-react'
 import { bookSession, markSessionAway, cancelSessionBooking } from './actions'
 import { isEligible, isStrictlyGated } from '@/lib/utils/eligibility'
+import { formatCalendarTitle } from '@/lib/utils/program-display'
 
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
-
-const DAY_PREFIXES = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
 
 const LEVEL_ACCENTS: Record<string, { bar: string; bg: string; badge: string }> = {
   red:      { bar: 'bg-ball-red',    bg: 'bg-ball-red/5',    badge: 'bg-ball-red/10 text-ball-red border-ball-red/20' },
@@ -122,24 +121,6 @@ type Session = {
 type Tab = 'calendar' | 'level' | 'type'
 
 /** Strip day prefix from program name for calendar display, clean up "Ball" and avoid double suffix */
-function formatCalendarTitle(name: string): string {
-  let result = name
-  const lower = result.toLowerCase()
-
-  // Strip day prefix (e.g. "Mon ", "Wed ")
-  for (const prefix of DAY_PREFIXES) {
-    if (lower.startsWith(prefix + ' ')) {
-      result = result.slice(prefix.length + 1)
-      break
-    }
-  }
-
-  // Remove "Ball" (e.g. "Orange Ball" → "Orange")
-  result = result.replace(/\s+Ball\b/gi, '')
-
-  return result
-}
-
 function ProgramCard({
   program,
   familyPlayerIds,

@@ -4,6 +4,7 @@ import { formatCurrency } from '@/lib/utils/currency'
 import { formatDate } from '@/lib/utils/dates'
 import { RecordPaymentForm } from './record-payment-form'
 import { BulkPricingForm } from './bulk-pricing-form'
+import { ActiveGrandfatheredRates } from './active-grandfathered-rates'
 import { ConfirmPaymentButton } from './confirm-payment-button'
 import { VoidPaymentButton } from './void-payment-button'
 import { StatusBadge } from '@/components/status-badge'
@@ -45,11 +46,58 @@ export default async function AdminPaymentsPage({
     query = query.neq('status', 'pending')
   }
 
-  const [{ data: payments }, { data: families }, { data: coaches }] = await Promise.all([
+  const [
+    { data: payments },
+    { data: families },
+    { data: coaches },
+    { data: pricingRows },
+  ] = await Promise.all([
     query,
-    supabase.from('families').select('id, display_id, family_name').eq('status', 'active').order('family_name'),
+    supabase
+      .from('families')
+      .select('id, display_id, family_name, primary_contact, players(first_name, status)')
+      .eq('status', 'active')
+      .order('family_name'),
     supabase.from('coaches').select('id, name, is_owner').eq('status', 'active').order('name'),
+    supabase
+      .from('family_pricing')
+      .select('id, family_id, program_type, coach_id, per_session_cents, term_fee_cents, valid_from, valid_until, notes, families:family_id(display_id, family_name), coaches:coach_id(name)')
+      .order('valid_from', { ascending: false }),
   ])
+
+  const today = new Date().toISOString().split('T')[0]
+  const familyOptions = (families ?? []).map(f => {
+    const contact = f.primary_contact as { name?: string } | null
+    const players = (f.players as unknown as { first_name: string; status: string }[] | null) ?? []
+    return {
+      id: f.id,
+      display_id: f.display_id,
+      family_name: f.family_name,
+      parent_name: contact?.name ?? null,
+      player_names: players.filter(p => p.status === 'active').map(p => p.first_name),
+    }
+  })
+
+  const pricingViewRows = (pricingRows ?? []).map(p => {
+    const family = p.families as unknown as { display_id: string; family_name: string } | null
+    const coach = p.coaches as unknown as { name: string } | null
+    const isActive = !p.valid_until || p.valid_until >= today
+    return {
+      id: p.id,
+      family_id: p.family_id,
+      family_display_id: family?.display_id ?? '',
+      family_name: family?.family_name ?? '',
+      program_type: p.program_type ?? '',
+      coach_id: p.coach_id,
+      coach_name: coach?.name ?? null,
+      per_session_cents: p.per_session_cents,
+      term_fee_cents: p.term_fee_cents,
+      valid_from: p.valid_from,
+      valid_until: p.valid_until,
+      notes: p.notes,
+      is_active: isActive,
+    }
+  })
 
   // Compute total received amount for hero
   const receivedTotal = (payments ?? [])
@@ -191,9 +239,14 @@ export default async function AdminPaymentsPage({
         <RecordPaymentForm families={families ?? []} />
       </section>
 
-      {/* ── Bulk Grandfathered Pricing ── */}
+      {/* ── Active Grandfathered Rates (list + cancel) ── */}
       <section className="animate-fade-up" style={{ animationDelay: '320ms' }}>
-        <BulkPricingForm families={families ?? []} coaches={coaches ?? []} />
+        <ActiveGrandfatheredRates rows={pricingViewRows} />
+      </section>
+
+      {/* ── Bulk Grandfathered Pricing (form to add new) ── */}
+      <section className="animate-fade-up" style={{ animationDelay: '400ms' }}>
+        <BulkPricingForm families={familyOptions} coaches={coaches ?? []} />
       </section>
     </div>
   )

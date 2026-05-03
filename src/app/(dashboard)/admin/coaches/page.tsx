@@ -6,6 +6,7 @@ import { getCurrentTermRange } from '@/lib/utils/school-terms'
 import { formatTime } from '@/lib/utils/dates'
 import { Card, CardContent } from '@/components/ui/card'
 import { RecordPaymentForm } from '../../admin/privates/earnings/record-payment-form'
+import { CreateCoachButton } from './create-coach-button'
 import { Clock, Users, DollarSign, GraduationCap, ChevronRight } from 'lucide-react'
 
 const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
@@ -123,12 +124,15 @@ export default async function CoachesPage({
             <h1 className="text-2xl font-bold">Coaches</h1>
             <p className="mt-0.5 text-sm text-white/70">{coachCards.length} active {coachCards.length === 1 ? 'coach' : 'coaches'}</p>
           </div>
-          <Link
-            href="/admin/coaches/availability"
-            className="inline-flex items-center gap-1.5 rounded-full bg-white/20 px-3 py-1.5 text-sm font-medium text-white backdrop-blur-sm transition-colors hover:bg-white/30"
-          >
-            Manage Availability <ChevronRight className="size-3.5" />
-          </Link>
+          <div className="flex items-center gap-2">
+            <CreateCoachButton />
+            <Link
+              href="/admin/coaches/availability"
+              className="inline-flex items-center gap-1.5 rounded-full bg-white/20 px-3 py-1.5 text-sm font-medium text-white backdrop-blur-sm transition-colors hover:bg-white/30"
+            >
+              Manage Availability <ChevronRight className="size-3.5" />
+            </Link>
+          </div>
         </div>
       </div>
 
