@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import { LegalPageShell, type LegalSection } from '@/components/legal-page-shell'
+import { getAuthHomeContext } from '@/lib/auth/dashboard-url'
 
 export const metadata: Metadata = {
   title: 'Privacy Policy | Sunrise Tennis',
@@ -22,9 +23,10 @@ const SECTIONS: LegalSection[] = [
   { id: 'contact', label: '11. Contact us' },
 ]
 
-export default function PrivacyPage() {
+export default async function PrivacyPage() {
+  const { homeHref, homeLabel } = await getAuthHomeContext()
   return (
-    <LegalPageShell title="Privacy Policy" lastUpdated="16 April 2026" sections={SECTIONS}>
+    <LegalPageShell title="Privacy Policy" lastUpdated="16 April 2026" sections={SECTIONS} homeHref={homeHref} homeLabel={homeLabel}>
       <h2 id="about">1. About this policy</h2>
       <p>
         Sunrise Tennis PTY LTD (ACN 696 546 531, ABN 38 696 546 531) — trading as Sunrise Tennis

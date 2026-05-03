@@ -22,6 +22,7 @@ interface Charge {
   status: string
   program_id: string | null
   session_id: string | null
+  booking_id: string | null
   player_id: string | null
   created_at: string | null
   program_name?: string | null
@@ -51,6 +52,8 @@ function toRowData(c: Charge): ChargeRowData {
     badge: classifyBadge(c),
     sessionId: c.session_id,
     programId: c.program_id,
+    bookingId: c.booking_id,
+    programType: c.program_type ?? null,
   }
 }
 

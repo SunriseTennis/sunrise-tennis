@@ -12,7 +12,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { Bell, Send, CheckCircle, Eye } from 'lucide-react'
+import { Bell, Send, CheckCircle, Eye, Settings2 } from 'lucide-react'
 
 export default async function AdminNotificationsPage({
   searchParams,
@@ -54,12 +54,20 @@ export default async function AdminNotificationsPage({
         title="Notifications"
         description="Send and view push notifications."
         action={
-          <Button asChild>
-            <Link href="/admin/notifications/compose">
-              <Send className="size-4" />
-              Compose
-            </Link>
-          </Button>
+          <div className="flex gap-2">
+            <Button asChild variant="outline">
+              <Link href="/admin/notifications/rules">
+                <Settings2 className="size-4" />
+                Rules
+              </Link>
+            </Button>
+            <Button asChild>
+              <Link href="/admin/notifications/compose">
+                <Send className="size-4" />
+                Compose
+              </Link>
+            </Button>
+          </div>
         }
       />
 

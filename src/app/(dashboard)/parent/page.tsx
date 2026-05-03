@@ -559,9 +559,16 @@ export default async function ParentDashboard() {
 
       {/* ── Your Players ── */}
       <section className="animate-fade-up" style={{ animationDelay: '160ms' }}>
-        <h2 className="text-lg font-semibold text-foreground">
-          Your Players
-        </h2>
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-semibold text-foreground">Your Players</h2>
+          <Link
+            href="/parent/players/new"
+            className="inline-flex items-center gap-1 rounded-full border border-primary/30 bg-primary/5 px-3 py-1 text-xs font-medium text-primary hover:bg-primary/10 transition-colors"
+          >
+            <UserPlus className="size-3.5" />
+            Add player
+          </Link>
+        </div>
 
         {players && players.length > 0 ? (
           <div className="mt-3 grid gap-3">
@@ -586,7 +593,7 @@ export default async function ParentDashboard() {
             <EmptyState
               icon={Users}
               title="No players yet"
-              description="Your players will appear here once your coach adds them."
+              description="Tap Add player above to register your first one."
               compact
             />
           </div>

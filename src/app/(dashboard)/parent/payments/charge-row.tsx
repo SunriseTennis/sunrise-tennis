@@ -25,6 +25,8 @@ export interface ChargeRowData {
   sessionId?: string | null
   bookingId?: string | null
   programId?: string | null
+  /** 'private' for private-lesson charges; 'group'/'squad' for program charges. */
+  programType?: string | null
 }
 
 const BADGE_STYLES: Record<ChargeBadge, string> = {
@@ -124,9 +126,20 @@ export function ChargeRow({
       {/* Action sheet */}
       {expanded && !isPaid && (
         <div className="border-t border-border/30 bg-muted/5 px-4 py-2.5 flex flex-wrap gap-2">
-          {charge.sessionId && charge.programId && (
+          {/* Private-lesson charges → /parent/bookings/[bookingId] */}
+          {charge.bookingId && charge.programType === 'private' && (
             <Link
-              href={`/parent/programs/${charge.programId}#session-${charge.sessionId}`}
+              href={`/parent/bookings/${charge.bookingId}`}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground shadow-sm hover:shadow-card transition-all"
+            >
+              <ExternalLink className="size-3" />
+              Go to lesson
+            </Link>
+          )}
+          {/* Group/squad session charges → /parent/sessions/[sessionId] (added Plan 11) */}
+          {charge.sessionId && charge.programType !== 'private' && (
+            <Link
+              href={`/parent/sessions/${charge.sessionId}`}
               className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground shadow-sm hover:shadow-card transition-all"
             >
               <ExternalLink className="size-3" />

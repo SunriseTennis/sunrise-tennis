@@ -717,6 +717,7 @@ export type Database = {
       coaches: {
         Row: {
           created_at: string | null
+          delivers_privates: boolean
           email: string | null
           hourly_rate: Json | null
           id: string
@@ -731,6 +732,7 @@ export type Database = {
         }
         Insert: {
           created_at?: string | null
+          delivers_privates?: boolean
           email?: string | null
           hourly_rate?: Json | null
           id?: string
@@ -745,6 +747,7 @@ export type Database = {
         }
         Update: {
           created_at?: string | null
+          delivers_privates?: boolean
           email?: string | null
           hourly_rate?: Json | null
           id?: string
@@ -1382,6 +1385,48 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      notification_rules: {
+        Row: {
+          audience: string
+          body_template: string | null
+          channels: Json
+          created_at: string
+          description: string | null
+          enabled: boolean
+          event_type: string
+          id: string
+          title_template: string
+          updated_at: string
+          url_template: string | null
+        }
+        Insert: {
+          audience: string
+          body_template?: string | null
+          channels?: Json
+          created_at?: string
+          description?: string | null
+          enabled?: boolean
+          event_type: string
+          id?: string
+          title_template: string
+          updated_at?: string
+          url_template?: string | null
+        }
+        Update: {
+          audience?: string
+          body_template?: string | null
+          channels?: Json
+          created_at?: string
+          description?: string | null
+          enabled?: boolean
+          event_type?: string
+          id?: string
+          title_template?: string
+          updated_at?: string
+          url_template?: string | null
+        }
+        Relationships: []
       }
       notifications: {
         Row: {

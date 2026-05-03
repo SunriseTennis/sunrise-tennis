@@ -4,7 +4,8 @@ import { randomUUID } from 'crypto'
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { createClient, getSessionUser } from '@/lib/supabase/server'
-import { validateFormData, updateContactFormSchema, updatePlayerDetailsFormSchema } from '@/lib/utils/validation'
+import { validateFormData, updateContactFormSchema, updatePlayerDetailsFormSchema, parentCreatePlayerFormSchema } from '@/lib/utils/validation'
+import { dispatchNotification } from '@/lib/notifications/dispatch'
 
 async function getParentFamilyId(): Promise<string | null> {
   const supabase = await createClient()
@@ -172,6 +173,88 @@ export async function revokeCalendarToken() {
 
   revalidatePath('/parent/settings')
   redirect('/parent/settings?success=Calendar+link+revoked')
+}
+
+export async function createPlayerFromParent(formData: FormData) {
+  const supabase = await createClient()
+  const familyId = await getParentFamilyId()
+  if (!familyId) redirect('/login')
+
+  const { checkRateLimitAsync } = await import('@/lib/utils/rate-limit')
+  const user = await getSessionUser()
+  if (!user) redirect('/login')
+  if (!await checkRateLimitAsync(`add-player:${user.id}`, 3, 60_000)) {
+    redirect('/parent/players/new?error=Too+many+requests.+Please+wait.')
+  }
+
+  const parsed = validateFormData(formData, parentCreatePlayerFormSchema)
+  if (!parsed.success) {
+    redirect(`/parent/players/new?error=${encodeURIComponent(parsed.error)}`)
+  }
+
+  const {
+    first_name: firstName,
+    last_name: lastName,
+    preferred_name: preferredName,
+    dob,
+    gender,
+    ball_color: ballColor,
+    classifications,
+    track,
+    medical_notes: medicalNotes,
+    physical_notes: physicalNotes,
+    media_consent: mediaConsent,
+  } = parsed.data
+
+  const VALID_CLASSES = new Set(['blue', 'red', 'orange', 'green', 'yellow', 'advanced', 'elite'])
+  const parsedClassifications = classifications
+    ? classifications.split(',').map((s) => s.trim()).filter((s) => VALID_CLASSES.has(s))
+    : []
+
+  const { data: created, error } = await supabase
+    .from('players')
+    .insert({
+      family_id: familyId,
+      first_name: firstName,
+      last_name: lastName,
+      preferred_name: preferredName || null,
+      dob: dob || null,
+      gender: gender || null,
+      ball_color: ballColor || null,
+      level: ballColor || null,
+      classifications: parsedClassifications,
+      track: track || 'participation',
+      medical_notes: medicalNotes || null,
+      physical_notes: physicalNotes || null,
+      media_consent: mediaConsent === 'on',
+      status: 'active',
+    })
+    .select('id')
+    .single()
+
+  if (error || !created) {
+    redirect(`/parent/players/new?error=${encodeURIComponent(error?.message ?? 'Failed to add player')}`)
+  }
+
+  // Notify admins via dispatcher (parent.player.added).
+  try {
+    const { data: family } = await supabase
+      .from('families')
+      .select('family_name')
+      .eq('id', familyId)
+      .single()
+    await dispatchNotification('parent.player.added', {
+      familyName: family?.family_name ?? 'A family',
+      playerName: `${firstName} ${lastName}`,
+      ballColorSuffix: ballColor ? ` (${ballColor})` : '',
+      excludeUserId: user.id,
+    })
+  } catch { /* non-blocking */ }
+
+  revalidatePath('/parent')
+  revalidatePath('/parent/programs')
+  revalidatePath('/parent/players')
+  redirect(`/parent/players/${created.id}?success=Player+added.+Admin+will+confirm+ball+level+shortly.`)
 }
 
 export async function updateNotificationPreferences(formData: FormData) {

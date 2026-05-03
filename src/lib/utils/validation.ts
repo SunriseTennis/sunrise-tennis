@@ -136,9 +136,15 @@ export const createPlayerFormSchema = z.object({
   first_name: requiredString('First name is required'),
   last_name: requiredString('Last name is required'),
   dob: optionalString(),
+  gender: genderSchema.optional().or(z.literal('')),
   ball_color: ballColorSchema.optional().or(z.literal('')),
   level: ballColorSchema.optional().or(z.literal('')),
+  /** Comma-separated list of classifications (e.g. "red,advanced"). Server splits + filters. */
+  classifications: optionalString(500),
+  track: trackSchema.optional().or(z.literal('')),
   medical_notes: optionalString(5000),
+  physical_notes: optionalString(5000),
+  media_consent: z.string().optional(),
 })
 
 export const updatePlayerFormSchema = z.object({
@@ -282,6 +288,24 @@ export const updatePlayerDetailsFormSchema = z.object({
   gender: genderSchema.optional().or(z.literal('')),
   medical_notes: optionalString(5000),
   media_consent: z.string().optional(),
+})
+
+// Parent - add a new player from /parent/players/new
+export const parentCreatePlayerFormSchema = z.object({
+  first_name: requiredString('First name is required'),
+  last_name: requiredString('Last name is required'),
+  preferred_name: optionalString(),
+  dob: requiredString('Date of birth is required'),
+  gender: genderSchema.refine((v) => !!v, { message: 'Gender is required' }),
+  ball_color: ballColorSchema.optional().or(z.literal('')),
+  classifications: optionalString(500),
+  track: trackSchema.optional().or(z.literal('')),
+  medical_notes: optionalString(5000),
+  physical_notes: optionalString(5000),
+  /** Optional checkbox; 'on' = consent granted, anything else = denied. */
+  media_consent: z.string().optional(),
+  /** Required acknowledgement that the parent has read the media-consent explanation. */
+  media_consent_acknowledged: z.string().refine((v) => v === 'on', { message: 'Please acknowledge the media consent statement before continuing' }),
 })
 
 // Parent - Programs

@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { LegalPageShell, type LegalSection } from '@/components/legal-page-shell'
+import { getAuthHomeContext } from '@/lib/auth/dashboard-url'
 
 export const metadata: Metadata = {
   title: 'Terms and Conditions | Sunrise Tennis',
@@ -23,9 +24,10 @@ const SECTIONS: LegalSection[] = [
   { id: 'contact', label: '11. Contact us' },
 ]
 
-export default function TermsPage() {
+export default async function TermsPage() {
+  const { homeHref, homeLabel } = await getAuthHomeContext()
   return (
-    <LegalPageShell title="Terms of Service" lastUpdated="16 April 2026" sections={SECTIONS}>
+    <LegalPageShell title="Terms of Service" lastUpdated="16 April 2026" sections={SECTIONS} homeHref={homeHref} homeLabel={homeLabel}>
       <h2 id="about">1. About this service</h2>
       <p>
         Sunrise Tennis provides an online platform for managing tennis coaching sessions, bookings,

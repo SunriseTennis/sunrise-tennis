@@ -14,9 +14,13 @@ interface LegalPageShellProps {
   lastUpdated: string
   sections: LegalSection[]
   children: React.ReactNode
+  /** Where the "back to home" link points. Defaults to '/'. */
+  homeHref?: string
+  /** Label for the back link. Defaults to 'Back to home'. */
+  homeLabel?: string
 }
 
-export function LegalPageShell({ title, lastUpdated, sections, children }: LegalPageShellProps) {
+export function LegalPageShell({ title, lastUpdated, sections, children, homeHref = '/', homeLabel = 'Back to home' }: LegalPageShellProps) {
   const [activeId, setActiveId] = useState<string>(sections[0]?.id ?? '')
   const [showBackToTop, setShowBackToTop] = useState(false)
 
@@ -58,11 +62,11 @@ export function LegalPageShell({ title, lastUpdated, sections, children }: Legal
       <div className="mx-auto max-w-6xl">
         {/* Back link */}
         <Link
-          href="/"
+          href={homeHref}
           className="inline-flex items-center gap-1.5 text-sm font-medium text-[#556270] transition-colors hover:text-[#1A2332]"
         >
           <ArrowLeft className="size-3.5" />
-          Back to home
+          {homeLabel}
         </Link>
 
         <div className="mt-6 grid gap-6 lg:grid-cols-[220px_1fr] lg:gap-10">

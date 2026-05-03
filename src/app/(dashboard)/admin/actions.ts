@@ -159,7 +159,24 @@ export async function createPlayer(familyId: string, formData: FormData) {
     redirect(`/admin/families/${familyId}?error=${encodeURIComponent(parsed.error)}`)
   }
 
-  const { first_name: firstName, last_name: lastName, dob, ball_color: ballColor, level, medical_notes: medicalNotes } = parsed.data
+  const {
+    first_name: firstName,
+    last_name: lastName,
+    dob,
+    gender,
+    ball_color: ballColor,
+    level,
+    classifications,
+    track,
+    medical_notes: medicalNotes,
+    physical_notes: physicalNotes,
+    media_consent: mediaConsent,
+  } = parsed.data
+
+  const VALID_CLASSES = new Set(['blue', 'red', 'orange', 'green', 'yellow', 'advanced', 'elite'])
+  const parsedClassifications = classifications
+    ? classifications.split(',').map((s) => s.trim()).filter((s) => VALID_CLASSES.has(s))
+    : []
 
   const { error } = await supabase
     .from('players')
@@ -168,9 +185,14 @@ export async function createPlayer(familyId: string, formData: FormData) {
       first_name: firstName,
       last_name: lastName,
       dob: dob || null,
+      gender: gender || null,
       ball_color: ballColor || null,
       level: level || null,
+      classifications: parsedClassifications,
+      track: track || 'participation',
       medical_notes: medicalNotes || null,
+      physical_notes: physicalNotes || null,
+      media_consent: mediaConsent === 'on',
       status: 'active',
     })
 
@@ -1407,4 +1429,262 @@ export async function bulkEnrolPlayers(formData: FormData) {
 
   revalidatePath(`/admin/programs/${programId}`)
   redirect(`/admin/programs/${programId}?success=${encodeURIComponent(`Enrolled ${newPlayerIds.length} player(s)`)}`)
+}
+
+// ── Program Coach Management ─────────────────────────────────────────────
+
+export async function setProgramLeadCoach(formData: FormData) {
+  await requireAdmin()
+  const supabase = await createClient()
+
+  const programId = formData.get('program_id') as string
+  const coachId = (formData.get('coach_id') as string) || ''
+
+  if (!programId) {
+    redirect('/admin/programs?error=' + encodeURIComponent('Program id missing'))
+  }
+
+  // Remove any existing primary
+  await supabase
+    .from('program_coaches')
+    .delete()
+    .eq('program_id', programId)
+    .eq('role', 'primary')
+
+  if (coachId) {
+    // If this coach is currently assistant on the same program, drop the assistant row first
+    await supabase
+      .from('program_coaches')
+      .delete()
+      .eq('program_id', programId)
+      .eq('coach_id', coachId)
+      .eq('role', 'assistant')
+
+    const { error } = await supabase
+      .from('program_coaches')
+      .insert({ program_id: programId, coach_id: coachId, role: 'primary' })
+    if (error) {
+      redirect(`/admin/programs/${programId}?error=${encodeURIComponent(error.message)}`)
+    }
+  }
+
+  revalidatePath(`/admin/programs/${programId}`)
+  revalidatePath('/admin/programs')
+  redirect(`/admin/programs/${programId}?success=${encodeURIComponent('Lead coach updated')}`)
+}
+
+export async function addProgramAssistantCoach(formData: FormData) {
+  await requireAdmin()
+  const supabase = await createClient()
+
+  const programId = formData.get('program_id') as string
+  const coachId = formData.get('coach_id') as string
+
+  if (!programId || !coachId) {
+    redirect('/admin/programs?error=' + encodeURIComponent('Missing fields'))
+  }
+
+  const { data: existing } = await supabase
+    .from('program_coaches')
+    .select('id, role')
+    .eq('program_id', programId)
+    .eq('coach_id', coachId)
+    .maybeSingle()
+
+  if (existing) {
+    redirect(`/admin/programs/${programId}?error=${encodeURIComponent('Coach already on this program')}`)
+  }
+
+  const { error } = await supabase
+    .from('program_coaches')
+    .insert({ program_id: programId, coach_id: coachId, role: 'assistant' })
+
+  if (error) {
+    redirect(`/admin/programs/${programId}?error=${encodeURIComponent(error.message)}`)
+  }
+
+  revalidatePath(`/admin/programs/${programId}`)
+  revalidatePath(`/admin/coaches/${coachId}`)
+  redirect(`/admin/programs/${programId}?success=${encodeURIComponent('Assistant added')}`)
+}
+
+export async function removeProgramAssistantCoach(formData: FormData) {
+  await requireAdmin()
+  const supabase = await createClient()
+
+  const programId = formData.get('program_id') as string
+  const coachId = formData.get('coach_id') as string
+
+  if (!programId || !coachId) {
+    redirect('/admin/programs?error=' + encodeURIComponent('Missing fields'))
+  }
+
+  const { error } = await supabase
+    .from('program_coaches')
+    .delete()
+    .eq('program_id', programId)
+    .eq('coach_id', coachId)
+    .eq('role', 'assistant')
+
+  if (error) {
+    redirect(`/admin/programs/${programId}?error=${encodeURIComponent(error.message)}`)
+  }
+
+  revalidatePath(`/admin/programs/${programId}`)
+  revalidatePath(`/admin/coaches/${coachId}`)
+  redirect(`/admin/programs/${programId}?success=${encodeURIComponent('Assistant removed')}`)
+}
+
+// ── Admin Unenrol Player from Program ────────────────────────────────────
+
+export async function adminUnenrolFromProgram(formData: FormData) {
+  await requireAdmin()
+  const supabase = await createClient()
+
+  const programId = formData.get('program_id') as string
+  const playerId = formData.get('player_id') as string
+
+  if (!programId || !playerId) {
+    redirect('/admin/programs?error=' + encodeURIComponent('Missing fields'))
+  }
+
+  const { data: rosterRow } = await supabase
+    .from('program_roster')
+    .select('id')
+    .eq('program_id', programId)
+    .eq('player_id', playerId)
+    .eq('status', 'enrolled')
+    .single()
+
+  if (!rosterRow) {
+    redirect(`/admin/programs/${programId}?error=${encodeURIComponent('Player not on roster')}`)
+  }
+
+  const { error: rosterError } = await supabase
+    .from('program_roster')
+    .update({ status: 'withdrawn' })
+    .eq('id', rosterRow.id)
+
+  if (rosterError) {
+    redirect(`/admin/programs/${programId}?error=${encodeURIComponent(rosterError.message)}`)
+  }
+
+  // Void all future pending charges for this player+program
+  const today = new Date().toISOString().split('T')[0]
+  const { data: futureCharges } = await supabase
+    .from('charges')
+    .select('id, family_id, session_id, sessions:session_id(date)')
+    .eq('player_id', playerId)
+    .eq('program_id', programId)
+    .eq('status', 'pending')
+
+  const { voidCharge } = await import('@/lib/utils/billing')
+  let voidedCount = 0
+  for (const c of futureCharges ?? []) {
+    const session = c.sessions as unknown as { date: string } | null
+    if (session && session.date > today) {
+      await voidCharge(supabase, c.id, c.family_id)
+      voidedCount++
+    }
+  }
+
+  revalidatePath(`/admin/programs/${programId}`)
+  revalidatePath('/admin/programs')
+  redirect(`/admin/programs/${programId}?success=${encodeURIComponent(`Unenrolled${voidedCount > 0 ? ` (${voidedCount} future charges voided)` : ''}`)}`)
+}
+
+// ── Admin Walk-In Attendance (add player not on roster) ──────────────────
+
+export async function adminAddWalkInAttendance(formData: FormData) {
+  const user = await requireAdmin()
+  const supabase = await createClient()
+
+  const sessionId = formData.get('session_id') as string
+  const playerId = formData.get('player_id') as string
+  const programId = formData.get('program_id') as string
+
+  if (!sessionId || !playerId) {
+    redirect(`/admin/programs/${programId}/sessions/${sessionId}?error=${encodeURIComponent('Missing fields')}`)
+  }
+
+  // Verify the player exists and grab family_id
+  const { data: player } = await supabase
+    .from('players')
+    .select('id, first_name, family_id')
+    .eq('id', playerId)
+    .single()
+
+  if (!player) {
+    redirect(`/admin/programs/${programId}/sessions/${sessionId}?error=${encodeURIComponent('Player not found')}`)
+  }
+
+  // Check not already on attendance
+  const { data: existing } = await supabase
+    .from('attendances')
+    .select('id')
+    .eq('session_id', sessionId)
+    .eq('player_id', playerId)
+    .maybeSingle()
+
+  if (existing) {
+    redirect(`/admin/programs/${programId}/sessions/${sessionId}?error=${encodeURIComponent('Player already marked for this session')}`)
+  }
+
+  // Get session + program info for charge description and pricing
+  const { data: session } = await supabase
+    .from('sessions')
+    .select('id, date, program_id, programs:program_id(name, type)')
+    .eq('id', sessionId)
+    .single()
+
+  if (!session) {
+    redirect(`/admin/programs/${programId}/sessions/${sessionId}?error=${encodeURIComponent('Session not found')}`)
+  }
+
+  const program = session.programs as unknown as { name: string; type: string | null } | null
+  const effectiveProgramId = session.program_id ?? programId
+
+  const { error: attError } = await supabase
+    .from('attendances')
+    .insert({
+      session_id: sessionId,
+      player_id: playerId,
+      status: 'present',
+    })
+
+  if (attError) {
+    redirect(`/admin/programs/${programId}/sessions/${sessionId}?error=${encodeURIComponent(attError.message)}`)
+  }
+
+  // Create charge using player-aware pricing helper (respects family overrides + multi-group + morning-squad)
+  const breakdown = await getPlayerSessionPriceBreakdown(
+    supabase, player.family_id, effectiveProgramId, program?.type, playerId,
+  )
+
+  if (breakdown.priceCents > 0) {
+    await createCharge(supabase, {
+      familyId: player.family_id,
+      playerId,
+      type: 'session',
+      sourceType: 'attendance',
+      sourceId: sessionId,
+      sessionId,
+      programId: effectiveProgramId,
+      description: formatChargeDescription({
+        playerName: player.first_name,
+        label: `${program?.name ?? 'Session'} (walk-in)`,
+        suffix: formatDiscountSuffix({ multiGroupApplied: breakdown.multiGroupApplied, earlyPayPct: 0 }),
+        term: getTermLabel(session.date),
+        date: session.date,
+      }),
+      amountCents: breakdown.priceCents,
+      status: 'confirmed',
+      createdBy: user.id,
+    })
+  }
+
+  revalidatePath(`/admin/programs/${programId}/sessions/${sessionId}`)
+  revalidatePath(`/admin/programs/${programId}`)
+  revalidatePath(`/admin/families/${player.family_id}`)
+  redirect(`/admin/programs/${programId}/sessions/${sessionId}?success=${encodeURIComponent(`Added ${player.first_name} as walk-in`)}`)
 }

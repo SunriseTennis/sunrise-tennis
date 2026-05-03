@@ -9,6 +9,7 @@ import { createCharge, getTermPrice, voidCharge, getExistingSessionCharge, forma
 import { getTermLabel } from '@/lib/utils/school-terms'
 import { isEligible, getActiveEarlyBird } from '@/lib/utils/eligibility'
 import { getPlayerSessionPrice, getPlayerSessionPriceBreakdown, formatDiscountSuffix } from '@/lib/utils/player-pricing'
+import { dispatchNotification } from '@/lib/notifications/dispatch'
 
 async function getParentFamilyId(): Promise<{ userId: string; familyId: string } | null> {
   const supabase = await createClient()
@@ -254,6 +255,13 @@ export async function enrolInProgram(programId: string, familyId: string, formDa
       body: `Successfully enrolled in ${program?.name ?? 'program'}.`,
       url: `/parent/programs/${programId}`,
     })
+
+    // Also notify admin via the rules-driven dispatcher.
+    await dispatchNotification(isTermEnrollment ? 'parent.program.enrolled' : 'parent.session.booked', {
+      playerName: player.first_name,
+      programName: program?.name ?? 'program',
+      excludeUserId: auth.userId,
+    })
   } catch (e) {
     console.error('Booking notification failed:', e instanceof Error ? e.message : 'Unknown error')
   }
@@ -437,6 +445,30 @@ export async function markSessionAway(
     await voidCharge(supabase, existingCharge.id, auth.familyId)
   }
 
+  // Dispatcher notify (parent.session.away → assigned coach).
+  try {
+    const { data: session } = await supabase
+      .from('sessions')
+      .select('coach_id, date, programs:program_id(name)')
+      .eq('id', sessionId)
+      .single()
+    const { data: playerInfo } = await supabase
+      .from('players')
+      .select('first_name')
+      .eq('id', playerId)
+      .single()
+    const program = session?.programs as unknown as { name: string } | null
+    if (session?.coach_id) {
+      await dispatchNotification('parent.session.away', {
+        coachId: session.coach_id,
+        playerName: playerInfo?.first_name ?? 'A player',
+        programName: program?.name ?? 'session',
+        date: session.date ?? '',
+        excludeUserId: auth.userId,
+      })
+    }
+  } catch { /* non-blocking */ }
+
   revalidatePath('/parent/programs')
   revalidatePath('/parent')
   revalidatePath('/parent/payments')
@@ -555,14 +587,15 @@ export async function unenrolFromProgram(
     }
   }
 
-  // Notify admin
-  const { sendPushToAdmins } = await import('@/lib/push/send')
-  const { data: program } = await supabase.from('programs').select('name').eq('id', programId).single()
-  await sendPushToAdmins({
-    title: 'Player Unenrolled',
-    body: `${player.first_name} was unenrolled from ${program?.name ?? 'a program'} by their parent.`,
-    url: `/admin/programs/${programId}`,
-  }).catch(() => {})
+  // Notify admin via the rules-driven dispatcher.
+  try {
+    const { data: program } = await supabase.from('programs').select('name').eq('id', programId).single()
+    await dispatchNotification('parent.program.unenrolled', {
+      playerName: player.first_name,
+      programName: program?.name ?? 'a program',
+      excludeUserId: auth.userId,
+    })
+  } catch { /* non-blocking */ }
 
   revalidatePath(`/parent/programs/${programId}`)
   revalidatePath('/parent/programs')

@@ -4,6 +4,7 @@ import { PageHeader } from '@/components/page-header'
 import { EmptyState } from '@/components/empty-state'
 import { GraduationCap, Tag } from 'lucide-react'
 import { ParentProgramFilters } from './program-filters'
+import { EnrolledProgramsSection, type EnrolledByPlayer } from './enrolled-programs-section'
 import { MULTI_GROUP_DISCOUNT_PCT } from '@/lib/utils/player-pricing'
 
 const MULTI_GROUP_TYPES = ['group', 'squad']
@@ -123,9 +124,41 @@ export default async function ParentProgramsPage() {
     enrolledCount: multiGroupCountByPlayerId[p.id] ?? 0,
   }))
 
+  // Build enrolled-programs-by-player groups for the new section
+  const todayStr = new Date().toISOString().split('T')[0]
+  const enrolledGroups: EnrolledByPlayer[] = []
+  for (const p of players ?? []) {
+    const enrolledForPlayer = (programs ?? []).filter((prog) => {
+      const roster = (prog.program_roster ?? []) as { player_id: string; status: string }[]
+      return roster.some((r) => r.player_id === p.id && r.status === 'enrolled')
+    })
+    if (enrolledForPlayer.length === 0) continue
+    enrolledGroups.push({
+      playerId: p.id,
+      playerFirstName: p.first_name,
+      programs: enrolledForPlayer.map((prog) => {
+        const upcomingForProgram = (sessions ?? [])
+          .filter((s) => s.program_id === prog.id && s.date >= todayStr && s.status === 'scheduled')
+          .sort((a, b) => a.date.localeCompare(b.date))
+        return {
+          programId: prog.id,
+          programName: prog.name,
+          programType: prog.type ?? '',
+          level: prog.level ?? null,
+          dayOfWeek: prog.day_of_week ?? null,
+          startTime: prog.start_time ?? null,
+          endTime: prog.end_time ?? null,
+          nextSessionDate: upcomingForProgram[0]?.date ?? null,
+        }
+      }),
+    })
+  }
+
   return (
     <div>
       <PageHeader title="Programs" description="Browse sessions and enrol in programs." />
+
+      <EnrolledProgramsSection groups={enrolledGroups} />
 
       {playersWithStatus.length > 0 && (
         <MultiGroupBanner players={playersWithStatus} />

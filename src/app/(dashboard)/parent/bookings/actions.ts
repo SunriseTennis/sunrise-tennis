@@ -4,8 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { createClient, createServiceClient, getSessionUser } from '@/lib/supabase/server'
 import { validateFormData, requestPrivateFormSchema, cancelPrivateFormSchema } from '@/lib/utils/validation'
-import { createCharge, voidCharge, formatChargeDescription } from '@/lib/utils/billing'
-import { sendPushToUser, sendPushToAdmins } from '@/lib/push/send'
+import { createCharge, formatChargeDescription } from '@/lib/utils/billing'
 import {
   canPlayerBookCoach,
   isAutoApproved,
@@ -13,8 +12,9 @@ import {
   getAvailableSlots,
   validateBookingConstraints,
   getStandingDates,
-  getEligibleParentUserIds,
 } from '@/lib/utils/private-booking'
+import { performPrivateCancel } from '@/lib/private-cancel'
+import { dispatchNotification } from '@/lib/notifications/dispatch'
 
 async function getParentAuth(): Promise<{ userId: string; familyId: string }> {
   const supabase = await createClient()
@@ -173,22 +173,17 @@ export async function requestPrivateBooking(formData: FormData) {
     createdBy: userId,
   })
 
-  // Notify coach AND admin(s) about the booking
-  const notifPayload = {
-    title: autoApprove ? 'Private Lesson Booked' : 'New Booking Request',
-    body: `${player.first_name} - ${date} at ${formatTime12(start_time)} (${duration_minutes}min)`,
-  }
-
+  // Notify via the rules-driven dispatcher (parent.private.requested).
   try {
-    // Notify coach
-    if (coach.user_id) {
-      await sendPushToUser(coach.user_id, { ...notifPayload, url: '/coach/privates' })
-    }
-    // Notify all admins
-    await sendPushToAdmins({ ...notifPayload, url: '/admin/bookings' })
-  } catch {
-    // Notification failure is not blocking
-  }
+    await dispatchNotification('parent.private.requested', {
+      coachId: coach.id,
+      playerName: player.first_name,
+      date,
+      time: formatTime12(start_time),
+      duration: duration_minutes,
+      excludeUserId: userId,
+    })
+  } catch { /* non-blocking */ }
 
   revalidatePath('/parent/bookings')
   revalidatePath('/parent')
@@ -200,11 +195,6 @@ export async function requestPrivateBooking(formData: FormData) {
 export async function cancelPrivateBooking(formData: FormData) {
   const { userId, familyId } = await getParentAuth()
   const supabase = await createClient()
-  // Service-role client for the actual writes — parents have no UPDATE policy
-  // on bookings/sessions/charges, so doing the writes via the parent JWT
-  // silently no-ops under RLS. We still validate ownership against the parent
-  // JWT before touching the service client.
-  const service = createServiceClient()
 
   const parsed = validateFormData(formData, cancelPrivateFormSchema)
   if (!parsed.success) {
@@ -213,188 +203,24 @@ export async function cancelPrivateBooking(formData: FormData) {
 
   const { booking_id } = parsed.data
 
-  // Get the booking and verify ownership
-  const { data: booking } = await supabase
-    .from('bookings')
-    .select('id, family_id, session_id, price_cents, status, shared_with_booking_id')
-    .eq('id', booking_id)
-    .single()
+  const result = await performPrivateCancel({
+    supabase,
+    service: createServiceClient(),
+    bookingId: booking_id,
+    userId,
+    familyId,
+  })
 
-  if (!booking || (booking.family_id !== familyId)) {
-    redirect('/parent/bookings?error=Booking+not+found')
-  }
-
-  if (booking.status === 'cancelled') {
-    redirect('/parent/bookings?error=Booking+already+cancelled')
-  }
-
-  // Get session details to check timing
-  const { data: session } = await supabase
-    .from('sessions')
-    .select('date, start_time, coach_id')
-    .eq('id', booking.session_id!)
-    .single()
-
-  if (!session) {
-    redirect('/parent/bookings?error=Session+not+found')
-  }
-
-  // Determine if this is a late cancellation
-  const sessionDateTime = new Date(`${session.date}T${session.start_time}`)
-  const hoursUntil = (sessionDateTime.getTime() - Date.now()) / (1000 * 60 * 60)
-  const isLate = hoursUntil < 24
-
-  // Get current term for cancellation tracking
-  const { data: termData } = await supabase.rpc('get_current_term')
-  const currentTerm = termData?.[0] ?? { term: 1, year: 2026 }
-
-  let cancellationType = 'parent_24h'
-  let creditPercent = 100 // Full credit by default
-
-  if (isLate) {
-    // Get cancellation counter
-    const { data: tracker } = await service
-      .from('cancellation_tracker')
-      .select('late_cancellation_count')
-      .eq('family_id', familyId)
-      .eq('term', currentTerm.term)
-      .eq('year', currentTerm.year)
-      .single()
-
-    const count = tracker?.late_cancellation_count ?? 0
-
-    if (count === 0) {
-      // First late cancel this term: full credit
-      creditPercent = 100
-    } else {
-      // 2nd+ late cancel: 50% credit
-      creditPercent = 50
-    }
-
-    cancellationType = 'parent_late'
-
-    // Increment counter
-    await service.rpc('increment_cancellation_counter', {
-      target_family_id: familyId,
-      target_term: currentTerm.term,
-      target_year: currentTerm.year,
-      counter_type: 'late_cancellation',
-    })
-  }
-
-  // Void existing charge
-  const { data: existingCharge } = await service
-    .from('charges')
-    .select('id, amount_cents')
-    .eq('booking_id', booking_id)
-    .in('status', ['pending', 'confirmed'])
-    .single()
-
-  if (existingCharge) {
-    await voidCharge(service, existingCharge.id, familyId)
-
-    // If partial credit (not 100%), create a charge for the non-refunded portion
-    if (creditPercent < 100) {
-      const chargeAmount = Math.round(existingCharge.amount_cents * (1 - creditPercent / 100))
-      await createCharge(service, {
-        familyId,
-        type: 'private',
-        sourceType: 'cancellation',
-        sessionId: booking.session_id!,
-        bookingId: booking_id,
-        description: formatChargeDescription({
-          label: 'Late cancellation fee',
-          suffix: `${100 - creditPercent}%`,
-          date: session.date,
-        }),
-        amountCents: chargeAmount,
-        status: 'confirmed',
-        createdBy: userId,
-      })
-    }
-  }
-
-  // Update booking via service client (parents have no UPDATE RLS).
-  await service
-    .from('bookings')
-    .update({
-      status: 'cancelled',
-      cancellation_type: cancellationType,
-    })
-    .eq('id', booking_id)
-
-  // For paired (shared) privates, never cancel the underlying session here —
-  // the partner family's booking still owns it. Only cancel the session when
-  // this is the last non-cancelled booking on it.
-  let sessionFreed = false
-  {
-    const { count: remaining } = await service
-      .from('bookings')
-      .select('id', { count: 'exact', head: true })
-      .eq('session_id', booking.session_id!)
-      .neq('id', booking_id)
-      .neq('status', 'cancelled')
-
-    if ((remaining ?? 0) === 0) {
-      await service
-        .from('sessions')
-        .update({ status: 'cancelled', cancellation_reason: 'Parent cancelled' })
-        .eq('id', booking.session_id!)
-      sessionFreed = true
-    }
-  }
-
-  // If this was a standing slot cancelled with 24hr+ notice AND no partner is
-  // still on the session, notify eligible players that the slot is free.
-  const { data: bookingFull } = await supabase
-    .from('bookings')
-    .select('is_standing')
-    .eq('id', booking_id)
-    .single()
-
-  if (sessionFreed && bookingFull?.is_standing && !isLate && session.coach_id) {
-    try {
-      const eligibleUserIds = await getEligibleParentUserIds(supabase, session.coach_id)
-      for (const uid of eligibleUserIds) {
-        if (uid === userId) continue // Don't notify the cancelling parent
-        await sendPushToUser(uid, {
-          title: 'Private Slot Available',
-          body: `A private lesson slot is available on ${session.date} at ${formatTime12(session.start_time!)}`,
-          url: '/parent/bookings',
-        })
-      }
-    } catch { /* non-blocking */ }
-  }
-
-  // Heads-up to partner family if their booking still stands.
-  if (!sessionFreed && booking.shared_with_booking_id) {
-    try {
-      const { notifyFamily } = await import('@/lib/notifications/notify')
-      const { data: partner } = await supabase
-        .from('bookings')
-        .select('family_id, sessions:session_id(date, start_time, coaches:coach_id(name))')
-        .eq('id', booking.shared_with_booking_id)
-        .neq('status', 'cancelled')
-        .single()
-      if (partner?.family_id) {
-        const partnerSession = partner.sessions as unknown as { date: string; start_time: string | null; coaches: { name: string } | null } | null
-        const coach = partnerSession?.coaches?.name?.split(' ')[0] ?? 'your coach'
-        await notifyFamily(partner.family_id, {
-          title: 'Shared private — partner cancelled',
-          body: `Your shared private with ${coach} on ${partnerSession?.date ?? ''} is now solo. Admin will adjust the rate after the session.`,
-          url: '/parent/bookings',
-          type: 'booking',
-        })
-      }
-    } catch { /* non-blocking */ }
+  if (result.error) {
+    redirect(`/parent/bookings?error=${encodeURIComponent(result.error)}`)
   }
 
   revalidatePath('/parent/bookings')
   revalidatePath('/parent')
 
-  const msg = creditPercent === 100
+  const msg = result.creditPercent === 100
     ? 'Booking+cancelled.+Full+credit+applied.'
-    : `Booking+cancelled.+${creditPercent}%25+credit+applied.`
+    : `Booking+cancelled.+${result.creditPercent}%25+credit+applied.`
   redirect(`/parent/bookings?success=${msg}`)
 }
 
@@ -511,18 +337,17 @@ export async function requestStandingPrivate(formData: FormData) {
     }
   }
 
-  // Notify coach AND admin(s) about the standing booking
+  // Notify via the rules-driven dispatcher (parent.private.standing_requested).
   try {
-    const standingPayload = {
-      title: 'New Standing Booking',
-      body: `${player.first_name} - ${date} at ${formatTime12(start_time)} (${duration_minutes}min, weekly)`,
-    }
-    if (coach.user_id) {
-      await sendPushToUser(coach.user_id, { ...standingPayload, url: '/coach/privates' })
-    }
-    await sendPushToAdmins({ ...standingPayload, url: '/admin/bookings' })
+    await dispatchNotification('parent.private.standing_requested', {
+      coachId: coach.id,
+      playerName: player.first_name,
+      date,
+      time: formatTime12(start_time),
+      duration: duration_minutes,
+      excludeUserId: userId,
+    })
   } catch { /* non-blocking */ }
-
 
   revalidatePath('/parent/bookings')
   redirect('/parent/bookings?success=Standing+booking+' + (autoApprove ? 'confirmed!' : 'submitted!') + `+${futureDates.length + 1}+sessions+created`)

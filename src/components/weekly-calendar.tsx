@@ -479,16 +479,23 @@ function PopupActions({
         </div>
       )}
 
-      {/* Program link */}
-      {event.href && (
-        <Link
-          href={event.href}
-          className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-border px-4 py-2 text-sm font-medium text-foreground transition-all hover:bg-muted/50"
-        >
-          Book full term
-          <ExternalLink className="size-3.5" />
-        </Link>
-      )}
+      {/* Program link — wording depends on enrolment state for the family */}
+      {event.href && (() => {
+        const familyHasEnrolled = termEnrolledIds.size > 0
+        const someEligibleNotEnrolled = availablePlayers.length > 0
+        const label = familyHasEnrolled
+          ? someEligibleNotEnrolled ? 'Manage enrolment' : 'View program'
+          : 'Book full term'
+        return (
+          <Link
+            href={event.href}
+            className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-border px-4 py-2 text-sm font-medium text-foreground transition-all hover:bg-muted/50"
+          >
+            {label}
+            <ExternalLink className="size-3.5" />
+          </Link>
+        )
+      })()}
     </div>
   )
 }
