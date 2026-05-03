@@ -47,6 +47,14 @@ export async function GET(request: Request) {
     const supabase = await createClient()
     const { error } = await supabase.auth.exchangeCodeForSession(code)
     if (!error) {
+      // Plan 15 Phase F — MFA challenge gate. Magic-link login also lands
+      // here, so we apply the same AAL2 check used in the password login
+      // server action. Users with a verified TOTP factor get redirected
+      // to /login/mfa-challenge before reaching their dashboard.
+      const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel()
+      if (aal?.nextLevel === 'aal2' && aal.currentLevel === 'aal1') {
+        return NextResponse.redirect(`${origin}/login/mfa-challenge`)
+      }
       return NextResponse.redirect(`${origin}${next}`)
     }
   }

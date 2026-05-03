@@ -1,9 +1,10 @@
 import { requireAdmin } from '@/lib/supabase/server'
 import { EmailChangeForm, PasswordChangeFormShared } from '@/components/settings'
+import { MfaSection } from '@/components/settings/mfa-section'
 import { SignOutButton } from '@/app/(dashboard)/parent/settings/sign-out-button'
 import { ImageHero } from '@/components/image-hero'
 import { WarmToast } from '@/components/warm-toast'
-import { Settings } from 'lucide-react'
+import { Settings, ShieldCheck } from 'lucide-react'
 
 export default async function AdminSettingsPage({
   searchParams,
@@ -45,6 +46,15 @@ export default async function AdminSettingsPage({
       {/* ── Password ── */}
       <div className="animate-fade-up" style={{ animationDelay: '160ms' }}>
         <PasswordChangeFormShared redirectPath="/admin/settings" />
+      </div>
+
+      {/* ── 2FA (Plan 15 Phase F) ── */}
+      <div className="animate-fade-up rounded-xl border border-border bg-card p-5 shadow-card" style={{ animationDelay: '200ms' }}>
+        <div className="mb-3 flex items-center gap-2">
+          <ShieldCheck className="size-4 text-primary" />
+          <h2 className="text-base font-semibold text-foreground">Two-factor authentication</h2>
+        </div>
+        <MfaSection />
       </div>
 
       {/* ── Account (destructive) ── */}

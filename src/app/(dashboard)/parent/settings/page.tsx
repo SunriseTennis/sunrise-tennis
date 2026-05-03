@@ -5,6 +5,7 @@ import { MediaConsentForm } from './media-consent-form'
 import { NotificationPrefsForm } from './notification-prefs-form'
 import { CalendarSyncForm } from './calendar-sync-form'
 import { EmailChangeForm, PasswordChangeFormShared } from '@/components/settings'
+import { MfaSection } from '@/components/settings/mfa-section'
 import { SignOutButton } from './sign-out-button'
 import { ImageHero } from '@/components/image-hero'
 import { WarmToast } from '@/components/warm-toast'
@@ -113,6 +114,15 @@ export default async function ParentSettingsPage({
       description: 'Update your password',
       content: (
         <PasswordChangeFormShared redirectPath="/parent/settings" />
+      ),
+    },
+    {
+      id: 'mfa',
+      iconName: 'ShieldCheck',
+      label: 'Two-factor authentication',
+      description: 'Optional — adds a 6-digit code to sign-in',
+      content: (
+        <MfaSection />
       ),
     },
     {

@@ -54,7 +54,7 @@ export default async function AdminApprovalsPage({ searchParams }: PageProps) {
               Unconfirmed-email signups (typo addresses, abandoned attempts) are not shown.
             </p>
             <Link
-              href="/admin/families/new"
+              href="/admin/families"
               className="mt-2 inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:text-primary/80"
             >
               <UserPlus className="size-4" />

@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation'
 import { createClient, requireCoach, getSessionUser } from '@/lib/supabase/server'
 import { EmailChangeForm, PasswordChangeFormShared } from '@/components/settings'
+import { MfaSection } from '@/components/settings/mfa-section'
 import { SettingsAccordion, type AccordionSection } from '@/components/settings/settings-accordion'
 import { SignOutButton } from '@/app/(dashboard)/parent/settings/sign-out-button'
 import { CoachNotificationPrefsForm } from './notification-prefs-form'
@@ -56,6 +57,13 @@ export default async function CoachSettingsPage({
       label: 'Password',
       description: 'Update your password',
       content: <PasswordChangeFormShared redirectPath="/coach/settings" />,
+    },
+    {
+      id: 'mfa',
+      iconName: 'ShieldCheck',
+      label: 'Two-factor authentication',
+      description: 'Optional — adds a 6-digit code to sign-in',
+      content: <MfaSection />,
     },
     {
       id: 'signout',

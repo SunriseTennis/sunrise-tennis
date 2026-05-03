@@ -1,12 +1,12 @@
 'use client'
 
 import { useState } from 'react'
-import { ChevronRight, User, Bell, CalendarDays, Camera, Mail, Lock, LogOut, Wallet, Award } from 'lucide-react'
+import { ChevronRight, User, Bell, CalendarDays, Camera, Mail, Lock, LogOut, Wallet, Award, ShieldCheck } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
 import type { LucideIcon } from 'lucide-react'
 
 const ICON_MAP: Record<string, LucideIcon> = {
-  User, Bell, CalendarDays, Camera, Mail, Lock, LogOut, Wallet, Award,
+  User, Bell, CalendarDays, Camera, Mail, Lock, LogOut, Wallet, Award, ShieldCheck,
 }
 
 export interface AccordionSection {

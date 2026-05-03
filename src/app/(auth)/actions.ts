@@ -29,6 +29,58 @@ export async function login(formData: FormData) {
   }
 
   await logAuthEvent({ userId: data.user?.id, email, eventType: 'login', method: 'password', success: true })
+
+  // Plan 15 Phase F — MFA challenge gate. If the user has a verified TOTP
+  // factor, signInWithPassword leaves them at AAL1 with nextLevel=AAL2.
+  // Redirect to the challenge page before they can reach /dashboard.
+  const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel()
+  if (aal?.nextLevel === 'aal2' && aal.currentLevel === 'aal1') {
+    revalidatePath('/', 'layout')
+    redirect('/login/mfa-challenge')
+  }
+
+  revalidatePath('/', 'layout')
+  redirect('/dashboard')
+}
+
+export async function verifyMfaChallenge(formData: FormData) {
+  const supabase = await createClient()
+  const code = (formData.get('code') as string ?? '').replace(/\D/g, '')
+
+  if (!/^\d{6}$/.test(code)) {
+    redirect('/login/mfa-challenge?error=' + encodeURIComponent('Enter the 6-digit code from your authenticator app.'))
+  }
+
+  // Rate limit per-user: 5 attempts/min.
+  const user = await getSessionUser()
+  if (!user) redirect('/login')
+  if (!await checkRateLimitAsync(`mfa:${user.id}`, 5, 60_000)) {
+    redirect('/login/mfa-challenge?error=' + encodeURIComponent('Too many attempts. Please wait a minute.'))
+  }
+
+  const { data: factors } = await supabase.auth.mfa.listFactors()
+  const verified = factors?.totp?.find(f => f.status === 'verified')
+  if (!verified) {
+    // No TOTP factor — shouldn't happen at this gate, but recover gracefully.
+    redirect('/dashboard')
+  }
+
+  const { data: chal, error: ce } = await supabase.auth.mfa.challenge({ factorId: verified.id })
+  if (ce || !chal) {
+    redirect('/login/mfa-challenge?error=' + encodeURIComponent('Could not start challenge. Try again.'))
+  }
+
+  const { error: ve } = await supabase.auth.mfa.verify({
+    factorId: verified.id,
+    challengeId: chal.id,
+    code,
+  })
+  if (ve) {
+    await logAuthEvent({ userId: user.id, email: user.email ?? '', eventType: 'login_failed', method: 'mfa_totp', success: false, metadata: { error: ve.message } })
+    redirect('/login/mfa-challenge?error=' + encodeURIComponent('Invalid code. Try again.'))
+  }
+
+  await logAuthEvent({ userId: user.id, email: user.email ?? '', eventType: 'login', method: 'mfa_totp', success: true })
   revalidatePath('/', 'layout')
   redirect('/dashboard')
 }
