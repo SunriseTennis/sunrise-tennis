@@ -44,7 +44,7 @@ export default async function AdminPrivatesPage({
       .order('family_name'),
     supabase
       .from('coaches')
-      .select('id, name, is_owner, hourly_rate')
+      .select('id, name, is_owner, hourly_rate, private_opt_in_required, delivers_privates')
       .eq('status', 'active')
       .order('name'),
     // For the Bulk Allowed Coaches form + overview: every active player with their family.
@@ -201,7 +201,12 @@ export default async function AdminPrivatesPage({
 
       <BulkAllowedCoachesForm players={playerOptions} coaches={bulkCoachOptions} />
 
-      <AllowedCoachesOverview rows={overviewRows} />
+      <AllowedCoachesOverview
+        rows={overviewRows}
+        optInOnlyCoaches={(coaches ?? [])
+          .filter(c => c.private_opt_in_required && c.delivers_privates !== false)
+          .map(c => ({ id: c.id, name: c.name }))}
+      />
     </div>
   )
 }

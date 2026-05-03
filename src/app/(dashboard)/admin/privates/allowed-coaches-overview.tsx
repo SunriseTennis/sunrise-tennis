@@ -34,7 +34,16 @@ function titleCase(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1)
 }
 
-export function AllowedCoachesOverview({ rows }: { rows: PlayerRow[] }) {
+interface OptInCoach { id: string; name: string }
+
+export function AllowedCoachesOverview({
+  rows,
+  optInOnlyCoaches = [],
+}: {
+  rows: PlayerRow[]
+  /** Coaches with `private_opt_in_required = true` — excluded from open-access players. */
+  optInOnlyCoaches?: OptInCoach[]
+}) {
   const [search, setSearch] = useState('')
 
   const filtered = useMemo(() => {
@@ -47,9 +56,12 @@ export function AllowedCoachesOverview({ rows }: { rows: PlayerRow[] }) {
       (r.ball_color ?? '').toLowerCase().includes(q) ||
       (r.track ?? '').toLowerCase().includes(q) ||
       r.classifications.some(c => c.toLowerCase().includes(q)) ||
-      r.allowed.some(a => a.coach_name.toLowerCase().includes(q)),
+      r.allowed.some(a => a.coach_name.toLowerCase().includes(q)) ||
+      // Players with no explicit allowlist are still affected by opt-in coaches —
+      // searching "Maxim" should also surface players he's excluded from.
+      (r.allowed.length === 0 && optInOnlyCoaches.some(c => c.name.toLowerCase().includes(q))),
     )
-  }, [rows, search])
+  }, [rows, search, optInOnlyCoaches])
 
   return (
     <Card>
@@ -122,21 +134,45 @@ export function AllowedCoachesOverview({ rows }: { rows: PlayerRow[] }) {
                   )}
                 </div>
                 <div className="col-span-4">
-                  {r.allowed.length === 0 ? (
-                    <span className="text-xs text-muted-foreground italic">No restriction (any coach)</span>
-                  ) : (
-                    <div className="flex flex-wrap gap-1">
-                      {r.allowed.map(a => (
-                        <span
-                          key={a.coach_id}
-                          className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs ${a.auto_approve ? 'bg-success/15 text-success' : 'bg-muted text-foreground'}`}
-                          title={a.auto_approve ? 'Auto-approved' : 'Requires admin approval'}
-                        >
-                          {a.coach_name}{a.auto_approve && <span className="text-[10px]">✓</span>}
-                        </span>
-                      ))}
-                    </div>
-                  )}
+                  {(() => {
+                    // Players with explicit allow rows: their allowlist already
+                    // excludes opt-in coaches by default — render as-is.
+                    if (r.allowed.length > 0) {
+                      return (
+                        <div className="flex flex-wrap gap-1">
+                          {r.allowed.map(a => (
+                            <span
+                              key={a.coach_id}
+                              className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs ${a.auto_approve ? 'bg-success/15 text-success' : 'bg-muted text-foreground'}`}
+                              title={a.auto_approve ? 'Auto-approved' : 'Requires admin approval'}
+                            >
+                              {a.coach_name}{a.auto_approve && <span className="text-[10px]">✓</span>}
+                            </span>
+                          ))}
+                        </div>
+                      )
+                    }
+                    // Empty allowlist: surface any opt-in-only coaches that the
+                    // player is therefore EXCLUDED from. Without this, the row
+                    // showed a misleading "No restriction (any coach)".
+                    if (optInOnlyCoaches.length > 0) {
+                      return (
+                        <div className="flex flex-wrap items-center gap-1">
+                          <span className="text-xs text-muted-foreground italic">Open access — except:</span>
+                          {optInOnlyCoaches.map(c => (
+                            <span
+                              key={c.id}
+                              className="inline-flex items-center rounded-full bg-warning/15 px-2 py-0.5 text-xs text-warning"
+                              title="Opt-in only — not visible to this player without an explicit allow row"
+                            >
+                              {c.name}
+                            </span>
+                          ))}
+                        </div>
+                      )
+                    }
+                    return <span className="text-xs text-muted-foreground italic">No restriction (any coach)</span>
+                  })()}
                 </div>
               </div>
             ))}
