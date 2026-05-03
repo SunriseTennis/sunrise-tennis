@@ -329,7 +329,7 @@ function StepAddPlayer({
         onClick={() => setShowOptional((v) => !v)}
         className="flex w-full items-center justify-between rounded-lg border border-dashed border-border bg-muted/30 px-3.5 py-2.5 text-xs font-medium text-foreground transition-colors hover:bg-muted/50"
       >
-        <span>{showOptional ? 'Hide' : 'Add'} optional details (preferred name, classifications, medical, physical)</span>
+        <span>{showOptional ? 'Hide' : 'Add'} optional details (preferred name, classifications, medical notes)</span>
         <span className="text-muted-foreground">{showOptional ? '–' : '+'}</span>
       </button>
 
@@ -369,16 +369,11 @@ function StepAddPlayer({
           </div>
 
           <div>
-            <Label htmlFor="medical_notes">Medical notes</Label>
-            <Textarea id="medical_notes" name="medical_notes" rows={2} placeholder="Allergies, conditions, medications…" className="mt-1.5" />
+            <Label htmlFor="medical_notes">Medical &amp; physical notes</Label>
+            <Textarea id="medical_notes" name="medical_notes" rows={3} placeholder="Allergies, conditions, medications, injuries, mobility limits…" className="mt-1.5" />
             <p className="mt-1 text-xs text-muted-foreground">
               Encrypted at rest. Only Maxim and your child&apos;s coaches can see this.
             </p>
-          </div>
-
-          <div>
-            <Label htmlFor="physical_notes">Physical notes</Label>
-            <Textarea id="physical_notes" name="physical_notes" rows={2} placeholder="Injuries, dominant hand, mobility limits…" className="mt-1.5" />
           </div>
         </div>
       )}
