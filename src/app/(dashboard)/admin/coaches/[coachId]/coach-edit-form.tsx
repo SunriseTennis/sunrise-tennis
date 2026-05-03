@@ -15,6 +15,7 @@ type CoachData = {
   clientPrivateRateCents: number | null
   payPeriod: string
   deliversPrivates: boolean
+  privateOptInRequired: boolean
 }
 
 export function CoachEditForm({ coach }: { coach: CoachData }) {
@@ -125,6 +126,24 @@ export function CoachEditForm({ coach }: { coach: CoachData }) {
                 <span className="block text-sm font-medium text-foreground">Available for private lessons</span>
                 <span className="block text-xs text-muted-foreground">
                   When off, parents won&apos;t see this coach as a private option even if availability is set.
+                </span>
+              </span>
+            </label>
+          </div>
+
+          <div className="rounded-lg border border-border bg-muted/30 px-3 py-2.5">
+            <input type="hidden" name="private_opt_in_required_present" value="1" />
+            <label className="flex items-start gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                name="private_opt_in_required"
+                defaultChecked={coach.privateOptInRequired}
+                className="mt-0.5 size-4 rounded border-border text-primary focus:ring-primary"
+              />
+              <span>
+                <span className="block text-sm font-medium text-foreground">Opt-in only for privates</span>
+                <span className="block text-xs text-muted-foreground">
+                  When on, parents only see this coach as a private option for players explicitly added via Bulk Allowed Coaches.
                 </span>
               </span>
             </label>

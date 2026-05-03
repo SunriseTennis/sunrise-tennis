@@ -16,6 +16,18 @@ interface PlayerOption {
   family_id: string
   family_display_id: string
   family_name: string
+  ball_color: string | null
+  classifications: string[]
+  track: string | null
+}
+
+// Mirrors `eligibility.ts::CLASSIFICATION_ORDER` + the parent add-player form.
+const CLASSIFICATION_VALUES = ['blue', 'red', 'orange', 'green', 'yellow', 'advanced', 'elite'] as const
+const BALL_COLOR_VALUES = ['blue', 'red', 'orange', 'green', 'yellow', 'advanced', 'elite', 'competitive'] as const
+const TRACK_VALUES = ['performance', 'participation'] as const
+
+function titleCase(s: string): string {
+  return s.charAt(0).toUpperCase() + s.slice(1)
 }
 
 interface CoachOption {
@@ -107,6 +119,31 @@ export function BulkAllowedCoachesForm({
   function clearAll() {
     setSelectedPlayerIds(new Set())
   }
+
+  // ── Quick filters: classification, ball level, track ──
+  // Click a chip to union all matching players into the current selection.
+  function addPlayersMatching(predicate: (p: PlayerOption) => boolean) {
+    setSelectedPlayerIds(prev => {
+      const next = new Set(prev)
+      for (const p of players) if (predicate(p)) next.add(p.id)
+      return next
+    })
+  }
+
+  // Pre-compute counts so each chip shows `(N)`.
+  const counts = useMemo(() => {
+    const byClassification: Record<string, number> = {}
+    const byBall: Record<string, number> = {}
+    const byTrack: Record<string, number> = {}
+    for (const p of players) {
+      for (const c of (p.classifications ?? [])) {
+        byClassification[c] = (byClassification[c] ?? 0) + 1
+      }
+      if (p.ball_color) byBall[p.ball_color] = (byBall[p.ball_color] ?? 0) + 1
+      if (p.track) byTrack[p.track] = (byTrack[p.track] ?? 0) + 1
+    }
+    return { byClassification, byBall, byTrack }
+  }, [players])
 
   // Group matches by family so the dropdown is scannable.
   const matchesByFamily = useMemo(() => {
@@ -225,6 +262,69 @@ export function BulkAllowedCoachesForm({
                 )
               })}
             </div>
+          </div>
+
+          {/* Quick filters: tap a chip to union all matching active players. */}
+          <div className="space-y-2 rounded-lg border border-border bg-muted/20 p-3">
+            <p className="text-xs font-medium text-muted-foreground">Quick add by group</p>
+
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="mr-1 text-[11px] text-muted-foreground">Track:</span>
+              {TRACK_VALUES.map(t => {
+                const n = counts.byTrack[t] ?? 0
+                return (
+                  <button
+                    key={t}
+                    type="button"
+                    onClick={() => addPlayersMatching(p => p.track === t)}
+                    disabled={n === 0}
+                    className="rounded-full border border-border bg-background px-2.5 py-0.5 text-xs hover:bg-primary/10 hover:border-primary/30 disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    {titleCase(t)} <span className="text-muted-foreground">({n})</span>
+                  </button>
+                )
+              })}
+            </div>
+
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="mr-1 text-[11px] text-muted-foreground">Classification:</span>
+              {CLASSIFICATION_VALUES.map(c => {
+                const n = counts.byClassification[c] ?? 0
+                return (
+                  <button
+                    key={c}
+                    type="button"
+                    onClick={() => addPlayersMatching(p => (p.classifications ?? []).includes(c))}
+                    disabled={n === 0}
+                    className="rounded-full border border-border bg-background px-2.5 py-0.5 text-xs hover:bg-primary/10 hover:border-primary/30 disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    {titleCase(c)} <span className="text-muted-foreground">({n})</span>
+                  </button>
+                )
+              })}
+            </div>
+
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="mr-1 text-[11px] text-muted-foreground">Ball level:</span>
+              {BALL_COLOR_VALUES.map(b => {
+                const n = counts.byBall[b] ?? 0
+                return (
+                  <button
+                    key={b}
+                    type="button"
+                    onClick={() => addPlayersMatching(p => p.ball_color === b)}
+                    disabled={n === 0}
+                    className="rounded-full border border-border bg-background px-2.5 py-0.5 text-xs hover:bg-primary/10 hover:border-primary/30 disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    {titleCase(b)} <span className="text-muted-foreground">({n})</span>
+                  </button>
+                )
+              })}
+            </div>
+
+            <p className="text-[11px] text-muted-foreground">
+              Chips union into your selection — remove individuals via the × on each chip below.
+            </p>
           </div>
 
           {/* Players search */}

@@ -56,7 +56,7 @@ export default async function ParentBookingsPage({
       .order('first_name'),
     supabase
       .from('coaches')
-      .select('id, name, is_owner, hourly_rate')
+      .select('id, name, is_owner, hourly_rate, private_opt_in_required')
       .eq('status', 'active')
       .eq('delivers_privates', true)
       .order('name'),
@@ -158,6 +158,7 @@ export default async function ParentBookingsPage({
       id: c.id,
       name: c.name.split(' ')[0],
       is_owner: c.is_owner ?? false,
+      private_opt_in_required: c.private_opt_in_required ?? false,
       rate_per_hour_cents: (c.hourly_rate as { client_private_rate_cents?: number; private_rate_cents?: number } | null)?.client_private_rate_cents
         ?? (c.hourly_rate as { private_rate_cents?: number } | null)?.private_rate_cents ?? 0,
     }))

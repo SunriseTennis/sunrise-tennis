@@ -120,6 +120,23 @@ export function CreateCoachButton() {
             </label>
           </div>
 
+          <div className="rounded-lg border border-border bg-muted/30 px-3 py-2.5">
+            <label className="flex items-start gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                name="private_opt_in_required"
+                defaultChecked={false}
+                className="mt-0.5 size-4 rounded border-border text-primary focus:ring-primary"
+              />
+              <span>
+                <span className="block text-sm font-medium text-foreground">Opt-in only for privates</span>
+                <span className="block text-xs text-muted-foreground">
+                  When on, parents only see this coach as a private option for players explicitly added via Bulk Allowed Coaches.
+                </span>
+              </span>
+            </label>
+          </div>
+
           <div className="flex justify-end gap-2 pt-2">
             <button
               type="button"

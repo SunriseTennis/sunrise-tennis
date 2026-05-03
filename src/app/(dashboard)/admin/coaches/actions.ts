@@ -22,6 +22,9 @@ export async function updateCoach(formData: FormData) {
   // "absent because unchecked" from "absent because field not on this form".
   const deliversFlagPresent = formData.get('delivers_privates_present') === '1'
   const deliversPrivates = formData.get('delivers_privates') === 'on'
+  // Same pattern for private_opt_in_required.
+  const optInFlagPresent = formData.get('private_opt_in_required_present') === '1'
+  const privateOptInRequired = formData.get('private_opt_in_required') === 'on'
 
   if (!coachId || !name) return
 
@@ -61,6 +64,7 @@ export async function updateCoach(formData: FormData) {
     hourly_rate: Record<string, number | null>
     pay_period: string
     delivers_privates?: boolean
+    private_opt_in_required?: boolean
   }
   const update: CoachUpdate = {
     name,
@@ -70,6 +74,7 @@ export async function updateCoach(formData: FormData) {
     pay_period: payPeriod || 'weekly',
   }
   if (deliversFlagPresent) update.delivers_privates = deliversPrivates
+  if (optInFlagPresent) update.private_opt_in_required = privateOptInRequired
 
   const { error } = await supabase
     .from('coaches')
@@ -98,6 +103,7 @@ export async function createCoach(formData: FormData) {
   const clientPrivateRateStr = formData.get('client_private_rate') as string
   const payPeriod = (formData.get('pay_period') as string) || 'weekly'
   const deliversPrivates = formData.get('delivers_privates') === 'on'
+  const privateOptInRequired = formData.get('private_opt_in_required') === 'on'
 
   if (!name) {
     redirect('/admin/coaches?error=' + encodeURIComponent('Name is required'))
@@ -126,6 +132,7 @@ export async function createCoach(formData: FormData) {
       status: 'active',
       is_owner: false,
       delivers_privates: deliversPrivates,
+      private_opt_in_required: privateOptInRequired,
     })
     .select('id')
     .single()

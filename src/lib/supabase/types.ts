@@ -732,6 +732,7 @@ export type Database = {
           notification_preferences: Json | null
           pay_period: string
           phone: string | null
+          private_opt_in_required: boolean
           qualifications: Json | null
           status: string
           user_id: string | null
@@ -747,6 +748,7 @@ export type Database = {
           notification_preferences?: Json | null
           pay_period?: string
           phone?: string | null
+          private_opt_in_required?: boolean
           qualifications?: Json | null
           status?: string
           user_id?: string | null
@@ -762,6 +764,7 @@ export type Database = {
           notification_preferences?: Json | null
           pay_period?: string
           phone?: string | null
+          private_opt_in_required?: boolean
           qualifications?: Json | null
           status?: string
           user_id?: string | null

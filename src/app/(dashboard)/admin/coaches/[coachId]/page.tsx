@@ -130,6 +130,7 @@ export default async function CoachDetailPage({
                 clientPrivateRateCents: clientPrivateRate,
                 payPeriod: coach.pay_period ?? 'weekly',
                 deliversPrivates: coach.delivers_privates ?? true,
+                privateOptInRequired: coach.private_opt_in_required ?? false,
               }} />
             </div>
             <div className="space-y-2 text-sm">
@@ -163,6 +164,12 @@ export default async function CoachDetailPage({
                 <span className="text-muted-foreground">Delivers privates</span>
                 <span className={coach.delivers_privates === false ? 'text-muted-foreground' : 'text-success'}>
                   {coach.delivers_privates === false ? 'No (hidden from parents)' : 'Yes'}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Privates opt-in only</span>
+                <span className={coach.private_opt_in_required ? 'text-warning font-medium' : 'text-muted-foreground'}>
+                  {coach.private_opt_in_required ? 'Yes (allowlist required)' : 'No (open access)'}
                 </span>
               </div>
               {parentRateMissing && (

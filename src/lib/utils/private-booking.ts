@@ -24,16 +24,25 @@ export async function getAllowedCoaches(
 
 /**
  * Check if a player can book with a specific coach.
- * Returns true if the allowlist is empty (no restrictions) or the coach is in the list.
+ *
+ * - If the coach has `private_opt_in_required = true`: an explicit
+ *   `player_allowed_coaches` row for this player+coach is REQUIRED.
+ * - Otherwise (default): empty allowlist = open access; non-empty =
+ *   coach must be in the list.
  */
 export async function canPlayerBookCoach(
   supabase: Supabase,
   playerId: string,
   coachId: string,
 ): Promise<boolean> {
-  const allowed = await getAllowedCoaches(supabase, playerId)
+  const [{ data: coach }, allowed] = await Promise.all([
+    supabase.from('coaches').select('private_opt_in_required').eq('id', coachId).single(),
+    getAllowedCoaches(supabase, playerId),
+  ])
+  const hasExplicit = allowed.some(a => a.coach_id === coachId)
+  if (coach?.private_opt_in_required) return hasExplicit
   if (allowed.length === 0) return true
-  return allowed.some(a => a.coach_id === coachId)
+  return hasExplicit
 }
 
 /**

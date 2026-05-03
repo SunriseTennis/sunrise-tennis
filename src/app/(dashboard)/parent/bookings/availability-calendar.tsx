@@ -33,6 +33,8 @@ interface Coach {
   name: string
   is_owner: boolean
   rate_per_hour_cents: number
+  /** When true, this coach only appears for players with an explicit allowlist row. */
+  private_opt_in_required?: boolean
 }
 
 interface AllowedEntry {
@@ -468,8 +470,12 @@ export function AvailabilityCalendar({
     return coaches.filter(coach => {
       if (coach.rate_per_hour_cents <= 0) return false
       return players.some(player => {
-        const entries = allowedCoaches.filter(a => a.player_id === player.id)
-        return entries.length === 0 || entries.some(a => a.coach_id === coach.id)
+        const playerEntries = allowedCoaches.filter(a => a.player_id === player.id)
+        const hasExplicitAllow = playerEntries.some(a => a.coach_id === coach.id)
+        // Opt-in-required coaches: must have an explicit allow row for this player.
+        if (coach.private_opt_in_required) return hasExplicitAllow
+        // Default: empty allowlist = open access; non-empty = must include coach.
+        return playerEntries.length === 0 || hasExplicitAllow
       })
     })
   }, [coaches, players, allowedCoaches])
@@ -648,7 +654,9 @@ export function AvailabilityCalendar({
     if (!popupCoach) return []
     return players.filter(player => {
       const entries = allowedCoaches.filter(a => a.player_id === player.id)
-      return entries.length === 0 || entries.some(a => a.coach_id === popupCoach.id)
+      const hasExplicitAllow = entries.some(a => a.coach_id === popupCoach.id)
+      if (popupCoach.private_opt_in_required) return hasExplicitAllow
+      return entries.length === 0 || hasExplicitAllow
     })
   }, [players, allowedCoaches, popupCoach])
 

@@ -50,7 +50,7 @@ export default async function AdminPrivatesPage({
     // For the Bulk Allowed Coaches form + overview: every active player with their family.
     supabase
       .from('players')
-      .select('id, first_name, last_name, family_id, families:family_id(display_id, family_name)')
+      .select('id, first_name, last_name, family_id, ball_color, classifications, track, families:family_id(display_id, family_name)')
       .eq('status', 'active')
       .order('first_name'),
     // Existing allowlist rows.
@@ -144,6 +144,9 @@ export default async function AdminPrivatesPage({
       family_id: p.family_id,
       family_display_id: fam?.display_id ?? '',
       family_name: fam?.family_name ?? '',
+      ball_color: (p.ball_color ?? null) as string | null,
+      classifications: ((p.classifications ?? []) as string[]),
+      track: (p.track ?? null) as string | null,
     }
   })
   const bulkCoachOptions = (coaches ?? []).map(c => ({ id: c.id, name: c.name, is_owner: c.is_owner ?? null }))
@@ -165,6 +168,9 @@ export default async function AdminPrivatesPage({
       family_id: p.family_id,
       family_display_id: p.family_display_id,
       family_name: p.family_name,
+      ball_color: p.ball_color,
+      classifications: p.classifications,
+      track: p.track,
       allowed: (allowedByPlayer.get(p.id) ?? []).sort((a, b) => a.coach_name.localeCompare(b.coach_name)),
     }))
     .sort((a, b) => a.family_name.localeCompare(b.family_name) || a.player_name.localeCompare(b.player_name))
