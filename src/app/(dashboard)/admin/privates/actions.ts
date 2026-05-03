@@ -240,6 +240,80 @@ export async function setPlayerAllowedCoaches(formData: FormData) {
   redirect(`/admin/privates?success=Updated+allowed+coaches`)
 }
 
+// ── Admin: Bulk Allowed Coaches ────────────────────────────────────────
+
+/**
+ * Bulk-set the player_allowed_coaches list for many players at once.
+ *
+ * Modes:
+ *   'replace' — each selected player's existing allowlist is wiped and
+ *               replaced with the new (coachIds + autoApproveIds) set.
+ *   'add'     — union the new (coachIds + autoApproveIds) onto each player's
+ *               existing allowlist. Existing rows for the same (player, coach)
+ *               pair are upserted (re-applies auto_approve from the form).
+ *
+ * Empty allowlist semantics match the per-family form: an empty
+ * player_allowed_coaches set for a player means "no restrictions, can book
+ * with any coach". Hitting Replace with no coaches selected therefore wipes
+ * restrictions for the selected players.
+ */
+export async function bulkSetPlayerAllowedCoaches(formData: FormData) {
+  await requireAdmin()
+  const supabase = await createClient()
+
+  const playerIdsRaw = (formData.get('player_ids') as string) ?? ''
+  const playerIds = playerIdsRaw.split(',').map(s => s.trim()).filter(Boolean)
+  const coachIds = formData.getAll('coach_ids') as string[]
+  const autoApproveIds = formData.getAll('auto_approve') as string[]
+  const mode = (formData.get('mode') as string) === 'add' ? 'add' : 'replace'
+
+  if (playerIds.length === 0) {
+    redirect('/admin/privates?error=' + encodeURIComponent('Pick at least one player'))
+  }
+
+  if (mode === 'replace') {
+    const { error } = await supabase
+      .from('player_allowed_coaches')
+      .delete()
+      .in('player_id', playerIds)
+    if (error) {
+      redirect(`/admin/privates?error=${encodeURIComponent('Failed to clear existing allowlists: ' + error.message)}`)
+    }
+  }
+
+  if (coachIds.length > 0) {
+    const rows = playerIds.flatMap(pid =>
+      coachIds.map(cid => ({
+        player_id: pid,
+        coach_id: cid,
+        auto_approve: autoApproveIds.includes(cid),
+      })),
+    )
+
+    if (mode === 'add') {
+      // upsert on (player_id, coach_id) — re-applies auto_approve from the form.
+      const { error } = await supabase
+        .from('player_allowed_coaches')
+        .upsert(rows, { onConflict: 'player_id,coach_id' })
+      if (error) {
+        redirect(`/admin/privates?error=${encodeURIComponent('Failed to add allowed coaches: ' + error.message)}`)
+      }
+    } else {
+      const { error } = await supabase
+        .from('player_allowed_coaches')
+        .insert(rows)
+      if (error) {
+        redirect(`/admin/privates?error=${encodeURIComponent('Failed to set allowed coaches: ' + error.message)}`)
+      }
+    }
+  }
+
+  revalidatePath('/admin/families')
+  revalidatePath('/admin/privates')
+  revalidatePath('/parent/bookings')
+  redirect(`/admin/privates?success=${encodeURIComponent(`Updated ${playerIds.length} player${playerIds.length === 1 ? '' : 's'}`)}`)
+}
+
 // ── Admin: Family private-rate overrides (read) ────────────────────────
 
 export type FamilyPrivateOverride = {

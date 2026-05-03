@@ -14,6 +14,8 @@ export async function updateCoach(formData: FormData) {
   const email = (formData.get('email') as string)?.trim() || null
   const groupRateStr = formData.get('group_rate') as string
   const privateRateStr = formData.get('private_rate') as string
+  const clientPrivateRateStr = formData.get('client_private_rate') as string
+  const clientFieldPresent = formData.get('client_private_rate_present') === '1'
   const payPeriod = formData.get('pay_period') as string
   // Checkbox: present (any truthy value) means delivers_privates = true.
   // Form must include a hidden 'delivers_privates_present=1' so we can tell
@@ -26,11 +28,37 @@ export async function updateCoach(formData: FormData) {
   const groupRateCents = groupRateStr ? Math.round(parseFloat(groupRateStr) * 100) : 0
   const privateRateCents = privateRateStr ? Math.round(parseFloat(privateRateStr) * 100) : 0
 
+  // Read the existing JSON so we don't blow away client_private_rate_cents on
+  // legacy callers whose form doesn't include the field.
+  const { data: existing } = await supabase
+    .from('coaches')
+    .select('hourly_rate')
+    .eq('id', coachId)
+    .single()
+  const existingRate = (existing?.hourly_rate ?? {}) as Record<string, unknown>
+
+  // hourly_rate JSON shape:
+  //   group_rate_cents          → group session pay (what coach earns)
+  //   private_rate_cents        → private session pay (what coach earns)
+  //   client_private_rate_cents → parent-facing private rate (what parent pays)
+  // The client rate is null until explicitly set — no silent fallback.
+  const hourlyRate: Record<string, number | null> = {
+    group_rate_cents: groupRateCents,
+    private_rate_cents: privateRateCents,
+  }
+  if (clientFieldPresent) {
+    hourlyRate.client_private_rate_cents = clientPrivateRateStr
+      ? Math.round(parseFloat(clientPrivateRateStr) * 100)
+      : null
+  } else if ('client_private_rate_cents' in existingRate) {
+    hourlyRate.client_private_rate_cents = existingRate.client_private_rate_cents as number | null
+  }
+
   type CoachUpdate = {
     name: string
     phone: string | null
     email: string | null
-    hourly_rate: { group_rate_cents: number; private_rate_cents: number }
+    hourly_rate: Record<string, number | null>
     pay_period: string
     delivers_privates?: boolean
   }
@@ -38,7 +66,7 @@ export async function updateCoach(formData: FormData) {
     name,
     phone,
     email,
-    hourly_rate: { group_rate_cents: groupRateCents, private_rate_cents: privateRateCents },
+    hourly_rate: hourlyRate,
     pay_period: payPeriod || 'weekly',
   }
   if (deliversFlagPresent) update.delivers_privates = deliversPrivates
@@ -67,6 +95,7 @@ export async function createCoach(formData: FormData) {
   const email = (formData.get('email') as string)?.trim() || null
   const groupRateStr = formData.get('group_rate') as string
   const privateRateStr = formData.get('private_rate') as string
+  const clientPrivateRateStr = formData.get('client_private_rate') as string
   const payPeriod = (formData.get('pay_period') as string) || 'weekly'
   const deliversPrivates = formData.get('delivers_privates') === 'on'
 
@@ -76,6 +105,11 @@ export async function createCoach(formData: FormData) {
 
   const groupRateCents = groupRateStr ? Math.round(parseFloat(groupRateStr) * 100) : 0
   const privateRateCents = privateRateStr ? Math.round(parseFloat(privateRateStr) * 100) : 0
+  // Parent rate stays null until explicitly entered — no silent fallback.
+  // Coach detail page surfaces a "Parent rate not set" warning when null.
+  const clientPrivateRateCents = clientPrivateRateStr
+    ? Math.round(parseFloat(clientPrivateRateStr) * 100)
+    : null
 
   const { data, error } = await supabase
     .from('coaches')
@@ -83,7 +117,11 @@ export async function createCoach(formData: FormData) {
       name,
       phone,
       email,
-      hourly_rate: { group_rate_cents: groupRateCents, private_rate_cents: privateRateCents },
+      hourly_rate: {
+        group_rate_cents: groupRateCents,
+        private_rate_cents: privateRateCents,
+        client_private_rate_cents: clientPrivateRateCents,
+      },
       pay_period: payPeriod,
       status: 'active',
       is_owner: false,

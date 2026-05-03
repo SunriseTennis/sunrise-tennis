@@ -30,7 +30,7 @@ export default async function CoachesPage({
     { data: scheduledSessions },
     { data: payments },
   ] = await Promise.all([
-    supabase.from('coaches').select('id, name, is_owner, status, pay_period, hourly_rate').eq('status', 'active').order('name'),
+    supabase.from('coaches').select('id, name, is_owner, status, pay_period, hourly_rate, delivers_privates').eq('status', 'active').order('name'),
     supabase.from('coach_availability').select('coach_id, day_of_week, start_time, end_time').order('day_of_week').order('start_time'),
     supabase.from('program_coaches').select('program_id, coach_id, role, programs:program_id(name, day_of_week, start_time)'),
     supabase.from('coach_earnings').select('coach_id, amount_cents, status'),
@@ -71,8 +71,14 @@ export default async function CoachesPage({
   // Build per-coach data
   const allProgramCoaches = programCoaches ?? []
   const coachCards = (coaches ?? []).filter(c => !c.is_owner).map(coach => {
-    const groupRate = (coach.hourly_rate as { group_rate_cents?: number } | null)?.group_rate_cents ?? 0
-    const privateRate = (coach.hourly_rate as { private_rate_cents?: number } | null)?.private_rate_cents ?? 0
+    const rateJson = (coach.hourly_rate ?? {}) as {
+      group_rate_cents?: number
+      private_rate_cents?: number
+      client_private_rate_cents?: number | null
+    }
+    const groupRate = rateJson.group_rate_cents ?? 0
+    const privateRate = rateJson.private_rate_cents ?? 0
+    const clientPrivateRate = rateJson.client_private_rate_cents ?? null
     const windows = coachAvailability.get(coach.id) ?? []
     const programs = coachPrograms.get(coach.id) ?? []
     const coachEarnings = (earnings ?? []).filter(e => e.coach_id === coach.id)
@@ -103,6 +109,7 @@ export default async function CoachesPage({
       ...coach,
       groupRate,
       privateRate,
+      clientPrivateRate,
       windows,
       programs,
       owed,
@@ -168,7 +175,11 @@ export default async function CoachesPage({
                   </div>
                   <div className="text-right text-xs text-slate-blue">
                     {coach.groupRate > 0 && <p>Group: {formatCurrency(coach.groupRate)}/hr</p>}
-                    {coach.privateRate > 0 && <p>Private: {formatCurrency(coach.privateRate)}/hr</p>}
+                    {coach.privateRate > 0 && <p>Pay: {formatCurrency(coach.privateRate)}/hr</p>}
+                    {coach.clientPrivateRate != null
+                      ? <p>Parent: {formatCurrency(coach.clientPrivateRate)}/hr</p>
+                      : (coach.delivers_privates !== false && <p className="text-warning">Parent rate not set</p>)
+                    }
                   </div>
                 </div>
 

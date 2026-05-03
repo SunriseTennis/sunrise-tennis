@@ -291,7 +291,8 @@ function generateCoachAvailabilityEvents(
               } else {
                 calEvents.push({
                   id: `${idPrefix}-booked-${eventId}`,
-                  title: 'Booked',
+                  title: coachName,
+                  subtitle: 'Booked',
                   dayOfWeek, startTime, endTime,
                   date: dateStr,
                   color: bookedColor,

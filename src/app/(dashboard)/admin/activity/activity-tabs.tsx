@@ -22,7 +22,9 @@ import {
   AlertTriangle,
   Monitor,
   Search,
+  X as XIcon,
 } from 'lucide-react'
+import { isTestEmail } from '@/lib/utils/test-emails'
 
 // ── Types ──
 
@@ -90,7 +92,11 @@ interface ActivityTabsProps {
   activeSessions: ActiveSession[]
   uninvitedSignups: AuthEvent[]
   userMap: Record<string, string>
+  /** User IDs of users with role='admin'. Used by "Customers only" filter. */
+  adminUserIds: string[]
 }
+
+type ActorFilter = 'all' | 'customers' | 'specific'
 
 // ── Helpers ──
 
@@ -178,11 +184,33 @@ export function ActivityTabs({
   activeSessions,
   uninvitedSignups,
   userMap,
+  adminUserIds,
 }: ActivityTabsProps) {
   const [activeTab, setActiveTab] = useState<TabId>('activity')
   const [userSearch, setUserSearch] = useState('')
   const [loginFilter, setLoginFilter] = useState<'all' | 'success' | 'failed'>('all')
   const [activityFilter, setActivityFilter] = useState<'all' | 'auth' | 'data'>('all')
+  const [actorFilter, setActorFilter] = useState<ActorFilter>('all')
+  const [selectedUserId, setSelectedUserId] = useState<string | null>(null)
+
+  // Set of admin user IDs — quick lookup for filter exclusion.
+  const adminIdSet = useMemo(() => new Set(adminUserIds), [adminUserIds])
+
+  // userId → email lookup. Built off the directory (full_name is in userMap
+  // already; we need email separately to apply isTestEmail).
+  const userEmailMap = useMemo(() => {
+    const m: Record<string, string> = {}
+    for (const u of userDirectory) {
+      if (u.id) m[u.id] = u.email
+    }
+    return m
+  }, [userDirectory])
+
+  function drillIntoUser(userId: string) {
+    setSelectedUserId(userId)
+    setActorFilter('specific')
+    setActiveTab('activity')
+  }
 
   // ── Combined activity feed ──
   const combinedFeed = useMemo(() => {
@@ -228,9 +256,24 @@ export function ActivityTabs({
       }
     }
 
-    items.sort((a, b) => new Date(b.time ?? 0).getTime() - new Date(a.time ?? 0).getTime())
-    return items.slice(0, 100)
-  }, [authEvents, auditLog, userMap, activityFilter])
+    // Actor filter applied here so the feed pre-filter is the cap, not the cap-then-trim.
+    const filtered = items.filter((item) => {
+      if (actorFilter === 'specific') {
+        return item.userId === selectedUserId
+      }
+      if (actorFilter === 'customers') {
+        if (!item.userId) return false                         // exclude system rows
+        if (adminIdSet.has(item.userId)) return false          // exclude admins
+        const email = userEmailMap[item.userId] ?? item.actor  // auth events carry email; audit rows resolved via map
+        if (isTestEmail(email)) return false                   // exclude test/seed accounts
+        return true
+      }
+      return true
+    })
+
+    filtered.sort((a, b) => new Date(b.time ?? 0).getTime() - new Date(a.time ?? 0).getTime())
+    return filtered.slice(0, 200)
+  }, [authEvents, auditLog, userMap, activityFilter, actorFilter, selectedUserId, adminIdSet, userEmailMap])
 
   // ── Filtered users ──
   const filteredUsers = useMemo(() => {
@@ -279,26 +322,83 @@ export function ActivityTabs({
       {/* ── Tab: Recent Activity ── */}
       {activeTab === 'activity' && (
         <div>
-          <div className="flex gap-1 mb-4">
-            {(['all', 'auth', 'data'] as const).map((f) => (
-              <button
-                key={f}
-                onClick={() => setActivityFilter(f)}
-                className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
-                  activityFilter === f
-                    ? 'bg-primary text-white'
-                    : 'bg-muted text-muted-foreground hover:text-foreground'
-                }`}
-              >
-                {f === 'all' ? 'All' : f === 'auth' ? 'Auth Only' : 'Data Only'}
-              </button>
-            ))}
+          <div className="space-y-2 mb-4">
+            {/* Source filter */}
+            <div className="flex flex-wrap items-center gap-1">
+              <span className="mr-1 text-xs text-muted-foreground">Source:</span>
+              {(['all', 'auth', 'data'] as const).map((f) => (
+                <button
+                  key={f}
+                  onClick={() => setActivityFilter(f)}
+                  className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                    activityFilter === f
+                      ? 'bg-primary text-white'
+                      : 'bg-muted text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  {f === 'all' ? 'All' : f === 'auth' ? 'Auth Only' : 'Data Only'}
+                </button>
+              ))}
+            </div>
+
+            {/* Actor filter */}
+            <div className="flex flex-wrap items-center gap-1">
+              <span className="mr-1 text-xs text-muted-foreground">Actor:</span>
+              {(['all', 'customers', 'specific'] as const).map((f) => (
+                <button
+                  key={f}
+                  onClick={() => {
+                    setActorFilter(f)
+                    if (f !== 'specific') setSelectedUserId(null)
+                  }}
+                  className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                    actorFilter === f
+                      ? 'bg-primary text-white'
+                      : 'bg-muted text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  {f === 'all' ? 'All' : f === 'customers' ? 'Customers Only' : 'Specific User'}
+                </button>
+              ))}
+              {actorFilter === 'specific' && (
+                <select
+                  value={selectedUserId ?? ''}
+                  onChange={(e) => setSelectedUserId(e.target.value || null)}
+                  className="ml-1 rounded-md border border-border bg-background px-2 py-1 text-xs"
+                >
+                  <option value="">— Pick a user —</option>
+                  {userDirectory
+                    .slice()
+                    .sort((a, b) => (a.full_name || a.email).localeCompare(b.full_name || b.email))
+                    .map((u) => (
+                      <option key={u.id} value={u.id}>
+                        {(u.full_name || u.email)}{u.full_name ? ` · ${u.email}` : ''}
+                      </option>
+                    ))}
+                </select>
+              )}
+              {actorFilter === 'specific' && selectedUserId && (
+                <button
+                  onClick={() => { setActorFilter('all'); setSelectedUserId(null) }}
+                  className="ml-1 inline-flex items-center gap-1 rounded-full border border-border px-2 py-1 text-xs text-muted-foreground hover:text-foreground"
+                >
+                  <XIcon className="size-3" /> Clear
+                </button>
+              )}
+            </div>
+            {actorFilter === 'customers' && (
+              <p className="text-xs text-muted-foreground">
+                Hiding admin actions, system changes, and seed/test accounts.
+              </p>
+            )}
           </div>
 
           {combinedFeed.length === 0 ? (
             <Card>
               <CardContent className="py-12 text-center text-muted-foreground">
-                No activity recorded yet. Events will appear here after logins, signups, and data changes.
+                {actorFilter === 'specific' && !selectedUserId
+                  ? 'Pick a user to see their activity.'
+                  : 'No activity matches the current filters.'}
               </CardContent>
             </Card>
           ) : (
@@ -311,7 +411,17 @@ export function ActivityTabs({
                   <div className="flex-shrink-0">{item.icon}</div>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-baseline gap-2">
-                      <span className="font-medium text-sm truncate">{item.actor}</span>
+                      {item.userId ? (
+                        <button
+                          onClick={() => drillIntoUser(item.userId!)}
+                          className="font-medium text-sm truncate hover:underline cursor-pointer"
+                          title="Show only this user's activity"
+                        >
+                          {item.actor}
+                        </button>
+                      ) : (
+                        <span className="font-medium text-sm truncate">{item.actor}</span>
+                      )}
                       <span className="text-sm text-muted-foreground">{item.label}</span>
                       {item.detail && (
                         <span className="text-xs text-muted-foreground">{item.detail}</span>
@@ -363,7 +473,12 @@ export function ActivityTabs({
                   </TableRow>
                 ) : (
                   filteredUsers.map((u) => (
-                    <TableRow key={u.id}>
+                    <TableRow
+                      key={u.id}
+                      onClick={() => drillIntoUser(u.id)}
+                      className="cursor-pointer hover:bg-muted/40"
+                      title="See this user's activity"
+                    >
                       <TableCell className="font-medium text-sm max-w-[200px] truncate">{u.email}</TableCell>
                       <TableCell className="hidden sm:table-cell text-sm">{u.full_name || '-'}</TableCell>
                       <TableCell>

@@ -3,7 +3,7 @@ import { notFound, redirect } from 'next/navigation'
 import { createClient, getSessionUser } from '@/lib/supabase/server'
 import { Card, CardContent } from '@/components/ui/card'
 import { StatusBadge } from '@/components/status-badge'
-import { ChevronLeft, Clock, MapPin, MessageSquare } from 'lucide-react'
+import { ChevronLeft, Clock, MapPin } from 'lucide-react'
 import { formatDate, formatTime } from '@/lib/utils/dates'
 import { SessionPlayerActions } from './session-player-actions'
 
@@ -210,16 +210,6 @@ export default async function ParentSessionDetail({
         </Card>
       )}
 
-      {/* Always offer "Message admin" — handles "kid is sick" + any non-standard ask */}
-      {!isCancelled && (
-        <Link
-          href={`/parent/messages?subject=${encodeURIComponent(`Session on ${session.date ?? ''}`)}`}
-          className="flex items-center justify-center gap-2 rounded-lg border border-border bg-card px-4 py-2.5 text-sm font-medium text-foreground hover:bg-muted/30 transition-colors"
-        >
-          <MessageSquare className="size-4" />
-          Message admin about this session
-        </Link>
-      )}
     </div>
   )
 }

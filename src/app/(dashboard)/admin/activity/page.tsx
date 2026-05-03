@@ -13,19 +13,20 @@ export default async function AdminActivityPage() {
     { data: securityAlerts },
     { data: activeSessions },
     { data: uninvitedSignups },
+    { data: adminRoles },
   ] = await Promise.all([
     // Recent auth events (last 30 days)
     supabase
       .from('auth_events')
       .select('*')
       .order('created_at', { ascending: false })
-      .limit(100),
+      .limit(500),
     // Recent data audit log (last 7 days)
     supabase
       .from('audit_log')
       .select('*')
       .order('created_at', { ascending: false })
-      .limit(100),
+      .limit(500),
     // User directory via RPC
     supabase.rpc('get_user_directory'),
     // Security alerts via RPC
@@ -40,7 +41,11 @@ export default async function AdminActivityPage() {
       .eq('success', true)
       .order('created_at', { ascending: false })
       .limit(50),
+    // Admin user IDs — used to filter the "Customers only" view client-side.
+    supabase.from('user_roles').select('user_id').eq('role', 'admin'),
   ])
+
+  const adminUserIds = (adminRoles ?? []).map((r) => r.user_id).filter((x): x is string => !!x)
 
   // Build a user lookup map from user directory for display names
   const userMap: Record<string, string> = {}
@@ -68,6 +73,7 @@ export default async function AdminActivityPage() {
             }
           )}
           userMap={userMap}
+          adminUserIds={adminUserIds}
         />
       </div>
     </div>

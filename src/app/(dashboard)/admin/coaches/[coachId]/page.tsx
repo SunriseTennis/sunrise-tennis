@@ -61,8 +61,15 @@ export default async function CoachDetailPage({
     supabase.from('programs').select('id, name, type, day_of_week, start_time').eq('status', 'active').order('name'),
   ])
 
-  const groupRate = (coach.hourly_rate as { group_rate_cents?: number } | null)?.group_rate_cents ?? 0
-  const privateRate = (coach.hourly_rate as { private_rate_cents?: number } | null)?.private_rate_cents ?? 0
+  const rateJson = (coach.hourly_rate ?? {}) as {
+    group_rate_cents?: number
+    private_rate_cents?: number
+    client_private_rate_cents?: number | null
+  }
+  const groupRate = rateJson.group_rate_cents ?? 0
+  const privateRate = rateJson.private_rate_cents ?? 0
+  const clientPrivateRate = rateJson.client_private_rate_cents ?? null
+  const parentRateMissing = clientPrivateRate == null && coach.delivers_privates !== false && !coach.is_owner
 
   // Calculate group pay this term
   let groupPay = 0
@@ -120,6 +127,7 @@ export default async function CoachDetailPage({
                 email: coach.email ?? '',
                 groupRateCents: groupRate,
                 privateRateCents: privateRate,
+                clientPrivateRateCents: clientPrivateRate,
                 payPeriod: coach.pay_period ?? 'weekly',
                 deliversPrivates: coach.delivers_privates ?? true,
               }} />
@@ -138,12 +146,18 @@ export default async function CoachDetailPage({
                 <span className="capitalize">{(coach.pay_period ?? 'weekly').replace('_', ' ')}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-muted-foreground">Group rate</span>
+                <span className="text-muted-foreground">Group pay</span>
                 <span>{groupRate > 0 ? `${formatCurrency(groupRate)}/hr` : '-'}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-muted-foreground">Private rate</span>
+                <span className="text-muted-foreground">Private pay</span>
                 <span>{privateRate > 0 ? `${formatCurrency(privateRate)}/hr` : '-'}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Parent rate (private)</span>
+                <span className={parentRateMissing ? 'text-warning font-medium' : ''}>
+                  {clientPrivateRate != null ? `${formatCurrency(clientPrivateRate)}/hr` : 'Not set'}
+                </span>
               </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Delivers privates</span>
@@ -151,6 +165,11 @@ export default async function CoachDetailPage({
                   {coach.delivers_privates === false ? 'No (hidden from parents)' : 'Yes'}
                 </span>
               </div>
+              {parentRateMissing && (
+                <p className="mt-2 rounded-md border border-warning/30 bg-warning/10 px-2 py-1.5 text-xs text-warning">
+                  Parent rate is not set. Parents will not see a price for privates with this coach until you fill it in.
+                </p>
+              )}
             </div>
           </CardContent>
         </Card>

@@ -79,13 +79,20 @@ export function CreateCoachButton() {
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="text-xs font-medium text-muted-foreground">Group rate ($/hr)</label>
-              <input name="group_rate" type="number" step="0.01" placeholder="60.00" className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm" />
+              <label className="text-xs font-medium text-muted-foreground">Group pay ($/hr)</label>
+              <input name="group_rate" type="number" step="0.01" placeholder="30.00" className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm" />
+              <p className="mt-0.5 text-[11px] text-muted-foreground">What the coach earns per group hour</p>
             </div>
             <div>
-              <label className="text-xs font-medium text-muted-foreground">Private rate ($/hr)</label>
-              <input name="private_rate" type="number" step="0.01" placeholder="60.00" className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm" />
+              <label className="text-xs font-medium text-muted-foreground">Private pay ($/hr)</label>
+              <input name="private_rate" type="number" step="0.01" placeholder="40.00" className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm" />
+              <p className="mt-0.5 text-[11px] text-muted-foreground">What the coach earns per private hour</p>
             </div>
+          </div>
+          <div>
+            <label className="text-xs font-medium text-muted-foreground">Parent rate ($/hr)</label>
+            <input name="client_private_rate" type="number" step="0.01" placeholder="80.00" className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm" />
+            <p className="mt-0.5 text-[11px] text-muted-foreground">What parents pay for a private with this coach. Leave blank if unset; you can fill it later.</p>
           </div>
           <div>
             <label className="text-xs font-medium text-muted-foreground">Pay period</label>

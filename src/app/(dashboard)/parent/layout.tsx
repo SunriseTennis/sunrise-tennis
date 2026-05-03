@@ -10,8 +10,6 @@ export default async function ParentLayout({ children }: { children: React.React
   let paymentBadge: number | boolean = false
   let privatesBadge: number | boolean = false
 
-  let messagesBadge: number | boolean = false
-
   if (user) {
     const { data: role } = await supabase
       .from('user_roles')
@@ -21,7 +19,7 @@ export default async function ParentLayout({ children }: { children: React.React
       .single()
 
     if (role?.family_id) {
-      const [balanceResult, pendingBookingsResult, unreadRepliesResult] = await Promise.all([
+      const [balanceResult, pendingBookingsResult] = await Promise.all([
         // Outstanding confirmed balance (negative = owes money for completed sessions)
         supabase
           .from('family_balance')
@@ -34,13 +32,6 @@ export default async function ParentLayout({ children }: { children: React.React
           .select('id', { count: 'exact', head: true })
           .eq('family_id', role.family_id)
           .eq('status', 'pending'),
-        // Unread message replies (cast until DB types updated)
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        (supabase as any).from('messages')
-          .select('id', { count: 'exact', head: true })
-          .eq('sender_id', user.id)
-          .not('admin_reply', 'is', null)
-          .is('read_at', null),
       ])
 
       const confirmedBalance = balanceResult.data?.confirmed_balance_cents ?? 0
@@ -48,18 +39,17 @@ export default async function ParentLayout({ children }: { children: React.React
       if (pendingBookingsResult.count && pendingBookingsResult.count > 0) {
         privatesBadge = pendingBookingsResult.count
       }
-      if (unreadRepliesResult.count && unreadRepliesResult.count > 0) {
-        messagesBadge = unreadRepliesResult.count
-      }
     }
   }
 
+  // /parent/messages hidden 03-May-2026 (Plan 16) — channel going dark on the
+  // parent side until full rework. Page still renders; nav entry + per-session
+  // CTA removed. Comms move to notifications + direct text/email.
   const navItems: NavItem[] = [
     { href: '/parent', label: 'Overview', icon: 'LayoutDashboard' },
     { href: '/parent/programs', label: 'Programs', icon: 'GraduationCap' },
     { href: '/parent/bookings', label: 'Privates', icon: 'UserPlus', badge: privatesBadge },
     { href: '/parent/payments', label: 'Payments', icon: 'CreditCard', badge: paymentBadge },
-    { href: '/parent/messages', label: 'Messages', icon: 'MessageSquare', badge: messagesBadge },
     { href: '/parent/teams', label: 'Comp', icon: 'Trophy' },
     { href: '/parent/events', label: 'Events', icon: 'CalendarDays' },
     { href: '/parent/settings', label: 'Settings', icon: 'Settings' },
