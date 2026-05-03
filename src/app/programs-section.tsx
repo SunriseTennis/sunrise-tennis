@@ -257,8 +257,15 @@ export function ProgramsSection({ programs }: { programs: Program[] }) {
         <div className="text-center">
           <h2 className="text-2xl font-bold text-[#1A2332] sm:text-3xl">Our Programs</h2>
           <p className="mt-3 text-[#556270]">
-            Group coaching programs running at Somerton Park Tennis Club
+            Group coaching at Somerton Park Tennis Club
           </p>
+          <div className="mx-auto mt-4 inline-flex flex-wrap items-center justify-center gap-x-2 gap-y-1 rounded-full border border-[#E0D0BE]/60 bg-white px-4 py-1.5 text-xs font-medium text-[#556270] shadow-sm sm:text-sm">
+            <span className="font-semibold text-[#2B5EA7]">Term 2 2026</span>
+            <span className="text-[#8899A6]">·</span>
+            <span>Mon 4 May – Fri 3 Jul</span>
+            <span className="text-[#8899A6]">·</span>
+            <span>9 weeks</span>
+          </div>
         </div>
 
         {/* View toggle */}
@@ -376,7 +383,7 @@ export function ProgramsSection({ programs }: { programs: Program[] }) {
                               <div className="min-w-0 flex-1">
                                 <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                                   <p className="text-sm font-medium text-[#1A2332]">
-                                    {p.type === 'school' ? p.name : DAYS[p.day_of_week ?? 0]}{' '}
+                                    {DAYS[p.day_of_week ?? 0]}{' '}
                                     {p.start_time && formatTime(p.start_time)}
                                     {p.end_time && ` – ${formatTime(p.end_time)}`}
                                   </p>
@@ -384,7 +391,7 @@ export function ProgramsSection({ programs }: { programs: Program[] }) {
                                   {performance && !allPerformance && <PerformancePill />}
                                 </div>
                                 <p className="mt-0.5 text-xs text-[#8899A6]">
-                                  {p.type === 'squad' ? 'Squad' : p.type === 'school' ? 'Afterschool' : 'Group'}
+                                  {p.type === 'school' ? p.name : (p.type === 'squad' ? 'Squad' : 'Group')}
                                   {p.per_session_cents ? ` · ${formatPrice(p.per_session_cents)}/session` : ''}
                                   {p.level === 'orange-green' ? ' · Orange/Green bridging' : ''}
                                 </p>
@@ -453,7 +460,7 @@ export function ProgramsSection({ programs }: { programs: Program[] }) {
                         const config = LEVEL_CONFIG[displayLevel]
                         if (!config) return null
                         const label = p.type === 'school'
-                          ? 'Afterschool'
+                          ? p.name
                           : (p.level === 'orange-green' ? 'Orange/Green' : config.label)
                         const performance = isPerformanceOnly({
                           day_of_week: p.day_of_week,
@@ -468,7 +475,7 @@ export function ProgramsSection({ programs }: { programs: Program[] }) {
                             className={`block rounded-lg p-2 text-left transition-all hover:scale-[1.02] hover:shadow-sm ${config.bgLight} border ${config.border}`}
                           >
                             <div className="flex flex-wrap items-start justify-between gap-1">
-                              <p className={`text-xs font-semibold ${config.color}`}>{label}</p>
+                              <p className={`text-xs font-semibold leading-tight ${config.color}`}>{label}</p>
                               {isGirlsOnly(p.name) && <GirlsPill />}
                             </div>
                             <p className="mt-0.5 text-[10px] text-[#556270]">
@@ -525,7 +532,7 @@ export function ProgramsSection({ programs }: { programs: Program[] }) {
                           const config = LEVEL_CONFIG[displayLevel]
                           if (!config) return null
                           const label = p.type === 'school'
-                            ? 'Afterschool'
+                            ? p.name
                             : (p.level === 'orange-green' ? 'Orange/Green' : config.label)
                           const performance = isPerformanceOnly({
                             day_of_week: p.day_of_week,

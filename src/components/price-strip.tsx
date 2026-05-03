@@ -78,15 +78,20 @@ export function PriceStrip() {
 
           {/* Footer note */}
           <div className="border-t border-[#E0D0BE]/30 bg-[#FFFBF7] px-5 py-3.5 sm:px-6">
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <p className="text-xs text-[#556270]">
-                <span className="font-medium text-[#1A2332]">25% off the cheaper group, per child</span> ·
-                <span className="ml-1 font-medium text-[#1A2332]">15% early-bird</span> until Mon 4 May ·
-                <span className="ml-1 font-medium text-[#1A2332]">10%</span> until Sun 10 May
-              </p>
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+              <div className="space-y-1">
+                <p className="text-xs text-[#556270]">
+                  <span className="font-medium text-[#1A2332]">25% off the cheaper group, per child</span> ·
+                  <span className="ml-1 font-medium text-[#1A2332]">15% early-bird</span> until Tue 5 May ·
+                  <span className="ml-1 font-medium text-[#1A2332]">10%</span> until Sun 10 May
+                </p>
+                <p className="text-xs text-[#556270]">
+                  <span className="font-medium text-[#1A2332]">Sports vouchers</span> (Get Active Kids) accepted — submit in-app after signup
+                </p>
+              </div>
               <Link
                 href="/login"
-                className="inline-flex items-center text-xs font-semibold text-[#2B5EA7] hover:underline sm:text-sm"
+                className="inline-flex shrink-0 items-center text-xs font-semibold text-[#2B5EA7] hover:underline sm:text-sm"
               >
                 Sign in for your family&apos;s pricing
                 <ChevronRight className="ml-0.5 size-3.5" />
