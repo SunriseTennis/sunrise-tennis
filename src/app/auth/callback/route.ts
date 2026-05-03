@@ -50,10 +50,15 @@ export async function GET(request: Request) {
       // Plan 15 Phase F — MFA challenge gate. Magic-link login also lands
       // here, so we apply the same AAL2 check used in the password login
       // server action. Users with a verified TOTP factor get redirected
-      // to /login/mfa-challenge before reaching their dashboard.
+      // to /login/mfa-challenge before reaching their destination.
+      // Plan 15 Phase E — pass `next` through so password-reset flow with
+      // MFA enrolled still lands at /auth/update-password (not /dashboard).
       const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel()
       if (aal?.nextLevel === 'aal2' && aal.currentLevel === 'aal1') {
-        return NextResponse.redirect(`${origin}/login/mfa-challenge`)
+        const mfaUrl = next === '/dashboard'
+          ? '/login/mfa-challenge'
+          : `/login/mfa-challenge?next=${encodeURIComponent(next)}`
+        return NextResponse.redirect(`${origin}${mfaUrl}`)
       }
       return NextResponse.redirect(`${origin}${next}`)
     }

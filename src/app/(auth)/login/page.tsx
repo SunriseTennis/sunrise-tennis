@@ -14,6 +14,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 function LoginForm() {
   const searchParams = useSearchParams()
   const error = searchParams.get('error')
+  const reset = searchParams.get('reset')
   const [mode, setMode] = useState<'password' | 'magic-link'>('password')
 
   return (
@@ -21,6 +22,14 @@ function LoginForm() {
       {error && (
         <Alert variant="destructive" className="mb-4">
           <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
+
+      {reset === 'success' && (
+        <Alert className="mb-4 border-emerald-200 bg-emerald-50 text-emerald-800">
+          <AlertDescription>
+            Password updated. Sign in with your new password.
+          </AlertDescription>
         </Alert>
       )}
 
@@ -39,7 +48,15 @@ function LoginForm() {
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="password">Password</Label>
+            <div className="flex items-center justify-between">
+              <Label htmlFor="password">Password</Label>
+              <Link
+                href="/forgot-password"
+                className="text-xs font-medium text-primary hover:text-primary/80 transition-colors"
+              >
+                Forgot password?
+              </Link>
+            </div>
             <Input
               id="password"
               name="password"

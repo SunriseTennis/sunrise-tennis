@@ -116,6 +116,19 @@ export const magicLinkFormSchema = z.object({
   email: z.string().email('Valid email is required'),
 })
 
+// Plan 15 Phase E — password reset.
+export const forgotPasswordFormSchema = z.object({
+  email: z.string().email('Valid email is required'),
+})
+
+export const updatePasswordFormSchema = z.object({
+  password: z.string().min(8, 'Password must be at least 8 characters').max(200),
+  confirm_password: z.string().min(8, 'Please re-enter the same password'),
+}).refine((data) => data.password === data.confirm_password, {
+  message: "Passwords don't match",
+  path: ['confirm_password'],
+})
+
 // Admin - Families
 export const createFamilyFormSchema = z.object({
   family_name: requiredString('Family name is required'),

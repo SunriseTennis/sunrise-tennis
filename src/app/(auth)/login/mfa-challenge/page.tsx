@@ -13,6 +13,10 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 function MfaChallengeForm() {
   const searchParams = useSearchParams()
   const error = searchParams.get('error')
+  // Plan 15 Phase E — recovery flow threads `next=/auth/update-password`
+  // so MFA-enrolled users still land at the password reset form.
+  const rawNext = searchParams.get('next')
+  const next = rawNext && rawNext.startsWith('/') && !rawNext.startsWith('//') ? rawNext : null
 
   return (
     <>
@@ -23,6 +27,7 @@ function MfaChallengeForm() {
       )}
 
       <form action={verifyMfaChallenge} className="space-y-4">
+        {next && <input type="hidden" name="next" value={next} />}
         <div className="space-y-2">
           <Label htmlFor="code">6-digit code</Label>
           <Input
