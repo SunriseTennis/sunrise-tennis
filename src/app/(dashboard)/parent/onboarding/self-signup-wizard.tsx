@@ -54,8 +54,10 @@ interface SelfSignupWizardProps {
 
 // ── Ball-level reference ────────────────────────────────────────────────
 
+// Sentinel `unsure` lets the parent pick "I'm not sure" without HTML5 `required`
+// rejecting an empty option value. Normalised to null in `addOnboardingPlayer`.
 const BALL_LEVELS: { value: string; label: string; hint: string }[] = [
-  { value: '', label: "I'm not sure", hint: 'Maxim will assess and confirm.' },
+  { value: 'unsure', label: "I'm not sure", hint: 'Maxim will assess and confirm.' },
   { value: 'blue', label: 'Blue', hint: 'Tots, ages 3-5.' },
   { value: 'red', label: 'Red', hint: 'Beginners, ages 5-8.' },
   { value: 'orange', label: 'Orange', hint: 'Ages 8-10, transitioning to a bigger court.' },
@@ -538,7 +540,7 @@ function StepTermsAndConsent({
       <div className="rounded-xl border border-border bg-card p-4 shadow-card">
         <p className="text-sm font-semibold text-foreground">Media consent (per player)</p>
         <p className="mt-1.5 text-xs text-muted-foreground">
-          We may take photos and short videos during sessions for technique analysis and (with consent) to share progress moments. Toggle off if you&apos;d rather we didn&apos;t. Change any time in Settings.
+          We take photos and short videos during sessions for technique analysis and to share moments with your family. With your consent, we may also post selected highlights — including ones where your child is recognisable — to Sunrise Tennis Instagram and Facebook. Toggle off below to keep all media private to your family. Change any time in Settings.
         </p>
         <ul className="mt-3 space-y-2">
           {players.map((p) => (
@@ -552,7 +554,7 @@ function StepTermsAndConsent({
                 />
                 <span className="text-xs text-foreground">
                   <span className="font-medium">{p.first_name} {p.last_name}</span>
-                  <span className="block text-muted-foreground">I consent to photos/videos for coaching purposes.</span>
+                  <span className="block text-muted-foreground">I consent to photos &amp; videos being used for coaching, family sharing, and on Sunrise Tennis Instagram &amp; Facebook.</span>
                 </span>
               </label>
             </li>

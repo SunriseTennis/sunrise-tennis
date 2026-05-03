@@ -149,15 +149,13 @@ export function ParentAddPlayerForm() {
           <div className="text-sm">
             <p className="font-medium text-foreground">Media consent</p>
             <p className="mt-1 text-xs text-muted-foreground">
-              We may take photos and short videos during coaching sessions for technique
-              analysis and (with your consent) to share progress moments. Media is never
-              published without active consent. You can change this any time in Settings.
+              We take photos and short videos during sessions for technique analysis and to share moments with your family. With your consent, we may also post selected highlights — including ones where your child is recognisable — to Sunrise Tennis Instagram and Facebook. Leave the box below unticked to keep all media private to your family. Change any time in Settings.
             </p>
           </div>
           <div className="flex items-start gap-2">
             <input id="media_consent" name="media_consent" type="checkbox" className="mt-1 size-4 rounded border-border" />
             <Label htmlFor="media_consent" className="text-sm font-normal text-foreground">
-              I consent to photos and videos of my child being captured for coaching purposes.
+              I consent to photos &amp; videos of my child being used for coaching, family sharing, and on Sunrise Tennis Instagram &amp; Facebook.
             </Label>
           </div>
           <div className="flex items-start gap-2">

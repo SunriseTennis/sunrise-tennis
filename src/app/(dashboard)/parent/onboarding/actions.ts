@@ -214,6 +214,10 @@ export async function addOnboardingPlayer(formData: FormData) {
     redirect('/parent/onboarding?step=2&error=Too+many+requests.+Please+wait.')
   }
 
+  // Wizard sentinel for "I'm not sure" — keeps the HTML5 `required` select
+  // happy without polluting the shared ballColorSchema enum.
+  if (formData.get('ball_color') === 'unsure') formData.set('ball_color', '')
+
   const parsed = validateFormData(formData, wizardAddPlayerSchema)
   if (!parsed.success) {
     redirect(`/parent/onboarding?step=2&error=${encodeURIComponent(parsed.error)}`)
