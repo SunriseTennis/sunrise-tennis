@@ -13,6 +13,9 @@ interface Player {
 interface Coach {
   id: string
   name: string
+  /** When true, this coach is hidden from the player by default; only an
+   *  explicit allow row makes them bookable. */
+  private_opt_in_required: boolean
 }
 
 interface AllowedEntry {
@@ -65,6 +68,8 @@ function PlayerCoachRow({
 }) {
   const allowedIds = new Set(allowed.map(a => a.coach_id))
   const autoApproveIds = new Set(allowed.filter(a => a.auto_approve).map(a => a.coach_id))
+  const optInOnlyCoaches = coaches.filter(c => c.private_opt_in_required)
+  const excludedOptInCoaches = optInOnlyCoaches.filter(c => !allowedIds.has(c.id))
 
   return (
     <form action={setPlayerAllowedCoaches} className="rounded-lg border border-border p-3">
@@ -75,35 +80,52 @@ function PlayerCoachRow({
       </p>
 
       <div className="mt-2 space-y-1.5">
-        {coaches.map((coach) => (
-          <div key={coach.id} className="flex items-center gap-3">
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                name="coach_ids"
-                value={coach.id}
-                defaultChecked={allowedIds.size === 0 || allowedIds.has(coach.id)}
-                className="size-3.5 rounded border-border"
-              />
-              {coach.name}
-            </label>
-            <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <input
-                type="checkbox"
-                name="auto_approve"
-                value={coach.id}
-                defaultChecked={autoApproveIds.has(coach.id)}
-                className="size-3 rounded border-border"
-              />
-              Auto-approve
-            </label>
-          </div>
-        ))}
+        {coaches.map((coach) => {
+          // Opt-in-required coaches: only checked when an explicit allow row exists.
+          // Other coaches: existing semantic where empty allowlist = open access (all checked).
+          const checked = coach.private_opt_in_required
+            ? allowedIds.has(coach.id)
+            : (allowedIds.size === 0 || allowedIds.has(coach.id))
+          return (
+            <div key={coach.id} className="flex items-center gap-3">
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  name="coach_ids"
+                  value={coach.id}
+                  defaultChecked={checked}
+                  className="size-3.5 rounded border-border"
+                />
+                {coach.name}
+                {coach.private_opt_in_required && (
+                  <span
+                    className="ml-1 rounded-full bg-warning/15 px-1.5 py-0.5 text-[10px] font-medium text-warning"
+                    title="Opt-in only — hidden from this player unless explicitly allowed."
+                  >
+                    Opt-in
+                  </span>
+                )}
+              </label>
+              <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <input
+                  type="checkbox"
+                  name="auto_approve"
+                  value={coach.id}
+                  defaultChecked={autoApproveIds.has(coach.id)}
+                  className="size-3 rounded border-border"
+                />
+                Auto-approve
+              </label>
+            </div>
+          )
+        })}
       </div>
 
       <p className="mt-2 text-xs text-muted-foreground">
         {allowedIds.size === 0
-          ? 'No restrictions — can book with any coach'
+          ? excludedOptInCoaches.length > 0
+            ? `Open access — except: ${excludedOptInCoaches.map(c => c.name).join(', ')}`
+            : 'No restrictions — can book with any coach'
           : `Restricted to ${allowedIds.size} coach${allowedIds.size > 1 ? 'es' : ''}`}
       </p>
 

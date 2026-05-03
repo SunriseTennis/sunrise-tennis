@@ -24,7 +24,7 @@ export default async function FamilyDetailPage({ params }: { params: Promise<{ i
     supabase.from('family_balance').select('balance_cents, confirmed_balance_cents, projected_balance_cents').eq('family_id', id).single(),
     supabase.from('family_pricing').select('id, program_id, program_type, coach_id, per_session_cents, term_fee_cents, notes, valid_from, valid_until').eq('family_id', id).order('created_at', { ascending: false }),
     supabase.from('programs').select('id, name, type').eq('status', 'active').order('name'),
-    supabase.from('coaches').select('id, name').eq('status', 'active').order('name'),
+    supabase.from('coaches').select('id, name, private_opt_in_required, delivers_privates').eq('status', 'active').order('name'),
     supabase.from('player_allowed_coaches').select('player_id, coach_id, auto_approve'),
     supabase.from('charges').select('id, description, amount_cents, status, type, created_at').eq('family_id', id).in('status', ['pending', 'confirmed']).gt('amount_cents', 0).order('created_at', { ascending: false }).limit(50),
   ])
@@ -222,7 +222,11 @@ export default async function FamilyDetailPage({ params }: { params: Promise<{ i
         {players && players.length > 0 && (
           <PlayerCoachesForm
             players={(players ?? []).filter(p => p.status === 'active').map(p => ({ id: p.id, first_name: p.first_name, last_name: p.last_name }))}
-            coaches={(coaches ?? []).map(c => ({ id: c.id, name: c.name }))}
+            coaches={(coaches ?? []).map(c => ({
+              id: c.id,
+              name: c.name,
+              private_opt_in_required: c.private_opt_in_required ?? false,
+            }))}
             allowedCoaches={(allowedCoaches ?? []).map(a => ({ player_id: a.player_id, coach_id: a.coach_id, auto_approve: a.auto_approve ?? false }))}
           />
         )}
