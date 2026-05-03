@@ -1,7 +1,8 @@
 import { redirect } from 'next/navigation'
 import { createClient, getSessionUser } from '@/lib/supabase/server'
 import { OnboardingWizard } from './onboarding-wizard'
-import { SelfSignupWizard, SELF_SIGNUP_TOTAL_STEPS } from './self-signup-wizard'
+import { SelfSignupWizard } from './self-signup-wizard'
+import { SELF_SIGNUP_TOTAL_STEPS } from './constants'
 
 export default async function ParentOnboardingPage({
   searchParams,

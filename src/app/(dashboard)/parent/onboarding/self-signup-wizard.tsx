@@ -28,8 +28,7 @@ import {
   removeOnboardingPlayer,
   updateOnboardingContact,
 } from './actions'
-
-export const SELF_SIGNUP_TOTAL_STEPS = 6
+import { SELF_SIGNUP_TOTAL_STEPS } from './constants'
 
 // ── Types ────────────────────────────────────────────────────────────────
 
