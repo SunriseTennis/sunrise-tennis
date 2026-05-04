@@ -4,6 +4,7 @@ import { EmptyState } from '@/components/empty-state'
 import { Button } from '@/components/ui/button'
 import { Users, Plus } from 'lucide-react'
 import { FamiliesTable } from './families-table'
+import { InviteParentModal } from './invite-parent-modal'
 
 export default async function FamiliesPage() {
   const supabase = await createClient()
@@ -42,12 +43,17 @@ export default async function FamiliesPage() {
             <h1 className="text-2xl font-bold">Families</h1>
             <p className="mt-0.5 text-sm text-white/70">{rows.length} {rows.length === 1 ? 'family' : 'families'} registered</p>
           </div>
-          <Button asChild className="bg-white/20 text-white border-white/30 hover:bg-white/30 backdrop-blur-sm">
-            <Link href="/admin/families/new">
-              <Plus className="size-4" />
-              Add family
-            </Link>
-          </Button>
+          <div className="flex items-center gap-2">
+            <InviteParentModal
+              families={rows.map(r => ({ id: r.id, display_id: r.displayId, family_name: r.familyName }))}
+            />
+            <Button asChild className="bg-white/20 text-white border-white/30 hover:bg-white/30 backdrop-blur-sm">
+              <Link href="/admin/families/new">
+                <Plus className="size-4" />
+                Add family
+              </Link>
+            </Button>
+          </div>
         </div>
       </div>
 

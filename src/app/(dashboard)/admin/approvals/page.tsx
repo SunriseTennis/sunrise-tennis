@@ -1,7 +1,8 @@
 import Link from 'next/link'
-import { ChevronRight, UserPlus, Inbox } from 'lucide-react'
+import { ChevronRight, Inbox } from 'lucide-react'
 import { createClient, requireAdmin } from '@/lib/supabase/server'
 import { Card, CardContent } from '@/components/ui/card'
+import { InviteParentModal } from '../families/invite-parent-modal'
 
 interface PageProps {
   searchParams: Promise<{ success?: string; error?: string }>
@@ -14,10 +15,17 @@ export default async function AdminApprovalsPage({ searchParams }: PageProps) {
   const { success, error } = await searchParams
   const supabase = await createClient()
 
-  const { data: queue } = await supabase
-    .from('family_approval_queue')
-    .select('id, family_name, primary_contact, created_at, approval_status, signup_source, approval_note, player_count')
-    .order('created_at', { ascending: false })
+  const [{ data: queue }, { data: familiesForInvite }] = await Promise.all([
+    supabase
+      .from('family_approval_queue')
+      .select('id, family_name, primary_contact, created_at, approval_status, signup_source, approval_note, player_count')
+      .order('created_at', { ascending: false }),
+    supabase
+      .from('families')
+      .select('id, display_id, family_name')
+      .eq('status', 'active')
+      .order('display_id'),
+  ])
 
   const nowMs = new Date().getTime()
   const rows = queue ?? []
@@ -53,13 +61,16 @@ export default async function AdminApprovalsPage({ searchParams }: PageProps) {
               No pending signups. New self-signups appear here automatically.
               Unconfirmed-email signups (typo addresses, abandoned attempts) are not shown.
             </p>
-            <Link
-              href="/admin/families"
-              className="mt-2 inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:text-primary/80"
-            >
-              <UserPlus className="size-4" />
-              Or invite a parent to an existing family
-            </Link>
+            <div className="mt-3">
+              <InviteParentModal
+                families={(familiesForInvite ?? []).map(f => ({
+                  id: f.id,
+                  display_id: f.display_id,
+                  family_name: f.family_name,
+                }))}
+                variant="cta"
+              />
+            </div>
           </CardContent>
         </Card>
       ) : (
