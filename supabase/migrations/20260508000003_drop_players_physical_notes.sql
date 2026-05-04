@@ -5,13 +5,35 @@
 -- by-the-court conversation. Pre-flight (04-May-2026) confirmed zero
 -- rows had non-null physical_notes — safe drop, no data lost.
 --
--- The get_player_medical_notes RPC currently returns physical_notes in
--- its TABLE signature (migration 20260319000006). Postgres won't let us
--- ALTER the return signature in-place, so DROP + recreate without it.
+-- Two dependents need to drop first (otherwise PostgreSQL refuses):
+-- 1. The encrypt_medical_on_write trigger (BEFORE INSERT/UPDATE OF
+--    medical_notes, physical_notes) — recreated below scoped to
+--    medical_notes only.
+-- 2. The get_player_medical_notes RPC — recreated returning only
+--    medical_notes (its TABLE signature can't be ALTERed in-place).
 
+DROP TRIGGER IF EXISTS encrypt_medical_on_write ON players;
 DROP FUNCTION IF EXISTS get_player_medical_notes(uuid);
 
 ALTER TABLE players DROP COLUMN IF EXISTS physical_notes;
+
+-- Recreate the encrypt-on-write trigger function without the
+-- physical_notes branch.
+CREATE OR REPLACE FUNCTION encrypt_player_medical_trigger()
+RETURNS TRIGGER AS $$
+BEGIN
+  IF NEW.medical_notes IS NOT NULL AND NEW.medical_notes != '' THEN
+    IF NEW.medical_notes NOT LIKE 'ww0E%' AND NEW.medical_notes NOT LIKE 'ww4E%' THEN
+      NEW.medical_notes := encrypt_medical(NEW.medical_notes);
+    END IF;
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+CREATE TRIGGER encrypt_medical_on_write
+  BEFORE INSERT OR UPDATE OF medical_notes ON players
+  FOR EACH ROW EXECUTE FUNCTION encrypt_player_medical_trigger();
 
 CREATE OR REPLACE FUNCTION get_player_medical_notes(p_player_id uuid)
 RETURNS TABLE(medical_notes text) AS $$
