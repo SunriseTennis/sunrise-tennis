@@ -28,11 +28,11 @@ interface FamilyRow {
   playerNames: string[]
 }
 
-type SortKey = 'familyName' | 'contactName' | 'status' | 'currentBalance' | 'upcomingBalance'
+type SortKey = 'displayId' | 'familyName' | 'contactName' | 'status' | 'currentBalance' | 'upcomingBalance'
 
 export function FamiliesTable({ families }: { families: FamilyRow[] }) {
   const [search, setSearch] = useState('')
-  const [sortKey, setSortKey] = useState<SortKey>('familyName')
+  const [sortKey, setSortKey] = useState<SortKey>('displayId')
   const [sortAsc, setSortAsc] = useState(true)
 
   function toggleSort(key: SortKey) {
@@ -60,6 +60,8 @@ export function FamiliesTable({ families }: { families: FamilyRow[] }) {
     const dir = sortAsc ? 1 : -1
     return [...filtered].sort((a, b) => {
       switch (sortKey) {
+        case 'displayId':
+          return dir * a.displayId.localeCompare(b.displayId)
         case 'familyName':
           return dir * a.familyName.localeCompare(b.familyName)
         case 'contactName':
@@ -147,7 +149,7 @@ export function FamiliesTable({ families }: { families: FamilyRow[] }) {
         <Table>
           <TableHeader>
             <TableRow className="bg-muted/50 hover:bg-muted/50">
-              <TableHead>ID</TableHead>
+              <TableHead><SortHeader label="ID" sortId="displayId" /></TableHead>
               <TableHead><SortHeader label="Family Name" sortId="familyName" /></TableHead>
               <TableHead><SortHeader label="Primary Contact" sortId="contactName" /></TableHead>
               <TableHead>Mobile</TableHead>
