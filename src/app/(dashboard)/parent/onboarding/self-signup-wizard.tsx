@@ -49,7 +49,7 @@ interface SelfSignupWizardProps {
   initialStep: number
   error: string | null
   userEmail: string
-  primaryContact: { name?: string; phone?: string; email?: string }
+  primaryContact: { name?: string; first_name?: string; last_name?: string; phone?: string; email?: string }
   address: string | null
   players: Player[]
   termsAcknowledgedAt: string | null
@@ -136,11 +136,20 @@ function StepContact({
   userEmail,
   error,
 }: {
-  contact: { name?: string; phone?: string; email?: string }
+  contact: { name?: string; first_name?: string; last_name?: string; phone?: string; email?: string }
   address: string | null
   userEmail: string
   error: string | null
 }) {
+  // Plan 17 follow-up — split stored full name into first + last for the
+  // edit fields. New self-signups arrive with first_name/last_name already
+  // populated from the signup form via dashboard handoff.
+  const fullName = contact.name ?? ''
+  const spaceIdx = fullName.indexOf(' ')
+  const fallbackFirst = spaceIdx >= 0 ? fullName.slice(0, spaceIdx) : fullName
+  const fallbackLast = spaceIdx >= 0 ? fullName.slice(spaceIdx + 1).trim() : ''
+  const initialFirst = contact.first_name ?? fallbackFirst
+  const initialLast = contact.last_name ?? fallbackLast
   const [pending, startTransition] = useTransition()
 
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
@@ -163,19 +172,35 @@ function StepContact({
       <ErrorBanner message={error} />
 
       <div className="space-y-4">
-        <div>
-          <Label htmlFor="contact_name">Your full name</Label>
-          <Input
-            id="contact_name"
-            name="contact_name"
-            type="text"
-            required
-            defaultValue={contact.name ?? ''}
-            placeholder="Your full name"
-            className="mt-1.5"
-            autoComplete="name"
-          />
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <Label htmlFor="contact_first_name">First name</Label>
+            <Input
+              id="contact_first_name"
+              name="contact_first_name"
+              type="text"
+              required
+              defaultValue={initialFirst}
+              className="mt-1.5"
+              autoComplete="given-name"
+            />
+          </div>
+          <div>
+            <Label htmlFor="contact_last_name">Last name</Label>
+            <Input
+              id="contact_last_name"
+              name="contact_last_name"
+              type="text"
+              required
+              defaultValue={initialLast}
+              className="mt-1.5"
+              autoComplete="family-name"
+            />
+          </div>
         </div>
+        <p className="-mt-2 text-xs text-muted-foreground">
+          Your last name is used as your family name across the platform.
+        </p>
         <div>
           <Label htmlFor="contact_phone">Mobile number</Label>
           <Input
@@ -334,7 +359,7 @@ function StepAddPlayer({
         onClick={() => setShowOptional((v) => !v)}
         className="flex w-full items-center justify-between rounded-lg border border-dashed border-border bg-muted/30 px-3.5 py-2.5 text-xs font-medium text-foreground transition-colors hover:bg-muted/50"
       >
-        <span>{showOptional ? 'Hide' : 'Add'} optional details (preferred name, classifications, medical notes)</span>
+        <span>{showOptional ? 'Hide' : 'Add'} optional details (preferred name, school, classifications, medical notes)</span>
         <span className="text-muted-foreground">{showOptional ? '–' : '+'}</span>
       </button>
 
@@ -343,6 +368,14 @@ function StepAddPlayer({
           <div>
             <Label htmlFor="preferred_name">Preferred name</Label>
             <Input id="preferred_name" name="preferred_name" placeholder="e.g. Em (instead of Emma)" className="mt-1.5" />
+          </div>
+
+          <div>
+            <Label htmlFor="school">School</Label>
+            <Input id="school" name="school" placeholder="e.g. McAuley Community School" className="mt-1.5" />
+            <p className="mt-1 text-xs text-muted-foreground">
+              Helps us match school programs and stay coordinated.
+            </p>
           </div>
 
           <div>

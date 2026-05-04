@@ -1737,6 +1737,7 @@ export type Database = {
           medical_notes: string | null
           physical_notes: string | null
           preferred_name: string | null
+          school: string | null
           short_term_goal: string | null
           status: string
           track: string | null
@@ -1764,6 +1765,7 @@ export type Database = {
           medical_notes?: string | null
           physical_notes?: string | null
           preferred_name?: string | null
+          school?: string | null
           short_term_goal?: string | null
           status?: string
           track?: string | null
@@ -1791,6 +1793,7 @@ export type Database = {
           medical_notes?: string | null
           physical_notes?: string | null
           preferred_name?: string | null
+          school?: string | null
           short_term_goal?: string | null
           status?: string
           track?: string | null

@@ -46,16 +46,34 @@ export async function updateContactInfo(formData: FormData) {
     redirect(`/parent/settings?error=${encodeURIComponent(parsed.error)}`)
   }
 
-  const { contact_name: contactName, contact_phone: contactPhone, contact_email: contactEmail, address, secondary_name: secondaryName, secondary_phone: secondaryPhone, secondary_email: secondaryEmail } = parsed.data
+  const {
+    contact_first_name: contactFirstName,
+    contact_last_name: contactLastName,
+    contact_phone: contactPhone,
+    contact_email: contactEmail,
+    address,
+    secondary_first_name: secondaryFirstName,
+    secondary_last_name: secondaryLastName,
+    secondary_phone: secondaryPhone,
+    secondary_email: secondaryEmail,
+  } = parsed.data
 
+  // Plan 17 follow-up — surname is the family name; full "First Last"
+  // is the primary_contact display name. Both are kept in sync here.
+  const fullName = `${contactFirstName} ${contactLastName}`.trim()
   const primaryContact = {
-    name: contactName,
+    name: fullName,
+    first_name: contactFirstName,
+    last_name: contactLastName,
     phone: contactPhone || undefined,
     email: contactEmail || undefined,
   }
 
-  const secondaryContact = secondaryName ? {
-    name: secondaryName,
+  const secondaryFull = `${secondaryFirstName ?? ''} ${secondaryLastName ?? ''}`.trim()
+  const secondaryContact = secondaryFull ? {
+    name: secondaryFull,
+    first_name: secondaryFirstName || undefined,
+    last_name: secondaryLastName || undefined,
     phone: secondaryPhone || undefined,
     email: secondaryEmail || undefined,
   } : null
@@ -65,6 +83,7 @@ export async function updateContactInfo(formData: FormData) {
     .update({
       primary_contact: primaryContact,
       secondary_contact: secondaryContact,
+      family_name: contactLastName,
       address: address || null,
     })
     .eq('id', familyId)
@@ -136,7 +155,7 @@ export async function updatePlayerDetails(playerId: string, formData: FormData) 
     redirect(`/parent/players/${playerId}?error=${encodeURIComponent(parsed.error)}`)
   }
 
-  const { first_name: firstName, last_name: lastName, dob, gender, medical_notes: medicalNotes } = parsed.data
+  const { first_name: firstName, last_name: lastName, dob, gender, medical_notes: medicalNotes, school } = parsed.data
 
   // Plan 17 Block A — three granular consent toggles.
   const coaching = formData.get('media_consent_coaching') === 'on'
@@ -151,6 +170,7 @@ export async function updatePlayerDetails(playerId: string, formData: FormData) 
       dob: dob || null,
       gender: gender || null,
       medical_notes: medicalNotes || null,
+      school: school || null,
       media_consent_coaching: coaching,
       media_consent_family: familyConsent,
       media_consent_social: social,
@@ -233,6 +253,7 @@ export async function createPlayerFromParent(formData: FormData) {
     track,
     medical_notes: medicalNotes,
     physical_notes: physicalNotes,
+    school,
   } = parsed.data
 
   // Plan 17 Block A — three granular consent toggles parsed from FormData.
@@ -260,6 +281,7 @@ export async function createPlayerFromParent(formData: FormData) {
       track: track || 'participation',
       medical_notes: medicalNotes || null,
       physical_notes: physicalNotes || null,
+      school: school || null,
       media_consent_coaching: coaching,
       media_consent_family: familyConsent,
       media_consent_social: social,

@@ -28,17 +28,20 @@ function NewFamilyForm() {
           <CardContent className="pt-6">
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="sm:col-span-2">
-                <Label htmlFor="family_name">Family name *</Label>
-                <Input id="family_name" name="family_name" type="text" required className="mt-1" />
-              </div>
-
-              <div className="sm:col-span-2">
                 <h3 className="text-sm font-semibold text-foreground">Primary Contact</h3>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Family name is auto-derived from the primary contact&apos;s last name.
+                </p>
               </div>
 
               <div>
-                <Label htmlFor="contact_name">Contact name *</Label>
-                <Input id="contact_name" name="contact_name" type="text" required className="mt-1" />
+                <Label htmlFor="contact_first_name">First name *</Label>
+                <Input id="contact_first_name" name="contact_first_name" type="text" required autoComplete="given-name" className="mt-1" />
+              </div>
+
+              <div>
+                <Label htmlFor="contact_last_name">Last name *</Label>
+                <Input id="contact_last_name" name="contact_last_name" type="text" required autoComplete="family-name" className="mt-1" />
               </div>
 
               <div>
@@ -51,7 +54,7 @@ function NewFamilyForm() {
                 <Input id="contact_email" name="contact_email" type="email" className="mt-1" />
               </div>
 
-              <div>
+              <div className="sm:col-span-2">
                 <Label htmlFor="address">Address</Label>
                 <Input id="address" name="address" type="text" className="mt-1" />
               </div>

@@ -134,9 +134,12 @@ export const updatePasswordFormSchema = z.object({
 })
 
 // Admin - Families
+// Plan 17 follow-up — primary + secondary contact split into first + last
+// across all family edit surfaces. `family_name` is no longer entered
+// directly: it's auto-derived from the primary contact's surname server-side.
 export const createFamilyFormSchema = z.object({
-  family_name: requiredString('Family name is required'),
-  contact_name: requiredString('Contact name is required'),
+  contact_first_name: requiredString('First name is required'),
+  contact_last_name: requiredString('Last name is required'),
   contact_phone: optionalString(),
   contact_email: z.string().email().optional().or(z.literal('')),
   address: optionalString(1000),
@@ -144,14 +147,15 @@ export const createFamilyFormSchema = z.object({
 })
 
 export const updateFamilyFormSchema = z.object({
-  family_name: requiredString('Family name is required'),
-  contact_name: requiredString('Contact name is required'),
+  contact_first_name: requiredString('First name is required'),
+  contact_last_name: requiredString('Last name is required'),
   contact_phone: optionalString(),
   contact_email: z.string().email().optional().or(z.literal('')),
   address: optionalString(1000),
   status: familyStatusSchema,
   notes: optionalString(5000),
-  secondary_name: optionalString(),
+  secondary_first_name: optionalString(),
+  secondary_last_name: optionalString(),
   secondary_role: optionalString(),
   secondary_phone: optionalString(),
   secondary_email: z.string().email().optional().or(z.literal('')),
@@ -193,6 +197,7 @@ export const updatePlayerFormSchema = z.object({
   short_term_goal: optionalString(1000),
   long_term_goal: optionalString(1000),
   comp_interest: z.enum(['yes', 'no', 'future']).optional().or(z.literal('')),
+  school: optionalString(200),
 })
 
 // Admin - Programs
@@ -298,12 +303,16 @@ export const lessonNoteFormSchema = z.object({
 })
 
 // Parent
+// Plan 17 follow-up — primary + secondary contact split into first + last.
+// Surname becomes families.family_name; `contact_name` field is gone.
 export const updateContactFormSchema = z.object({
-  contact_name: requiredString('Contact name is required'),
+  contact_first_name: requiredString('First name is required'),
+  contact_last_name: requiredString('Last name is required'),
   contact_phone: optionalString(),
   contact_email: z.string().email().optional().or(z.literal('')),
   address: optionalString(1000),
-  secondary_name: optionalString(),
+  secondary_first_name: optionalString(),
+  secondary_last_name: optionalString(),
   secondary_phone: optionalString(),
   secondary_email: z.string().email().optional().or(z.literal('')),
 })
@@ -314,6 +323,7 @@ export const updatePlayerDetailsFormSchema = z.object({
   dob: optionalString(),
   gender: genderSchema.optional().or(z.literal('')),
   medical_notes: optionalString(5000),
+  school: optionalString(200),
   // Plan 17 Block A: media_consent_{coaching,family,social} parsed
   // directly from FormData in the action.
 })
@@ -333,6 +343,7 @@ export const parentCreatePlayerFormSchema = z.object({
   track: trackSchema.optional().or(z.literal('')),
   medical_notes: optionalString(5000),
   physical_notes: optionalString(5000),
+  school: optionalString(200),
 })
 
 // Plan 15 Phase D — wizard add-player intake (self-signup flow). Trims the
@@ -349,12 +360,15 @@ export const wizardAddPlayerSchema = z.object({
   classifications: optionalString(500),
   medical_notes: optionalString(5000),
   physical_notes: optionalString(5000),
+  school: optionalString(200),
 })
 
 // Plan 15 Phase D — onboarding contact details for self-signup wizard step 1.
 // Adds address vs the existing admin-invite contact step which doesn't ask.
+// Plan 17 follow-up — split into first + last; surname → family_name.
 export const wizardContactSchema = z.object({
-  contact_name: z.string().trim().min(1, 'Full name is required').max(500),
+  contact_first_name: requiredString('First name is required'),
+  contact_last_name: requiredString('Last name is required'),
   contact_phone: z.string().trim().max(50).optional().or(z.literal('')),
   address: optionalString(1000),
 })

@@ -44,8 +44,13 @@ async function getOnboardingAuth(): Promise<{ userId: string; familyId: string; 
 
 // ── Validation schemas (legacy admin-invite path) ───────────────────────
 
+// Plan 17 follow-up — admin-invite contact step also splits to first + last
+// so the wizard UI is consistent across both paths. Surname doesn't change
+// family_name in admin-invite path (admin already named the family); we
+// just store the split for downstream consumers.
 const adminInviteContactSchema = z.object({
-  contact_name: z.string().trim().min(1, 'Full name is required').max(500),
+  contact_first_name: z.string().trim().min(1, 'First name is required').max(250),
+  contact_last_name: z.string().trim().min(1, 'Last name is required').max(250),
   contact_phone: z.string().trim().max(50).optional().or(z.literal('')),
 })
 
@@ -75,7 +80,8 @@ export async function updateOnboardingContact(formData: FormData) {
       redirect(`/parent/onboarding?step=1&error=${encodeURIComponent(parsed.error)}`)
     }
 
-    const { contact_name, contact_phone, address } = parsed.data
+    const { contact_first_name, contact_last_name, contact_phone, address } = parsed.data
+    const fullName = `${contact_first_name} ${contact_last_name}`.trim()
 
     const { data: family } = await supabase
       .from('families')
@@ -86,7 +92,9 @@ export async function updateOnboardingContact(formData: FormData) {
 
     const primaryContact = {
       ...existing,
-      name: contact_name,
+      name: fullName,
+      first_name: contact_first_name,
+      last_name: contact_last_name,
       phone: contact_phone || existing.phone || undefined,
     }
 
@@ -94,7 +102,7 @@ export async function updateOnboardingContact(formData: FormData) {
       .from('families')
       .update({
         primary_contact: primaryContact,
-        family_name: contact_name,
+        family_name: contact_last_name,
         ...(address ? { address } : {}),
       })
       .eq('id', familyId)
@@ -109,7 +117,8 @@ export async function updateOnboardingContact(formData: FormData) {
       redirect(`/parent/onboarding?step=1&error=${encodeURIComponent(parsed.error)}`)
     }
 
-    const { contact_name, contact_phone } = parsed.data
+    const { contact_first_name, contact_last_name, contact_phone } = parsed.data
+    const fullName = `${contact_first_name} ${contact_last_name}`.trim()
 
     const { data: family } = await supabase
       .from('families')
@@ -120,10 +129,14 @@ export async function updateOnboardingContact(formData: FormData) {
 
     const primaryContact = {
       ...existing,
-      name: contact_name,
+      name: fullName,
+      first_name: contact_first_name,
+      last_name: contact_last_name,
       phone: contact_phone || existing.phone || undefined,
     }
 
+    // Admin-invite path: don't overwrite the admin-set family_name
+    // (admin already chose it when creating the invitation).
     const { error } = await supabase
       .from('families')
       .update({ primary_contact: primaryContact })
@@ -233,6 +246,7 @@ export async function addOnboardingPlayer(formData: FormData) {
     classifications,
     medical_notes,
     physical_notes,
+    school,
   } = parsed.data
 
   const VALID_CLASSES = new Set(['blue', 'red', 'orange', 'green', 'yellow', 'advanced', 'elite'])
@@ -257,6 +271,7 @@ export async function addOnboardingPlayer(formData: FormData) {
       track: 'participation',
       medical_notes: medical_notes || null,
       physical_notes: physical_notes || null,
+      school: school || null,
       media_consent_coaching: false,
       media_consent_family: false,
       media_consent_social: false,

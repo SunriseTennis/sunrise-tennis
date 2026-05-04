@@ -54,10 +54,22 @@ export async function createFamily(formData: FormData) {
   }
   const displayId = `C${String(nextNum).padStart(3, '0')}`
 
-  const { family_name: familyName, contact_name: contactName, contact_phone: contactPhone, contact_email: contactEmail, address, referred_by: referredBy } = parsed.data
+  // Plan 17 follow-up — primary contact is split into first + last; surname
+  // becomes families.family_name (no separate input on the create form).
+  const {
+    contact_first_name: contactFirstName,
+    contact_last_name: contactLastName,
+    contact_phone: contactPhone,
+    contact_email: contactEmail,
+    address,
+    referred_by: referredBy,
+  } = parsed.data
 
+  const fullName = `${contactFirstName} ${contactLastName}`.trim()
   const primaryContact = {
-    name: contactName,
+    name: fullName,
+    first_name: contactFirstName,
+    last_name: contactLastName,
     phone: contactPhone || undefined,
     email: contactEmail || undefined,
   }
@@ -66,7 +78,7 @@ export async function createFamily(formData: FormData) {
     .from('families')
     .insert({
       display_id: displayId,
-      family_name: familyName,
+      family_name: contactLastName,
       primary_contact: primaryContact,
       address: address || null,
       referred_by: referredBy || null,
@@ -110,17 +122,39 @@ export async function updateFamily(id: string, formData: FormData) {
     redirect(`/admin/families/${id}?error=${encodeURIComponent(parsed.error)}`)
   }
 
-  const { family_name: familyName, contact_name: contactName, contact_phone: contactPhone, contact_email: contactEmail, address, status, notes, secondary_name: secondaryName, secondary_role: secondaryRole, secondary_phone: secondaryPhone, secondary_email: secondaryEmail } = parsed.data
+  // Plan 17 follow-up — primary + secondary contact split into first + last.
+  // Primary surname becomes families.family_name; the standalone family_name
+  // input is gone from the admin edit form.
+  const {
+    contact_first_name: contactFirstName,
+    contact_last_name: contactLastName,
+    contact_phone: contactPhone,
+    contact_email: contactEmail,
+    address,
+    status,
+    notes,
+    secondary_first_name: secondaryFirstName,
+    secondary_last_name: secondaryLastName,
+    secondary_role: secondaryRole,
+    secondary_phone: secondaryPhone,
+    secondary_email: secondaryEmail,
+  } = parsed.data
 
+  const fullName = `${contactFirstName} ${contactLastName}`.trim()
   const primaryContact = {
-    name: contactName,
+    name: fullName,
+    first_name: contactFirstName,
+    last_name: contactLastName,
     phone: contactPhone || undefined,
     email: contactEmail || undefined,
   }
 
-  const secondaryContact = (secondaryName || secondaryPhone || secondaryEmail)
+  const secondaryFull = `${secondaryFirstName ?? ''} ${secondaryLastName ?? ''}`.trim()
+  const secondaryContact = (secondaryFull || secondaryPhone || secondaryEmail)
     ? {
-        name: secondaryName || undefined,
+        name: secondaryFull || undefined,
+        first_name: secondaryFirstName || undefined,
+        last_name: secondaryLastName || undefined,
         role: secondaryRole || undefined,
         phone: secondaryPhone || undefined,
         email: secondaryEmail || undefined,
@@ -130,7 +164,7 @@ export async function updateFamily(id: string, formData: FormData) {
   const { error } = await supabase
     .from('families')
     .update({
-      family_name: familyName,
+      family_name: contactLastName,
       primary_contact: primaryContact,
       secondary_contact: secondaryContact,
       address: address || null,
@@ -219,7 +253,7 @@ export async function updatePlayer(playerId: string, familyId: string, formData:
     redirect(`/admin/families/${familyId}/players/${playerId}?error=${encodeURIComponent(parsed.error)}`)
   }
 
-  const { first_name: firstName, last_name: lastName, preferred_name: preferredName, gender, dob, ball_color: ballColor, level, classifications, track, status, medical_notes: medicalNotes, physical_notes: physicalNotes, current_focus: currentFocus, short_term_goal: shortTermGoal, long_term_goal: longTermGoal, comp_interest: compInterest } = parsed.data
+  const { first_name: firstName, last_name: lastName, preferred_name: preferredName, gender, dob, ball_color: ballColor, level, classifications, track, status, medical_notes: medicalNotes, physical_notes: physicalNotes, current_focus: currentFocus, short_term_goal: shortTermGoal, long_term_goal: longTermGoal, comp_interest: compInterest, school } = parsed.data
 
   // Plan 17 Block A — three granular consent toggles parsed from FormData.
   const coaching = formData.get('media_consent_coaching') === 'on'
@@ -251,6 +285,7 @@ export async function updatePlayer(playerId: string, familyId: string, formData:
       short_term_goal: shortTermGoal || null,
       long_term_goal: longTermGoal || null,
       comp_interest: compInterest || null,
+      school: school || null,
       media_consent_coaching: coaching,
       media_consent_family: familyConsent,
       media_consent_social: social,

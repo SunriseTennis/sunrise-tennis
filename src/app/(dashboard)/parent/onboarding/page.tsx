@@ -43,6 +43,8 @@ export default async function ParentOnboardingPage({
 
   const primaryContact = (family?.primary_contact ?? {}) as {
     name?: string
+    first_name?: string
+    last_name?: string
     phone?: string
     email?: string
   }
