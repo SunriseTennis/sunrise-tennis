@@ -8,7 +8,8 @@ import { validateFormData, enrolFormSchema } from '@/lib/utils/validation'
 import { createCharge, getTermPrice, voidCharge, getExistingSessionCharge, formatChargeDescription } from '@/lib/utils/billing'
 import { getTermLabel } from '@/lib/utils/school-terms'
 import { isEligible, getActiveEarlyBird } from '@/lib/utils/eligibility'
-import { getPlayerSessionPrice, getPlayerSessionPriceBreakdown, formatDiscountSuffix, buildPricingBreakdown } from '@/lib/utils/player-pricing'
+import { getPlayerSessionPriceBreakdown, formatDiscountSuffix, buildPricingBreakdown } from '@/lib/utils/player-pricing'
+import { createTermSessionCharges } from '@/lib/utils/term-charges'
 import { dispatchNotification } from '@/lib/notifications/dispatch'
 
 async function getParentFamilyId(): Promise<{ userId: string; familyId: string } | null> {
@@ -113,76 +114,48 @@ export async function enrolInProgram(programId: string, familyId: string, formDa
   const isTermEnrollment = bookingType === 'term_enrollment' || bookingType === 'term'
   const effectivePaymentOption = isTermEnrollment ? (paymentOption || 'pay_later') : null
 
-  // Count remaining sessions for pro-rata
-  const { count: remainingSessions } = await supabase
+  // Get all upcoming scheduled sessions for this program (used for term enrol).
+  const { data: upcomingSessions } = await supabase
     .from('sessions')
-    .select('*', { count: 'exact', head: true })
+    .select('id, date')
     .eq('program_id', programId)
     .gte('date', new Date().toISOString().split('T')[0])
     .eq('status', 'scheduled')
+    .order('date', { ascending: true })
 
-  const sessionsTotal = remainingSessions ?? 0
+  const sessionsList = (upcomingSessions ?? []) as { id: string; date: string }[]
+  const sessionsTotal = sessionsList.length
 
-  // Resolve pricing (family override > program default), apply morning-squad
-  // partner rule + 25% multi-group recalc per player. Term-fee path stays
-  // term-fee (locked at booking); per-session paths recalc on each event.
+  // Active early-bird percent (term path only).
+  const earlyBirdPct = isTermEnrollment
+    ? getActiveEarlyBird({
+        early_pay_discount_pct: program?.early_pay_discount_pct ?? null,
+        early_bird_deadline: program?.early_bird_deadline ?? null,
+        early_pay_discount_pct_tier2: program?.early_pay_discount_pct_tier2 ?? null,
+        early_bird_deadline_tier2: program?.early_bird_deadline_tier2 ?? null,
+      }).pct
+    : 0
+
+  // Rough projected total stored on bookings.price_cents for reference.
+  // Real charges are created per-session below for term enrolments.
   let priceCents = 0
-  let discountCents = 0
-  let activeDiscountPct = 0
-  let multiGroupApplied = false
-  let termPriceBreakdown: ReturnType<typeof buildPricingBreakdown> | null = null
   let casualBreakdown: ReturnType<typeof buildPricingBreakdown> | null = null
+  let casualMultiGroupApplied = false
 
-  if (isTermEnrollment && effectivePaymentOption === 'pay_now') {
-    // Term fee (may be overridden per family)
-    const termPrice = await getTermPrice(supabase, familyId, programId, program?.type)
+  if (isTermEnrollment) {
     const breakdown = await getPlayerSessionPriceBreakdown(
       supabase, familyId, programId, program?.type, playerId,
     )
-
-    // Term-fee override is the locked-in deal; per-session × sessions otherwise
-    // (and per-session already has multi-group baked in).
-    priceCents = termPrice > 0 ? termPrice : breakdown.priceCents * sessionsTotal
-    multiGroupApplied = termPrice > 0 ? false : breakdown.multiGroupApplied
-
-    // Apply tiered early-pay discount (15% tier 1, 10% tier 2, 0% expired) on top
-    const eb = getActiveEarlyBird({
-      early_pay_discount_pct: program?.early_pay_discount_pct ?? null,
-      early_bird_deadline: program?.early_bird_deadline ?? null,
-      early_pay_discount_pct_tier2: program?.early_pay_discount_pct_tier2 ?? null,
-      early_bird_deadline_tier2: program?.early_bird_deadline_tier2 ?? null,
-    })
-    if (eb.pct > 0 && priceCents > 0) {
-      discountCents = Math.round(priceCents * (eb.pct / 100))
-      activeDiscountPct = eb.pct
-    }
-
-    // Only build a breakdown for the per-session × sessions case; term-fee
-    // overrides are opaque (a flat number set per family), so the
-    // sessions-itemised view doesn't apply.
-    if (termPrice <= 0 && sessionsTotal > 0) {
-      termPriceBreakdown = buildPricingBreakdown({
-        basePriceCents: breakdown.basePriceCents,
-        perSessionPriceCents: breakdown.priceCents,
-        morningSquadPartnerApplied: breakdown.morningSquadPartnerApplied,
-        multiGroupApplied: breakdown.multiGroupApplied,
-        sessions: sessionsTotal,
-        earlyBirdPct: activeDiscountPct,
-      })
-    }
-  } else if (isTermEnrollment && effectivePaymentOption === 'pay_later') {
-    // Projected total only — actual charges created per-session at attendance
-    // time and re-priced then via the same helper (recalc).
-    const sessionPrice = await getPlayerSessionPrice(
-      supabase, familyId, programId, program?.type, playerId,
-    )
-    priceCents = sessionPrice * sessionsTotal
+    const perSessionAfterEB = earlyBirdPct > 0
+      ? Math.round(breakdown.priceCents * (100 - earlyBirdPct) / 100)
+      : breakdown.priceCents
+    priceCents = perSessionAfterEB * sessionsTotal
   } else if (bookingType === 'casual') {
     const breakdown = await getPlayerSessionPriceBreakdown(
       supabase, familyId, programId, program?.type, playerId,
     )
     priceCents = breakdown.priceCents
-    multiGroupApplied = breakdown.multiGroupApplied
+    casualMultiGroupApplied = breakdown.multiGroupApplied
     casualBreakdown = buildPricingBreakdown({
       basePriceCents: breakdown.basePriceCents,
       perSessionPriceCents: breakdown.priceCents,
@@ -206,7 +179,7 @@ export async function enrolInProgram(programId: string, familyId: string, formDa
       notes: notes || null,
       payment_option: effectivePaymentOption,
       price_cents: priceCents,
-      discount_cents: discountCents,
+      discount_cents: 0,
       sessions_total: sessionsTotal,
       sessions_charged: 0,
     })
@@ -217,31 +190,31 @@ export async function enrolInProgram(programId: string, familyId: string, formDa
     console.error('Booking record failed:', bookingError.message)
   }
 
-  // Create charge for pay-now term enrollment
-  if (isTermEnrollment && effectivePaymentOption === 'pay_now' && priceCents > 0 && booking) {
-    const chargeAmount = priceCents - discountCents
-
-    await createCharge(supabase, {
-      familyId,
-      playerId,
-      type: 'term_enrollment',
-      sourceType: 'enrollment',
-      sourceId: booking.id,
-      programId,
-      bookingId: booking.id,
-      description: formatChargeDescription({
+  // Per-session charges for term enrolments (both pay-later and legacy
+  // pay-now-redirect path). Status is 'confirmed' for pay-now (parent has
+  // committed and is being routed to the Stripe form) and 'pending' for
+  // pay-later (commitment but not yet payment-driven).
+  // The new inline-Stripe path lives in finalizeEnrolPayment instead.
+  if (isTermEnrollment && booking && sessionsTotal > 0) {
+    const chargeStatus = effectivePaymentOption === 'pay_now' ? 'confirmed' : 'pending'
+    try {
+      await createTermSessionCharges(supabase, {
+        familyId,
+        playerId,
+        programId,
+        bookingId: booking.id,
+        programType: program?.type,
+        earlyBirdPct,
+        chargeStatus,
+        createdBy: auth.userId,
+        sessions: sessionsList,
         playerName: player.first_name,
-        label: `${program?.name ?? 'Program'} - Term enrolment`,
-        suffix: formatDiscountSuffix({ multiGroupApplied, earlyPayPct: discountCents > 0 ? activeDiscountPct : 0 }),
-        term: getTermLabel(new Date()),
-      }),
-      amountCents: chargeAmount,
-      status: 'confirmed',
-      createdBy: auth.userId,
-      pricingBreakdown: termPriceBreakdown
-        ? { ...termPriceBreakdown, total_cents: chargeAmount } as never
-        : null,
-    })
+        programName: program?.name,
+      })
+    } catch (e) {
+      console.error('Per-session charge creation failed (term enrol):', e instanceof Error ? e.message : e)
+      // Continue — booking row exists; admin can repair if the script logged here.
+    }
   }
 
   // Create charge for casual booking
@@ -257,7 +230,7 @@ export async function enrolInProgram(programId: string, familyId: string, formDa
       description: formatChargeDescription({
         playerName: player.first_name,
         label: `${program?.name ?? 'Program'} - Casual session`,
-        suffix: formatDiscountSuffix({ multiGroupApplied, earlyPayPct: 0 }),
+        suffix: formatDiscountSuffix({ multiGroupApplied: casualMultiGroupApplied, earlyPayPct: 0 }),
         term: getTermLabel(new Date()),
       }),
       amountCents: priceCents,
@@ -296,13 +269,15 @@ export async function enrolInProgram(programId: string, familyId: string, formDa
     console.error('Booking notification failed:', e instanceof Error ? e.message : 'Unknown error')
   }
 
-  // Redirect — if pay_now, send to payments page
+  // Redirect — if pay_now (legacy multi-player path), send to payments page
+  // so the parent can pay the term total via the Stripe form. Per-session
+  // charges are already created above; FIFO allocation distributes the payment.
   if (isTermEnrollment && effectivePaymentOption === 'pay_now' && priceCents > 0) {
     revalidatePath(`/parent/programs/${programId}`)
     revalidatePath('/parent/programs')
     revalidatePath('/parent')
     revalidatePath('/parent/payments')
-    redirect(`/parent/payments?success=${encodeURIComponent('Enrolled! Complete your payment below.')}`)
+    redirect(`/parent/payments?success=${encodeURIComponent('Enrolled! Pay the term total below to settle the scheduled sessions.')}`)
   }
 
   revalidatePath(`/parent/programs/${programId}`)
@@ -940,18 +915,17 @@ export async function finalizeEnrolPayment(intentId: string): Promise<FinalizeRe
     status: 'enrolled',
   })
 
-  // Recompute pricing breakdown for the charge — trust intent.amount as the locked amount paid
-  const { count: sessionsRemaining } = await supabase
+  // Pull the actual upcoming sessions so per-session charges are bound by id+date.
+  const { data: upcomingSessions } = await supabase
     .from('sessions')
-    .select('*', { count: 'exact', head: true })
+    .select('id, date')
     .eq('program_id', programId)
     .gte('date', new Date().toISOString().split('T')[0])
     .eq('status', 'scheduled')
+    .order('date', { ascending: true })
 
-  const sessionsTotal = sessionsRemaining ?? 0
-  const breakdown = await getPlayerSessionPriceBreakdown(
-    supabase, auth.familyId, programId, program.type, playerId,
-  )
+  const sessionsList = (upcomingSessions ?? []) as { id: string; date: string }[]
+  const sessionsTotal = sessionsList.length
 
   const eb = getActiveEarlyBird({
     early_pay_discount_pct: program.early_pay_discount_pct ?? null,
@@ -960,17 +934,6 @@ export async function finalizeEnrolPayment(intentId: string): Promise<FinalizeRe
     early_bird_deadline_tier2: program.early_bird_deadline_tier2 ?? null,
   })
   const earlyPct = eb.pct
-
-  const pricingBreakdown = sessionsTotal > 0
-    ? buildPricingBreakdown({
-        basePriceCents: breakdown.basePriceCents,
-        perSessionPriceCents: breakdown.priceCents,
-        morningSquadPartnerApplied: breakdown.morningSquadPartnerApplied,
-        multiGroupApplied: breakdown.multiGroupApplied,
-        sessions: sessionsTotal,
-        earlyBirdPct: earlyPct,
-      })
-    : null
 
   // Booking row — embed intent id in notes for idempotency on future calls
   const { data: booking } = await supabase
@@ -992,31 +955,28 @@ export async function finalizeEnrolPayment(intentId: string): Promise<FinalizeRe
     .select('id')
     .single()
 
-  // Charge — match the actual paid amount on Stripe
-  let newChargeId: string | null = null
-  if (booking) {
-    const { chargeId } = await createCharge(supabase, {
-      familyId: auth.familyId,
-      playerId,
-      type: 'term_enrollment',
-      sourceType: 'enrollment',
-      sourceId: booking.id,
-      programId,
-      bookingId: booking.id,
-      description: formatChargeDescription({
+  // Per-session charges — N rows summing to intent.amount exactly. Last row
+  // absorbs any rounding so Σ matches the Stripe-paid amount.
+  let newCharges: { chargeId: string; sessionId: string; amountCents: number }[] = []
+  if (booking && sessionsTotal > 0) {
+    try {
+      newCharges = await createTermSessionCharges(supabase, {
+        familyId: auth.familyId,
+        playerId,
+        programId,
+        bookingId: booking.id,
+        programType: program.type,
+        earlyBirdPct: earlyPct,
+        chargeStatus: 'confirmed',
+        createdBy: auth.userId,
+        sessions: sessionsList,
         playerName: player.first_name,
-        label: `${program.name} - Term enrolment`,
-        suffix: formatDiscountSuffix({ multiGroupApplied: breakdown.multiGroupApplied, earlyPayPct: earlyPct }),
-        term: getTermLabel(new Date()),
-      }),
-      amountCents: intent.amount,
-      status: 'confirmed',
-      createdBy: auth.userId,
-      pricingBreakdown: pricingBreakdown
-        ? ({ ...pricingBreakdown, total_cents: intent.amount } as never)
-        : null,
-    })
-    newChargeId = chargeId
+        programName: program.name,
+        forceTotalCents: intent.amount,
+      })
+    } catch (e) {
+      console.error('finalize per-session charge creation failed:', e instanceof Error ? e.message : e, 'PI:', intentId)
+    }
   }
 
   // Flip payment to received (idempotent — webhook may have done it already)
@@ -1028,24 +988,28 @@ export async function finalizeEnrolPayment(intentId: string): Promise<FinalizeRe
       .eq('status', 'pending')
   }
 
-  // Targeted-first allocation: pin the payment to THIS term-enrolment charge
-  // so older per-session charges (e.g. attendance under a prior pay_later
-  // enrolment) don't eat the payment and leave the term unpaid. Intent
-  // amount equals the charge amount by construction, so this single
-  // allocation is complete — no FIFO follow-up needed.
-  if (newChargeId) {
+  // Targeted-first allocation: pin the payment to the new per-session charges
+  // (one allocation per charge, summing to intent.amount). This avoids older
+  // per-session charges (e.g. attendance under a prior pay_later enrolment)
+  // eating the payment via FIFO.
+  if (newCharges.length > 0) {
     // Clear any prior allocations for this payment (idempotent on re-fire).
     await supabase.from('payment_allocations').delete().eq('payment_id', payment.id)
+    const allocations = newCharges.map(c => ({
+      payment_id: payment.id,
+      charge_id: c.chargeId,
+      amount_cents: c.amountCents,
+    }))
     const { error: allocErr } = await supabase
       .from('payment_allocations')
-      .insert({ payment_id: payment.id, charge_id: newChargeId, amount_cents: intent.amount })
+      .insert(allocations)
     if (allocErr) {
       console.error('targeted allocation insert failed:', allocErr.message, 'PI:', intentId)
       // Fallback to FIFO so the payment isn't unallocated entirely.
       await supabase.rpc('allocate_payment_to_charges', { target_payment_id: payment.id })
     }
   } else {
-    // No charge was created (booking insert failed) — fall back to FIFO.
+    // No charges were created (booking insert failed or zero sessions) — fall back to FIFO.
     await supabase.rpc('allocate_payment_to_charges', { target_payment_id: payment.id })
   }
   await supabase.rpc('recalculate_family_balance', { target_family_id: auth.familyId })

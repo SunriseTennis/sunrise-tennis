@@ -38,8 +38,63 @@ interface Allocation {
   chargeDescription: string
   sessionDate: string | null
   sessionStatus: string | null
+  programId?: string | null
+  bookingId?: string | null
+  programName?: string | null
   /** Itemised breakdown from charges.pricing_breakdown when present (e.g. term enrolment with discount). */
   pricingBreakdown?: PricingBreakdownData | null
+}
+
+interface AllocationBundle {
+  /** Group key: bookingId when present, else `program-${programId}`, else `single-${idx}`. */
+  key: string
+  /** Program name for the header (when grouped). */
+  programName: string | null
+  /** Sum of allocation amounts in this bundle (cents). */
+  totalCents: number
+  /** Sum of (subtotal − total) across allocation breakdowns — i.e. total saved. */
+  savingsCents: number
+  /** Allocation rows in this bundle, sorted by session date ascending. */
+  allocations: Allocation[]
+}
+
+function groupAllocations(allocations: Allocation[]): AllocationBundle[] {
+  const groups = new Map<string, AllocationBundle>()
+  allocations.forEach((a, idx) => {
+    // Group by booking_id when set (term enrol / standing weekly), else by
+    // program_id (looser fallback), else treat each row as its own bundle.
+    const key = a.bookingId
+      ? `booking-${a.bookingId}`
+      : a.programId
+        ? `program-${a.programId}`
+        : `single-${idx}`
+    const existing = groups.get(key)
+    const breakdown = a.pricingBreakdown
+    const rowSavings = breakdown && breakdown.subtotal_cents != null
+      ? Math.max(0, breakdown.subtotal_cents - breakdown.total_cents)
+      : 0
+    if (existing) {
+      existing.totalCents += a.amountCents
+      existing.savingsCents += rowSavings
+      existing.allocations.push(a)
+    } else {
+      groups.set(key, {
+        key,
+        programName: a.programName ?? null,
+        totalCents: a.amountCents,
+        savingsCents: rowSavings,
+        allocations: [a],
+      })
+    }
+  })
+  for (const g of groups.values()) {
+    g.allocations.sort((x, y) => {
+      const a = x.sessionDate ?? ''
+      const b = y.sessionDate ?? ''
+      return a.localeCompare(b)
+    })
+  }
+  return [...groups.values()]
 }
 
 interface Payment {
@@ -125,36 +180,92 @@ function PaymentCard({ payment }: { payment: Payment }) {
           <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground mb-1.5">
             Applied to
           </p>
-          <div className="space-y-3">
-            {payment.allocations.map((alloc, i) => (
-              <div key={i} className="space-y-1.5">
-                <div className="flex items-start justify-between gap-2 text-xs">
-                  <div className="flex items-start gap-1.5 min-w-0 flex-1">
-                    <span className="mt-0.5 shrink-0">
-                      <SessionStatusIcon status={alloc.sessionStatus} />
-                    </span>
-                    <div className="min-w-0">
-                      <p className="text-foreground break-words">{cleanDescription(alloc.chargeDescription)}</p>
-                      {alloc.sessionDate && (
-                        <p className="text-muted-foreground tabular-nums">
-                          {formatDate(alloc.sessionDate)}
-                        </p>
-                      )}
+          <div className="space-y-4">
+            {groupAllocations(payment.allocations).map((bundle) => {
+              const isSingle = bundle.allocations.length === 1
+              if (isSingle) {
+                const alloc = bundle.allocations[0]
+                return (
+                  <div key={bundle.key} className="space-y-1.5">
+                    <div className="flex items-start justify-between gap-2 text-xs">
+                      <div className="flex items-start gap-1.5 min-w-0 flex-1">
+                        <span className="mt-0.5 shrink-0">
+                          <SessionStatusIcon status={alloc.sessionStatus} />
+                        </span>
+                        <div className="min-w-0">
+                          <p className="text-foreground break-words">{cleanDescription(alloc.chargeDescription)}</p>
+                          {alloc.sessionDate && (
+                            <p className="text-muted-foreground tabular-nums">
+                              {formatDate(alloc.sessionDate)}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                      <span className="tabular-nums text-foreground shrink-0">
+                        {formatCurrency(alloc.amountCents)}
+                      </span>
                     </div>
+                    {alloc.pricingBreakdown && (
+                      <PricingBreakdownPanel
+                        breakdown={alloc.pricingBreakdown}
+                        heading={null}
+                        className="rounded-md border border-border/40 bg-card/50 px-3 py-2"
+                      />
+                    )}
                   </div>
-                  <span className="tabular-nums text-foreground shrink-0">
-                    {formatCurrency(alloc.amountCents)}
-                  </span>
+                )
+              }
+              // Bundle of >1 allocations — render header + itemised rows
+              return (
+                <div key={bundle.key} className="rounded-lg border border-border/40 bg-card/40 overflow-hidden">
+                  <div className="flex items-center justify-between gap-2 border-b border-border/30 bg-muted/20 px-3 py-2">
+                    <div className="min-w-0">
+                      <p className="text-xs font-semibold text-foreground">
+                        {bundle.programName ?? cleanDescription(bundle.allocations[0].chargeDescription)}
+                      </p>
+                      <p className="text-[11px] text-muted-foreground">
+                        {bundle.allocations.length} sessions
+                        {bundle.savingsCents > 0 && (
+                          <> · <span className="text-success">You saved {formatCurrency(bundle.savingsCents)}</span></>
+                        )}
+                      </p>
+                    </div>
+                    <span className="text-xs font-bold tabular-nums text-foreground shrink-0">
+                      {formatCurrency(bundle.totalCents)}
+                    </span>
+                  </div>
+                  <div className="divide-y divide-border/20">
+                    {bundle.allocations.map((alloc, i) => {
+                      const breakdown = alloc.pricingBreakdown
+                      const grossCents =
+                        breakdown && breakdown.subtotal_cents != null && breakdown.subtotal_cents > breakdown.total_cents
+                          ? breakdown.subtotal_cents
+                          : null
+                      return (
+                        <div key={i} className="flex items-center justify-between gap-2 px-3 py-1.5 text-xs">
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <SessionStatusIcon status={alloc.sessionStatus} />
+                            <span className="text-muted-foreground tabular-nums">
+                              {alloc.sessionDate ? formatDate(alloc.sessionDate) : '-'}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-1.5 shrink-0 tabular-nums">
+                            {grossCents !== null && (
+                              <span className="text-[11px] text-muted-foreground line-through">
+                                {formatCurrency(grossCents)}
+                              </span>
+                            )}
+                            <span className="text-foreground">
+                              {formatCurrency(alloc.amountCents)}
+                            </span>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
                 </div>
-                {alloc.pricingBreakdown && (
-                  <PricingBreakdownPanel
-                    breakdown={alloc.pricingBreakdown}
-                    heading={null}
-                    className="rounded-md border border-border/40 bg-card/50 px-3 py-2"
-                  />
-                )}
-              </div>
-            ))}
+              )
+            })}
           </div>
         </div>
       )}

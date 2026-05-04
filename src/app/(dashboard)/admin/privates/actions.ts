@@ -714,6 +714,7 @@ async function createPrivateInstance(args: {
   }
 
   const { createCharge, formatChargeDescription } = await import('@/lib/utils/billing')
+  const { buildPricingBreakdown } = await import('@/lib/utils/player-pricing')
   await createCharge(supabase, {
     familyId: args.familyId, playerId: args.player.id,
     type: 'private', sourceType: 'enrollment',
@@ -724,6 +725,13 @@ async function createPrivateInstance(args: {
       date: args.date,
     }),
     amountCents: args.priceCents, status: 'confirmed', createdBy: args.adminUserId,
+    pricingBreakdown: buildPricingBreakdown({
+      basePriceCents: args.priceCents,
+      perSessionPriceCents: args.priceCents,
+      morningSquadPartnerApplied: false,
+      multiGroupApplied: false,
+      sessions: 1,
+    }) as never,
   })
 
   return { ok: true, bookingId: booking.id }
@@ -885,6 +893,14 @@ async function createSharedPrivateInstance(args: {
     .eq('id', bookingA.id)
 
   const { createCharge, formatChargeDescription } = await import('@/lib/utils/billing')
+  const { buildPricingBreakdown } = await import('@/lib/utils/player-pricing')
+  const sharedBreakdown = buildPricingBreakdown({
+    basePriceCents: args.halfPrice,
+    perSessionPriceCents: args.halfPrice,
+    morningSquadPartnerApplied: false,
+    multiGroupApplied: false,
+    sessions: 1,
+  })
   await createCharge(supabase, {
     familyId: args.familyId1, playerId: args.player1.id,
     type: 'private', sourceType: 'enrollment',
@@ -895,6 +911,7 @@ async function createSharedPrivateInstance(args: {
       date: args.date,
     }),
     amountCents: args.halfPrice, status: 'confirmed', createdBy: args.adminUserId,
+    pricingBreakdown: sharedBreakdown as never,
   })
   await createCharge(supabase, {
     familyId: args.familyId2, playerId: args.player2.id,
@@ -906,6 +923,7 @@ async function createSharedPrivateInstance(args: {
       date: args.date,
     }),
     amountCents: args.halfPrice, status: 'confirmed', createdBy: args.adminUserId,
+    pricingBreakdown: sharedBreakdown as never,
   })
 
   return { ok: true, bookingIdA: bookingA.id, bookingIdB: bookingB.id }

@@ -5,6 +5,7 @@ import { redirect } from 'next/navigation'
 import { createClient, createServiceClient, getSessionUser, requireApprovedFamily } from '@/lib/supabase/server'
 import { validateFormData, requestPrivateFormSchema, cancelPrivateFormSchema } from '@/lib/utils/validation'
 import { createCharge, formatChargeDescription } from '@/lib/utils/billing'
+import { buildPricingBreakdown } from '@/lib/utils/player-pricing'
 import {
   canPlayerBookCoach,
   isAutoApproved,
@@ -174,6 +175,13 @@ export async function requestPrivateBooking(formData: FormData) {
     amountCents: priceCents,
     status: autoApprove ? 'confirmed' : 'pending',
     createdBy: userId,
+    pricingBreakdown: buildPricingBreakdown({
+      basePriceCents: priceCents,
+      perSessionPriceCents: priceCents,
+      morningSquadPartnerApplied: false,
+      multiGroupApplied: false,
+      sessions: 1,
+    }) as never,
   })
 
   // Notify via the rules-driven dispatcher (parent.private.requested).
@@ -302,6 +310,13 @@ export async function requestStandingPrivate(formData: FormData) {
       date,
     }),
     amountCents: priceCents, status: autoApprove ? 'confirmed' : 'pending', createdBy: userId,
+    pricingBreakdown: buildPricingBreakdown({
+      basePriceCents: priceCents,
+      perSessionPriceCents: priceCents,
+      morningSquadPartnerApplied: false,
+      multiGroupApplied: false,
+      sessions: 1,
+    }) as never,
   })
 
   // Generate remaining term instances
@@ -339,6 +354,13 @@ export async function requestStandingPrivate(formData: FormData) {
           date: futureDate,
         }),
         amountCents: priceCents, status: autoApprove ? 'confirmed' : 'pending', createdBy: userId,
+        pricingBreakdown: buildPricingBreakdown({
+          basePriceCents: priceCents,
+          perSessionPriceCents: priceCents,
+          morningSquadPartnerApplied: false,
+          multiGroupApplied: false,
+          sessions: 1,
+        }) as never,
       })
     }
   }

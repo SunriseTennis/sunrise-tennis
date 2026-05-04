@@ -70,6 +70,14 @@ export function ChargeRow({
     typeof charge.outstandingCents === 'number' &&
     charge.outstandingCents > 0
 
+  // Strikethrough full price when the breakdown carries a discount (multi-group
+  // or early-bird) so the row reads "$20.00 $15.00".
+  const breakdown = charge.pricingBreakdown
+  const grossPerSessionCents =
+    breakdown && breakdown.subtotal_cents != null && breakdown.subtotal_cents > breakdown.total_cents
+      ? breakdown.subtotal_cents
+      : null
+
   // Use props-based expand/collapse when provided (accordion mode)
   const expanded = isExpanded ?? false
   const handleToggle = onToggle ?? (() => {})
@@ -113,6 +121,11 @@ export function ChargeRow({
           )}
         </div>
         <div className="flex items-center gap-1.5 shrink-0">
+          {grossPerSessionCents !== null && !isPaid && (
+            <span className="tabular-nums text-xs text-muted-foreground line-through">
+              {formatCurrency(grossPerSessionCents)}
+            </span>
+          )}
           <span className={cn(
             'tabular-nums font-semibold',
             isPaid ? 'text-muted-foreground line-through' :

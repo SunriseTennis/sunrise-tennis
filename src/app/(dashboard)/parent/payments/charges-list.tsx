@@ -87,6 +87,8 @@ interface ServiceGroup {
   label: string
   charges: Charge[]
   subtotalCents: number
+  /** Sum of (subtotal − total) across charges' pricing_breakdown — i.e. amount saved across this group. */
+  savingsCents: number
   dueCount: number
   scheduledCount: number
 }
@@ -121,6 +123,13 @@ function buildGroups(charges: Charge[]): { playerGroups: PlayerGroup[]; dueTotal
         return dateA.localeCompare(dateB)
       })
       const subtotalCents = sCharges.reduce((sum, c) => sum + c.outstanding_cents, 0)
+      const savingsCents = sCharges.reduce((sum, c) => {
+        const b = c.pricing_breakdown
+        if (b && b.subtotal_cents != null && b.subtotal_cents > b.total_cents) {
+          return sum + (b.subtotal_cents - b.total_cents)
+        }
+        return sum
+      }, 0)
       let dueCount = 0
       let scheduledCount = 0
       for (const c of sCharges) {
@@ -130,7 +139,7 @@ function buildGroups(charges: Charge[]): { playerGroups: PlayerGroup[]; dueTotal
           dueCount++
         }
       }
-      return { key, label, charges: sCharges, subtotalCents, dueCount, scheduledCount }
+      return { key, label, charges: sCharges, subtotalCents, savingsCents, dueCount, scheduledCount }
     })
 
     const subtotalCents = playerCharges.reduce((sum, c) => sum + c.outstanding_cents, 0)
@@ -197,7 +206,7 @@ export function ChargesList({ charges }: { charges: Charge[] }) {
               )}
 
               {/* Service groups — collapsed by default */}
-              {services.map(({ key, label, charges: sCharges, subtotalCents: sSubtotal, dueCount, scheduledCount }) => {
+              {services.map(({ key, label, charges: sCharges, subtotalCents: sSubtotal, savingsCents: sSavings, dueCount, scheduledCount }) => {
                 const groupKey = `${playerName}-${key}`
                 const isGroupExpanded = expandedGroups.has(groupKey)
                 const statusParts: string[] = []
@@ -205,6 +214,7 @@ export function ChargesList({ charges }: { charges: Charge[] }) {
                 if (scheduledCount > 0) statusParts.push(`${scheduledCount} scheduled`)
                 // Color subtotal amber if any charges are due
                 const hasOwed = dueCount > 0
+                const grossSubtotal = sSavings > 0 ? sSubtotal + sSavings : null
 
                 return (
                   <div key={key} className="border-b border-border/20 last:border-b-0">
@@ -224,14 +234,24 @@ export function ChargesList({ charges }: { charges: Charge[] }) {
                           <p className="text-xs text-muted-foreground">
                             {sCharges.length} session{sCharges.length !== 1 ? 's' : ''}
                             {statusParts.length > 0 && ` · ${statusParts.join(', ')}`}
+                            {sSavings > 0 && (
+                              <> · <span className="text-success">You save {formatCurrency(sSavings)}</span></>
+                            )}
                           </p>
                         </div>
-                        <span className={cn(
-                          'text-sm font-bold tabular-nums shrink-0',
-                          hasOwed ? 'text-amber-700' : 'text-foreground',
-                        )}>
-                          {formatCurrency(sSubtotal)}
-                        </span>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          {grossSubtotal !== null && (
+                            <span className="text-xs tabular-nums text-muted-foreground line-through">
+                              {formatCurrency(grossSubtotal)}
+                            </span>
+                          )}
+                          <span className={cn(
+                            'text-sm font-bold tabular-nums',
+                            hasOwed ? 'text-amber-700' : 'text-foreground',
+                          )}>
+                            {formatCurrency(sSubtotal)}
+                          </span>
+                        </div>
                       </button>
                       <button
                         type="button"
