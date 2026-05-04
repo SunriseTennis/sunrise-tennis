@@ -2,7 +2,7 @@ import { redirect } from 'next/navigation'
 import { createClient, getSessionUser } from '@/lib/supabase/server'
 import { OnboardingWizard } from './onboarding-wizard'
 import { SelfSignupWizard } from './self-signup-wizard'
-import { SELF_SIGNUP_TOTAL_STEPS } from './constants'
+import { SELF_SIGNUP_TOTAL_STEPS, ADMIN_INVITE_TOTAL_STEPS } from './constants'
 
 export default async function ParentOnboardingPage({
   searchParams,
@@ -90,8 +90,14 @@ export default async function ParentOnboardingPage({
     )
   }
 
-  // Admin-invite + legacy_import paths use the original 3-step wizard.
-  const currentStep = Math.max(1, Math.min(3, parseInt(stepParam ?? '1', 10) || 1))
+  // Admin-invite + legacy_import paths use the 4-step wizard
+  // (Plan 18 — A2HS + Push split out from the legacy combined Step 3,
+  // and an explicit T&C tick replaces the silent terms_acknowledged_at
+  // backfill on completeOnboarding).
+  const currentStep = Math.max(
+    1,
+    Math.min(ADMIN_INVITE_TOTAL_STEPS, parseInt(stepParam ?? '1', 10) || 1),
+  )
 
   return (
     <OnboardingWizard

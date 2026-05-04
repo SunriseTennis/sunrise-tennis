@@ -405,8 +405,18 @@ export async function advancePastA2HS() {
 // Self-signup: fires parent.signup.submitted to admins so the family hits
 // /admin/approvals immediately. Admin-invite: skips the dispatch — the family
 // is already approved at invite time.
+//
+// Plan 18 — `termsAccepted` is the explicit T&C tick from the admin-invite
+// final step. Self-signup acks T&C at step 4 already, so it omits the arg
+// (we only enforce the new gate when terms_acknowledged_at is null AND
+// the caller passed `termsAccepted=false`). Migration cohort families that
+// ran the old wizard still complete because their terms_acknowledged_at
+// was backfilled at the time.
 
-export async function completeOnboarding(pushSubscription: string | null) {
+export async function completeOnboarding(
+  pushSubscription: string | null,
+  termsAccepted?: boolean,
+) {
   const { userId, familyId } = await getOnboardingAuth()
   const supabase = await createClient()
 
@@ -442,6 +452,15 @@ export async function completeOnboarding(pushSubscription: string | null) {
     .from('players')
     .select('id', { count: 'exact', head: true })
     .eq('family_id', familyId)
+
+  // Plan 18 G3 — if the caller explicitly opted out of accepting terms
+  // (admin-invite path with checkbox unchecked) AND the family has no
+  // prior acknowledgement, block completion. `termsAccepted=undefined`
+  // means the caller is the self-signup path or migration cohort; trust
+  // the existing terms_acknowledged_at column.
+  if (termsAccepted === false && !familyBefore?.terms_acknowledged_at) {
+    redirect('/parent/onboarding?error=Please+accept+the+Terms+%26+Conditions+to+continue.')
+  }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { error } = await (supabase as any)

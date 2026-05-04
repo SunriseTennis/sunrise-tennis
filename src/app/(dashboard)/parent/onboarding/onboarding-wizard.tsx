@@ -2,17 +2,17 @@
 
 import { useState, useTransition } from 'react'
 import Link from 'next/link'
-import { AlertCircle, Bell, BellOff, CheckCircle2, Home, Smartphone } from 'lucide-react'
+import { AlertCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { subscribeToPush, getExistingSubscription } from '@/lib/push/subscribe'
 import { splitFullName } from '@/lib/utils/name'
 import {
   updateOnboardingContact,
   updateOnboardingPlayers,
-  completeOnboarding,
 } from './actions'
+import { ADMIN_INVITE_TOTAL_STEPS } from './constants'
+import { A2HSStep, PushStep } from './_steps/shared-steps'
 
 // ── Types ────────────────────────────────────────────────────────────────
 
@@ -354,188 +354,9 @@ function StepPlayers({
   )
 }
 
-// ── Step 3: Notifications + home screen ─────────────────────────────────
-
-function StepNotifications({ error }: { error: string | null }) {
-  const [pushState, setPushState] = useState<'idle' | 'loading' | 'granted' | 'denied'>('idle')
-  const [subscriptionJson, setSubscriptionJson] = useState<string | null>(null)
-  const [pending, startTransition] = useTransition()
-
-  // Detect iOS vs Android for install instructions
-  const isIOS =
-    typeof navigator !== 'undefined' &&
-    /iPad|iPhone|iPod/.test(navigator.userAgent) &&
-    !(window as { MSStream?: unknown }).MSStream
-
-  async function handleEnablePush() {
-    setPushState('loading')
-
-    // Check if already subscribed
-    const existing = await getExistingSubscription()
-    if (existing) {
-      setSubscriptionJson(JSON.stringify(existing))
-      setPushState('granted')
-      return
-    }
-
-    const subscription = await subscribeToPush()
-    if (subscription) {
-      setSubscriptionJson(JSON.stringify(subscription))
-      setPushState('granted')
-    } else {
-      setPushState('denied')
-    }
-  }
-
-  function handleComplete() {
-    startTransition(async () => {
-      await completeOnboarding(subscriptionJson)
-    })
-  }
-
-  return (
-    <div className="space-y-5">
-      <div className="text-center">
-        <h2 className="text-xl font-bold text-foreground">Stay in the loop</h2>
-        <p className="mt-1.5 text-sm text-muted-foreground">
-          Get notified about session changes, booking confirmations, and team updates.
-        </p>
-      </div>
-
-      {error && (
-        <div className="flex items-center gap-2 rounded-lg bg-destructive/10 px-3.5 py-3 text-sm font-medium text-destructive">
-          <AlertCircle className="size-4 shrink-0" />
-          {error}
-        </div>
-      )}
-
-      {/* Push notifications */}
-      <div className="rounded-xl border border-border bg-card p-4 shadow-card">
-        <div className="flex items-start gap-3">
-          <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-[#FDD5D0]">
-            <Bell className="size-4 text-[#E87450]" />
-          </div>
-          <div className="flex-1">
-            <p className="font-semibold text-sm text-foreground">Push notifications</p>
-            <p className="mt-0.5 text-xs text-muted-foreground">
-              Rain cancellations, booking updates, and important alerts.
-            </p>
-          </div>
-        </div>
-
-        <div className="mt-3.5">
-          {pushState === 'idle' && (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="w-full"
-              onClick={handleEnablePush}
-            >
-              <Bell className="mr-2 size-4" />
-              Enable notifications
-            </Button>
-          )}
-          {pushState === 'loading' && (
-            <Button type="button" variant="outline" size="sm" className="w-full" disabled>
-              Requesting permission...
-            </Button>
-          )}
-          {pushState === 'granted' && (
-            <div className="flex items-center gap-2 text-sm font-medium text-emerald-600">
-              <CheckCircle2 className="size-4 shrink-0" />
-              Notifications enabled
-            </div>
-          )}
-          {pushState === 'denied' && (
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <BellOff className="size-4 shrink-0" />
-              Permission not granted. You can enable this later in Settings.
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Add to home screen */}
-      <div className="rounded-xl border border-border bg-card p-4 shadow-card">
-        <div className="flex items-start gap-3">
-          <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-[#FDD5D0]">
-            <Smartphone className="size-4 text-[#E87450]" />
-          </div>
-          <div>
-            <p className="font-semibold text-sm text-foreground">Add to home screen</p>
-            <p className="mt-0.5 text-xs text-muted-foreground">
-              Install Sunrise Tennis for quick access like a native app.
-            </p>
-          </div>
-        </div>
-
-        <div className="mt-3.5 rounded-lg bg-muted/50 px-3.5 py-3 text-xs text-muted-foreground space-y-1.5">
-          {isIOS ? (
-            <>
-              <p className="flex items-center gap-1.5">
-                <span className="font-medium text-foreground">1.</span>
-                Tap the Share button <span className="font-medium">(box with arrow)</span> in Safari.
-              </p>
-              <p className="flex items-center gap-1.5">
-                <span className="font-medium text-foreground">2.</span>
-                Scroll down and tap <span className="font-medium">&ldquo;Add to Home Screen&rdquo;</span>.
-              </p>
-              <p className="flex items-center gap-1.5">
-                <span className="font-medium text-foreground">3.</span>
-                Tap <span className="font-medium">Add</span> to confirm.
-              </p>
-            </>
-          ) : (
-            <>
-              <p className="flex items-center gap-1.5">
-                <span className="font-medium text-foreground">1.</span>
-                Tap the browser menu <span className="font-medium">(three dots)</span>.
-              </p>
-              <p className="flex items-center gap-1.5">
-                <span className="font-medium text-foreground">2.</span>
-                Tap <span className="font-medium">&ldquo;Add to Home screen&rdquo;</span> or{' '}
-                <span className="font-medium">&ldquo;Install app&rdquo;</span>.
-              </p>
-              <p className="flex items-center gap-1.5">
-                <span className="font-medium text-foreground">3.</span>
-                Tap <span className="font-medium">Install</span> to confirm.
-              </p>
-            </>
-          )}
-        </div>
-      </div>
-
-      <p className="rounded-lg border border-border bg-muted/30 px-3 py-2.5 text-xs text-muted-foreground">
-        By continuing you confirm you&apos;ve reviewed our updated{' '}
-        <a
-          href="/terms"
-          target="_blank"
-          rel="noreferrer"
-          className="font-medium text-primary underline hover:text-primary/80"
-        >
-          Terms &amp; Conditions
-        </a>
-        , including the cancellation policy for private lessons.
-      </p>
-
-      <div className="flex items-center justify-between gap-3">
-        <button
-          type="button"
-          onClick={handleComplete}
-          disabled={pending}
-          className="text-sm font-medium text-muted-foreground hover:text-foreground disabled:opacity-50 transition-colors"
-        >
-          Skip for now
-        </button>
-        <Button onClick={handleComplete} disabled={pending} className="flex-1">
-          <Home className="mr-2 size-4" />
-          {pending ? 'Setting up...' : "Get started"}
-        </Button>
-      </div>
-    </div>
-  )
-}
+// Plan 18 — Steps 3 (A2HS) and 4 (Push + T&C) are now shared with the
+// self-signup wizard via _steps/shared-steps.tsx. The legacy combined
+// "notifications + A2HS" Step 3 is gone.
 
 // ── Main wizard ──────────────────────────────────────────────────────────
 
@@ -561,13 +382,13 @@ export function OnboardingWizard({
             Welcome aboard
           </h1>
           <p className="mt-1 text-sm text-white/70">
-            Step {step} of 3 — let&apos;s get you set up
+            Step {step} of {ADMIN_INVITE_TOTAL_STEPS} — let&apos;s get you set up
           </p>
         </div>
 
         {/* Step dots */}
         <div className="mb-5">
-          <StepDots current={step} total={3} />
+          <StepDots current={step} total={ADMIN_INVITE_TOTAL_STEPS} />
         </div>
 
         {/* Card */}
@@ -587,7 +408,21 @@ export function OnboardingWizard({
             />
           )}
           {step === 3 && (
-            <StepNotifications error={error} />
+            <A2HSStep
+              error={error}
+              stepNumber={3}
+              totalSteps={ADMIN_INVITE_TOTAL_STEPS}
+              backToStep={2}
+            />
+          )}
+          {step === 4 && (
+            <PushStep
+              error={error}
+              stepNumber={4}
+              totalSteps={ADMIN_INVITE_TOTAL_STEPS}
+              showTermsCheckbox
+              backToStep={3}
+            />
           )}
         </div>
       </div>
