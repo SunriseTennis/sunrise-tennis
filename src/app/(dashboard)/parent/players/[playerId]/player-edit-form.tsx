@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Pencil, X } from 'lucide-react'
+import { ConsentToggle, CONSENT_LABELS } from '@/components/consent-toggle'
 
 export function ParentPlayerEditForm({
   player,
@@ -19,7 +20,9 @@ export function ParentPlayerEditForm({
     dob: string | null
     gender: string | null
     medical_notes: string | null
-    media_consent: boolean | null
+    media_consent_coaching: boolean
+    media_consent_family: boolean
+    media_consent_social: boolean
   }
 }) {
   const [open, setOpen] = useState(false)
@@ -85,17 +88,31 @@ export function ParentPlayerEditForm({
                 <option value="non_binary">Non-Binary</option>
               </select>
             </div>
-            <div className="flex items-center gap-3 pt-6">
-              <input
-                id="media_consent"
-                name="media_consent"
-                type="checkbox"
-                defaultChecked={player.media_consent ?? false}
-                className="size-4 rounded border-border text-primary focus:ring-primary"
-              />
-              <Label htmlFor="media_consent" className="cursor-pointer">
-                Allow photos and videos
-              </Label>
+            <div className="sm:col-span-2 space-y-2 pt-2">
+              <Label className="text-xs font-semibold">Media consent</Label>
+              <div className="space-y-2">
+                <ConsentToggle
+                  id="edit_media_consent_coaching"
+                  name="media_consent_coaching"
+                  defaultChecked={player.media_consent_coaching}
+                  label={CONSENT_LABELS.coaching.label}
+                  hint={CONSENT_LABELS.coaching.hint}
+                />
+                <ConsentToggle
+                  id="edit_media_consent_family"
+                  name="media_consent_family"
+                  defaultChecked={player.media_consent_family}
+                  label={CONSENT_LABELS.family.label}
+                  hint={CONSENT_LABELS.family.hint}
+                />
+                <ConsentToggle
+                  id="edit_media_consent_social"
+                  name="media_consent_social"
+                  defaultChecked={player.media_consent_social}
+                  label={CONSENT_LABELS.social.label}
+                  hint={CONSENT_LABELS.social.hint}
+                />
+              </div>
             </div>
             <div className="sm:col-span-2">
               <Label htmlFor="medical_notes">Medical notes</Label>

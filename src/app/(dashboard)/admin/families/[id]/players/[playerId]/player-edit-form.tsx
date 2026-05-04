@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils/cn'
+import { ConsentToggle, CONSENT_LABELS } from '@/components/consent-toggle'
 
 type Player = Database['public']['Tables']['players']['Row']
 
@@ -158,17 +159,31 @@ export function PlayerEditForm({ player, familyId }: { player: Player; familyId:
             <Label htmlFor="physical_notes">Physical notes</Label>
             <Textarea id="physical_notes" name="physical_notes" rows={2} defaultValue={player.physical_notes ?? ''} className="mt-1" />
           </div>
-          <div className="flex items-center gap-3">
-            <input
-              id="media_consent"
-              name="media_consent"
-              type="checkbox"
-              defaultChecked={player.media_consent ?? false}
-              className="size-4 rounded border-border text-primary focus:ring-primary"
-            />
-            <Label htmlFor="media_consent" className="cursor-pointer">
-              Media consent (photos and videos)
-            </Label>
+          <div className="sm:col-span-2 space-y-2">
+            <Label className="text-xs font-semibold">Media consent</Label>
+            <div className="space-y-1.5">
+              <ConsentToggle
+                id="admin_edit_media_consent_coaching"
+                name="media_consent_coaching"
+                defaultChecked={player.media_consent_coaching ?? false}
+                label={CONSENT_LABELS.coaching.label}
+                hint={CONSENT_LABELS.coaching.hint}
+              />
+              <ConsentToggle
+                id="admin_edit_media_consent_family"
+                name="media_consent_family"
+                defaultChecked={player.media_consent_family ?? false}
+                label={CONSENT_LABELS.family.label}
+                hint={CONSENT_LABELS.family.hint}
+              />
+              <ConsentToggle
+                id="admin_edit_media_consent_social"
+                name="media_consent_social"
+                defaultChecked={player.media_consent_social ?? false}
+                label={CONSENT_LABELS.social.label}
+                hint={CONSENT_LABELS.social.hint}
+              />
+            </div>
           </div>
         </div>
         <Button type="submit">Save changes</Button>

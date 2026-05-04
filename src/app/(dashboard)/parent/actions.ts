@@ -94,11 +94,18 @@ export async function updateMediaConsent(playerId: string, formData: FormData) {
 
   if (!player) redirect('/parent/settings')
 
-  const mediaConsent = formData.get('media_consent') === 'on'
+  // Plan 17 Block A — three granular consent toggles, parsed directly.
+  const coaching = formData.get('media_consent_coaching') === 'on'
+  const family = formData.get('media_consent_family') === 'on'
+  const social = formData.get('media_consent_social') === 'on'
 
   const { error } = await supabase
     .from('players')
-    .update({ media_consent: mediaConsent })
+    .update({
+      media_consent_coaching: coaching,
+      media_consent_family: family,
+      media_consent_social: social,
+    })
     .eq('id', playerId)
 
   if (error) {
@@ -129,7 +136,12 @@ export async function updatePlayerDetails(playerId: string, formData: FormData) 
     redirect(`/parent/players/${playerId}?error=${encodeURIComponent(parsed.error)}`)
   }
 
-  const { first_name: firstName, last_name: lastName, dob, gender, medical_notes: medicalNotes, media_consent: mediaConsent } = parsed.data
+  const { first_name: firstName, last_name: lastName, dob, gender, medical_notes: medicalNotes } = parsed.data
+
+  // Plan 17 Block A — three granular consent toggles.
+  const coaching = formData.get('media_consent_coaching') === 'on'
+  const familyConsent = formData.get('media_consent_family') === 'on'
+  const social = formData.get('media_consent_social') === 'on'
 
   const { error } = await supabase
     .from('players')
@@ -139,7 +151,9 @@ export async function updatePlayerDetails(playerId: string, formData: FormData) 
       dob: dob || null,
       gender: gender || null,
       medical_notes: medicalNotes || null,
-      media_consent: mediaConsent === 'on',
+      media_consent_coaching: coaching,
+      media_consent_family: familyConsent,
+      media_consent_social: social,
     })
     .eq('id', playerId)
 
@@ -219,8 +233,12 @@ export async function createPlayerFromParent(formData: FormData) {
     track,
     medical_notes: medicalNotes,
     physical_notes: physicalNotes,
-    media_consent: mediaConsent,
   } = parsed.data
+
+  // Plan 17 Block A — three granular consent toggles parsed from FormData.
+  const coaching = formData.get('media_consent_coaching') === 'on'
+  const familyConsent = formData.get('media_consent_family') === 'on'
+  const social = formData.get('media_consent_social') === 'on'
 
   const VALID_CLASSES = new Set(['blue', 'red', 'orange', 'green', 'yellow', 'advanced', 'elite'])
   const parsedClassifications = classifications
@@ -242,7 +260,9 @@ export async function createPlayerFromParent(formData: FormData) {
       track: track || 'participation',
       medical_notes: medicalNotes || null,
       physical_notes: physicalNotes || null,
-      media_consent: mediaConsent === 'on',
+      media_consent_coaching: coaching,
+      media_consent_family: familyConsent,
+      media_consent_social: social,
       status: 'active',
     })
     .select('id')

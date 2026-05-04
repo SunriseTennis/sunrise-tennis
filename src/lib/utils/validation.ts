@@ -158,6 +158,9 @@ export const updateFamilyFormSchema = z.object({
 })
 
 // Admin - Players
+// Plan 17 Block A: media consent is three granular checkboxes
+// (media_consent_coaching / _family / _social) parsed directly from
+// FormData in the server actions, not validated through Zod here.
 export const createPlayerFormSchema = z.object({
   first_name: requiredString('First name is required'),
   last_name: requiredString('Last name is required'),
@@ -170,7 +173,6 @@ export const createPlayerFormSchema = z.object({
   track: trackSchema.optional().or(z.literal('')),
   medical_notes: optionalString(5000),
   physical_notes: optionalString(5000),
-  media_consent: z.string().optional(),
 })
 
 export const updatePlayerFormSchema = z.object({
@@ -191,7 +193,6 @@ export const updatePlayerFormSchema = z.object({
   short_term_goal: optionalString(1000),
   long_term_goal: optionalString(1000),
   comp_interest: z.enum(['yes', 'no', 'future']).optional().or(z.literal('')),
-  media_consent: z.string().optional(),
 })
 
 // Admin - Programs
@@ -313,10 +314,14 @@ export const updatePlayerDetailsFormSchema = z.object({
   dob: optionalString(),
   gender: genderSchema.optional().or(z.literal('')),
   medical_notes: optionalString(5000),
-  media_consent: z.string().optional(),
+  // Plan 17 Block A: media_consent_{coaching,family,social} parsed
+  // directly from FormData in the action.
 })
 
 // Parent - add a new player from /parent/players/new
+// Plan 17 Block A: media consent is three granular checkboxes parsed in
+// the action layer; the acknowledgement step (parent has read the
+// explanation) is gone — the three labels carry their own copy now.
 export const parentCreatePlayerFormSchema = z.object({
   first_name: requiredString('First name is required'),
   last_name: requiredString('Last name is required'),
@@ -328,10 +333,6 @@ export const parentCreatePlayerFormSchema = z.object({
   track: trackSchema.optional().or(z.literal('')),
   medical_notes: optionalString(5000),
   physical_notes: optionalString(5000),
-  /** Optional checkbox; 'on' = consent granted, anything else = denied. */
-  media_consent: z.string().optional(),
-  /** Required acknowledgement that the parent has read the media-consent explanation. */
-  media_consent_acknowledged: z.string().refine((v) => v === 'on', { message: 'Please acknowledge the media consent statement before continuing' }),
 })
 
 // Plan 15 Phase D — wizard add-player intake (self-signup flow). Trims the

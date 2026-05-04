@@ -43,7 +43,7 @@ export default async function ApprovalDetailPage({ params, searchParams }: PageP
       .single(),
     supabase
       .from('players')
-      .select('id, first_name, last_name, dob, gender, ball_color, level, classifications, track, medical_notes, physical_notes, media_consent, status')
+      .select('id, first_name, last_name, dob, gender, ball_color, level, classifications, track, medical_notes, physical_notes, media_consent_coaching, media_consent_family, media_consent_social, status')
       .eq('family_id', familyId)
       .order('first_name'),
   ])
@@ -213,8 +213,18 @@ export default async function ApprovalDetailPage({ params, searchParams }: PageP
                       <p className="mt-1 text-xs text-muted-foreground">
                         {p.dob ? `Born ${new Date(p.dob).toLocaleDateString('en-AU', { day: '2-digit', month: 'short', year: 'numeric' })}` : 'No DOB'}
                         {p.gender ? ` · ${p.gender}` : ''}
-                        {' · Media consent: '}
-                        {p.media_consent ? <span className="font-medium text-success">yes</span> : <span className="font-medium text-amber-700">no</span>}
+                        {' · Media: '}
+                        {(() => {
+                          const flags = [p.media_consent_coaching, p.media_consent_family, p.media_consent_social].map(Boolean)
+                          const on = flags.filter(Boolean).length
+                          if (on === 0) return <span className="font-medium text-amber-700">none</span>
+                          if (on === 3) return <span className="font-medium text-success">all</span>
+                          const labels: string[] = []
+                          if (p.media_consent_coaching) labels.push('coaching')
+                          if (p.media_consent_family) labels.push('family')
+                          if (p.media_consent_social) labels.push('social')
+                          return <span className="font-medium text-foreground">{labels.join(', ')}</span>
+                        })()}
                       </p>
                       {(p.classifications && (p.classifications as string[]).length > 0) && (
                         <p className="mt-1 text-xs text-muted-foreground">

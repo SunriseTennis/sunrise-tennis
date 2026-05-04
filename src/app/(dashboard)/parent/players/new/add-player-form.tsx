@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils/cn'
 import { createPlayerFromParent } from '../../actions'
+import { ConsentToggle, CONSENT_LABELS } from '@/components/consent-toggle'
 
 const BALL_COLORS = [
   { value: '', label: "I'm not sure" },
@@ -149,26 +150,31 @@ export function ParentAddPlayerForm() {
           <div className="text-sm">
             <p className="font-medium text-foreground">Media consent</p>
             <p className="mt-1 text-xs text-muted-foreground">
-              We take photos and short videos during sessions for technique analysis and to share moments with your family. With your consent, we may also post selected highlights — including ones where your child is recognisable — to Sunrise Tennis Instagram and Facebook. Leave the box below unticked to keep all media private to your family. Change any time in Settings.
+              We take photos and short videos during sessions for three different reasons. Pick whichever you&apos;re OK with — leave the rest off. Change any time in Settings.
             </p>
           </div>
-          <div className="flex items-start gap-2">
-            <input id="media_consent" name="media_consent" type="checkbox" className="mt-1 size-4 rounded border-border" />
-            <Label htmlFor="media_consent" className="text-sm font-normal text-foreground">
-              I consent to photos &amp; videos of my child being used for coaching, family sharing, and on Sunrise Tennis Instagram &amp; Facebook.
-            </Label>
-          </div>
-          <div className="flex items-start gap-2">
-            <input
-              id="media_consent_acknowledged"
-              name="media_consent_acknowledged"
-              type="checkbox"
-              required
-              className="mt-1 size-4 rounded border-border"
+          <div className="space-y-2">
+            <ConsentToggle
+              id="media_consent_coaching"
+              name="media_consent_coaching"
+              defaultChecked={false}
+              label={CONSENT_LABELS.coaching.label}
+              hint={CONSENT_LABELS.coaching.hint}
             />
-            <Label htmlFor="media_consent_acknowledged" className="text-sm font-normal text-foreground">
-              I&apos;ve read the media consent statement above. *
-            </Label>
+            <ConsentToggle
+              id="media_consent_family"
+              name="media_consent_family"
+              defaultChecked={false}
+              label={CONSENT_LABELS.family.label}
+              hint={CONSENT_LABELS.family.hint}
+            />
+            <ConsentToggle
+              id="media_consent_social"
+              name="media_consent_social"
+              defaultChecked={false}
+              label={CONSENT_LABELS.social.label}
+              hint={CONSENT_LABELS.social.hint}
+            />
           </div>
         </CardContent>
       </Card>

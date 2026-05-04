@@ -29,6 +29,7 @@ import {
   updateOnboardingContact,
 } from './actions'
 import { SELF_SIGNUP_TOTAL_STEPS } from './constants'
+import { ConsentToggle, CONSENT_LABELS } from '@/components/consent-toggle'
 
 // ── Types ────────────────────────────────────────────────────────────────
 
@@ -39,7 +40,9 @@ interface Player {
   dob: string | null
   gender: string | null
   level: string | null
-  media_consent: boolean
+  media_consent_coaching: boolean
+  media_consent_family: boolean
+  media_consent_social: boolean
 }
 
 interface SelfSignupWizardProps {
@@ -540,23 +543,35 @@ function StepTermsAndConsent({
       <div className="rounded-xl border border-border bg-card p-4 shadow-card">
         <p className="text-sm font-semibold text-foreground">Media consent (per player)</p>
         <p className="mt-1.5 text-xs text-muted-foreground">
-          We take photos and short videos during sessions for technique analysis and to share moments with your family. With your consent, we may also post selected highlights — including ones where your child is recognisable — to Sunrise Tennis Instagram and Facebook. Toggle off below to keep all media private to your family. Change any time in Settings.
+          We take photos and short videos during sessions for three different reasons. Pick whichever you&apos;re OK with — leave the rest off. Change any time in Settings.
         </p>
-        <ul className="mt-3 space-y-2">
+        <ul className="mt-3 space-y-4">
           {players.map((p) => (
-            <li key={p.id}>
-              <label className="flex items-start gap-2.5">
-                <input
-                  type="checkbox"
-                  name={`media_consent_${p.id}`}
-                  defaultChecked={p.media_consent}
-                  className="mt-0.5 size-4 rounded border-border text-primary focus:ring-primary"
+            <li key={p.id} className="rounded-lg border border-border/60 bg-muted/20 px-3 py-2.5">
+              <p className="text-xs font-semibold text-foreground">{p.first_name} {p.last_name}</p>
+              <div className="mt-2 space-y-1.5">
+                <ConsentToggle
+                  id={`coaching_${p.id}`}
+                  name={`media_consent_coaching_${p.id}`}
+                  defaultChecked={p.media_consent_coaching}
+                  label={CONSENT_LABELS.coaching.label}
+                  hint={CONSENT_LABELS.coaching.hint}
                 />
-                <span className="text-xs text-foreground">
-                  <span className="font-medium">{p.first_name} {p.last_name}</span>
-                  <span className="block text-muted-foreground">I consent to photos &amp; videos being used for coaching, family sharing, and on Sunrise Tennis Instagram &amp; Facebook.</span>
-                </span>
-              </label>
+                <ConsentToggle
+                  id={`family_${p.id}`}
+                  name={`media_consent_family_${p.id}`}
+                  defaultChecked={p.media_consent_family}
+                  label={CONSENT_LABELS.family.label}
+                  hint={CONSENT_LABELS.family.hint}
+                />
+                <ConsentToggle
+                  id={`social_${p.id}`}
+                  name={`media_consent_social_${p.id}`}
+                  defaultChecked={p.media_consent_social}
+                  label={CONSENT_LABELS.social.label}
+                  hint={CONSENT_LABELS.social.hint}
+                />
+              </div>
             </li>
           ))}
         </ul>

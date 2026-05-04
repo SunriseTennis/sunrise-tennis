@@ -7,6 +7,7 @@ import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils/cn'
+import { ConsentToggle, CONSENT_LABELS } from '@/components/consent-toggle'
 
 const BALL_COLORS = ['blue', 'red', 'orange', 'green', 'yellow', 'advanced', 'elite', 'competitive']
 
@@ -115,9 +116,31 @@ export function AddPlayerForm({ familyId }: { familyId: string }) {
             <option value="performance">Performance</option>
           </select>
         </div>
-        <div className="flex items-center gap-2 pt-6">
-          <input id="media_consent" name="media_consent" type="checkbox" className="size-4 rounded border-border" />
-          <Label htmlFor="media_consent" className="text-sm font-normal text-muted-foreground">Media consent</Label>
+        <div className="sm:col-span-2 space-y-2 pt-2">
+          <Label className="text-xs font-semibold">Media consent</Label>
+          <div className="space-y-1.5">
+            <ConsentToggle
+              id="add_media_consent_coaching"
+              name="media_consent_coaching"
+              defaultChecked={false}
+              label={CONSENT_LABELS.coaching.label}
+              hint={CONSENT_LABELS.coaching.hint}
+            />
+            <ConsentToggle
+              id="add_media_consent_family"
+              name="media_consent_family"
+              defaultChecked={false}
+              label={CONSENT_LABELS.family.label}
+              hint={CONSENT_LABELS.family.hint}
+            />
+            <ConsentToggle
+              id="add_media_consent_social"
+              name="media_consent_social"
+              defaultChecked={false}
+              label={CONSENT_LABELS.social.label}
+              hint={CONSENT_LABELS.social.hint}
+            />
+          </div>
         </div>
 
         <div className="sm:col-span-2">

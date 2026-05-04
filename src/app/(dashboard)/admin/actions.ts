@@ -170,8 +170,12 @@ export async function createPlayer(familyId: string, formData: FormData) {
     track,
     medical_notes: medicalNotes,
     physical_notes: physicalNotes,
-    media_consent: mediaConsent,
   } = parsed.data
+
+  // Plan 17 Block A — three granular consent toggles parsed from FormData.
+  const coaching = formData.get('media_consent_coaching') === 'on'
+  const familyConsent = formData.get('media_consent_family') === 'on'
+  const social = formData.get('media_consent_social') === 'on'
 
   const VALID_CLASSES = new Set(['blue', 'red', 'orange', 'green', 'yellow', 'advanced', 'elite'])
   const parsedClassifications = classifications
@@ -192,7 +196,9 @@ export async function createPlayer(familyId: string, formData: FormData) {
       track: track || 'participation',
       medical_notes: medicalNotes || null,
       physical_notes: physicalNotes || null,
-      media_consent: mediaConsent === 'on',
+      media_consent_coaching: coaching,
+      media_consent_family: familyConsent,
+      media_consent_social: social,
       status: 'active',
     })
 
@@ -213,7 +219,12 @@ export async function updatePlayer(playerId: string, familyId: string, formData:
     redirect(`/admin/families/${familyId}/players/${playerId}?error=${encodeURIComponent(parsed.error)}`)
   }
 
-  const { first_name: firstName, last_name: lastName, preferred_name: preferredName, gender, dob, ball_color: ballColor, level, classifications, track, status, medical_notes: medicalNotes, physical_notes: physicalNotes, current_focus: currentFocus, short_term_goal: shortTermGoal, long_term_goal: longTermGoal, comp_interest: compInterest, media_consent: mediaConsent } = parsed.data
+  const { first_name: firstName, last_name: lastName, preferred_name: preferredName, gender, dob, ball_color: ballColor, level, classifications, track, status, medical_notes: medicalNotes, physical_notes: physicalNotes, current_focus: currentFocus, short_term_goal: shortTermGoal, long_term_goal: longTermGoal, comp_interest: compInterest } = parsed.data
+
+  // Plan 17 Block A — three granular consent toggles parsed from FormData.
+  const coaching = formData.get('media_consent_coaching') === 'on'
+  const familyConsent = formData.get('media_consent_family') === 'on'
+  const social = formData.get('media_consent_social') === 'on'
 
   // Parse comma-separated classifications, filter to known values
   const VALID_CLASSES = new Set(['blue', 'red', 'orange', 'green', 'yellow', 'advanced', 'elite'])
@@ -240,7 +251,9 @@ export async function updatePlayer(playerId: string, familyId: string, formData:
       short_term_goal: shortTermGoal || null,
       long_term_goal: longTermGoal || null,
       comp_interest: compInterest || null,
-      media_consent: mediaConsent === 'on',
+      media_consent_coaching: coaching,
+      media_consent_family: familyConsent,
+      media_consent_social: social,
     })
     .eq('id', playerId)
 

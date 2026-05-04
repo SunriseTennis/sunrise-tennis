@@ -32,7 +32,7 @@ export default async function ParentOnboardingPage({
       .single(),
     supabase
       .from('players')
-      .select('id, first_name, last_name, dob, gender, ball_color, level, media_consent')
+      .select('id, first_name, last_name, dob, gender, ball_color, level, media_consent_coaching, media_consent_family, media_consent_social')
       .eq('family_id', familyId)
       .order('first_name'),
   ])
@@ -59,7 +59,9 @@ export default async function ParentOnboardingPage({
     dob: p.dob ?? null,
     gender: (p.gender ?? null) as string | null,
     level: (p.ball_color ?? p.level ?? null) as string | null,
-    media_consent: !!p.media_consent,
+    media_consent_coaching: !!p.media_consent_coaching,
+    media_consent_family: !!p.media_consent_family,
+    media_consent_social: !!p.media_consent_social,
   }))
 
   if (signupSource === 'self_signup') {

@@ -6,6 +6,16 @@ import { PlayerEditForm } from './player-edit-form'
 import { Card, CardContent } from '@/components/ui/card'
 import { StatusBadge } from '@/components/status-badge'
 
+function ConsentLine({ label, on }: { label: string; on: boolean }) {
+  return (
+    <div className="flex items-center gap-1.5">
+      <span className={`inline-block size-1.5 rounded-full ${on ? 'bg-emerald-500' : 'bg-red-400'}`} />
+      <span className="text-xs text-muted-foreground">{label}:</span>
+      <span className={`text-xs font-medium ${on ? 'text-emerald-700' : 'text-muted-foreground'}`}>{on ? 'Yes' : 'No'}</span>
+    </div>
+  )
+}
+
 export default async function PlayerDetailPage({
   params,
 }: {
@@ -90,10 +100,10 @@ export default async function PlayerDetailPage({
               </div>
               <div>
                 <dt className="text-xs font-medium text-muted-foreground">Media Consent</dt>
-                <dd className="text-sm">
-                  <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${player.media_consent ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
-                    {player.media_consent ? 'Yes' : 'No'}
-                  </span>
+                <dd className="text-sm space-y-0.5">
+                  <ConsentLine label="Coaching" on={!!player.media_consent_coaching} />
+                  <ConsentLine label="Family" on={!!player.media_consent_family} />
+                  <ConsentLine label="Social media" on={!!player.media_consent_social} />
                 </dd>
               </div>
               <div>

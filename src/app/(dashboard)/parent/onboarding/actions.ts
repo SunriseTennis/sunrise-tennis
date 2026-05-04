@@ -240,6 +240,8 @@ export async function addOnboardingPlayer(formData: FormData) {
     ? classifications.split(',').map((s) => s.trim()).filter((s) => VALID_CLASSES.has(s))
     : []
 
+  // Plan 17 Block A — three granular consent toggles default to false
+  // (opt-in). Wizard step 4 is where the parent grants per-player consent.
   const { error } = await supabase
     .from('players')
     .insert({
@@ -255,7 +257,9 @@ export async function addOnboardingPlayer(formData: FormData) {
       track: 'participation',
       medical_notes: medical_notes || null,
       physical_notes: physical_notes || null,
-      media_consent: false,
+      media_consent_coaching: false,
+      media_consent_family: false,
+      media_consent_social: false,
       status: 'active',
     })
 
@@ -326,11 +330,18 @@ export async function acknowledgeOnboardingTerms(formData: FormData) {
     redirect(`/parent/onboarding?step=4&error=${encodeURIComponent(parsed.error)}`)
   }
 
-  // Per-player media consent — keys look like `media_consent_<playerId>`.
-  const consentByPlayerId = new Map<string, boolean>()
+  // Plan 17 Block A — per-player media consent with three granular toggles.
+  // Keys look like `media_consent_<kind>_<playerId>` where kind is one of
+  // coaching, family, social.
+  const consentByPlayerId = new Map<string, { coaching: boolean; family: boolean; social: boolean }>()
   formData.forEach((value, key) => {
-    const match = key.match(/^media_consent_(.+)$/)
-    if (match) consentByPlayerId.set(match[1], value === 'on')
+    const match = key.match(/^media_consent_(coaching|family|social)_(.+)$/)
+    if (match) {
+      const [, kind, playerId] = match
+      const existing = consentByPlayerId.get(playerId) ?? { coaching: false, family: false, social: false }
+      existing[kind as 'coaching' | 'family' | 'social'] = value === 'on'
+      consentByPlayerId.set(playerId, existing)
+    }
   })
 
   const { data: players } = await supabase
@@ -339,10 +350,14 @@ export async function acknowledgeOnboardingTerms(formData: FormData) {
     .eq('family_id', familyId)
 
   for (const player of players ?? []) {
-    const consent = consentByPlayerId.get(player.id) ?? false
+    const c = consentByPlayerId.get(player.id) ?? { coaching: false, family: false, social: false }
     const { error } = await supabase
       .from('players')
-      .update({ media_consent: consent })
+      .update({
+        media_consent_coaching: c.coaching,
+        media_consent_family: c.family,
+        media_consent_social: c.social,
+      })
       .eq('id', player.id)
     if (error) {
       console.error(`[onboarding] media_consent player ${player.id}:`, error)

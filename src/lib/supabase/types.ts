@@ -1731,6 +1731,9 @@ export type Database = {
           level: string | null
           long_term_goal: string | null
           media_consent: boolean | null
+          media_consent_coaching: boolean
+          media_consent_family: boolean
+          media_consent_social: boolean
           medical_notes: string | null
           physical_notes: string | null
           preferred_name: string | null
@@ -1755,6 +1758,9 @@ export type Database = {
           level?: string | null
           long_term_goal?: string | null
           media_consent?: boolean | null
+          media_consent_coaching?: boolean
+          media_consent_family?: boolean
+          media_consent_social?: boolean
           medical_notes?: string | null
           physical_notes?: string | null
           preferred_name?: string | null
@@ -1779,6 +1785,9 @@ export type Database = {
           level?: string | null
           long_term_goal?: string | null
           media_consent?: boolean | null
+          media_consent_coaching?: boolean
+          media_consent_family?: boolean
+          media_consent_social?: boolean
           medical_notes?: string | null
           physical_notes?: string | null
           preferred_name?: string | null

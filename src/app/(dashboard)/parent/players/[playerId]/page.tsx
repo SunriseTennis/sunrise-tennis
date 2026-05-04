@@ -206,7 +206,9 @@ export default async function ParentPlayerDetailPage({ params }: { params: Promi
               dob: player.dob,
               gender: player.gender,
               medical_notes: player.medical_notes,
-              media_consent: player.media_consent,
+              media_consent_coaching: (player as { media_consent_coaching?: boolean }).media_consent_coaching ?? false,
+              media_consent_family: (player as { media_consent_family?: boolean }).media_consent_family ?? false,
+              media_consent_social: (player as { media_consent_social?: boolean }).media_consent_social ?? false,
             }} />
           </div>
           <div className="divide-y divide-border">
@@ -228,7 +230,18 @@ export default async function ParentPlayerDetailPage({ params }: { params: Promi
             )}
             <div className="flex items-center justify-between px-5 py-3">
               <span className="text-xs font-medium text-muted-foreground">Media Consent</span>
-              <span className="text-sm text-foreground">{player.media_consent ? 'Allowed' : 'Not allowed'}</span>
+              <span className="text-sm text-foreground">{(() => {
+                const c = (player as { media_consent_coaching?: boolean; media_consent_family?: boolean; media_consent_social?: boolean })
+                const flags = [c.media_consent_coaching, c.media_consent_family, c.media_consent_social]
+                const on = flags.filter(Boolean).length
+                if (on === 0) return 'None'
+                if (on === 3) return 'All (coaching, family, social)'
+                const labels: string[] = []
+                if (c.media_consent_coaching) labels.push('coaching')
+                if (c.media_consent_family) labels.push('family')
+                if (c.media_consent_social) labels.push('social')
+                return labels.join(', ')
+              })()}</span>
             </div>
             {/* Medical info */}
             <div className="px-5 py-3">

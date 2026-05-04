@@ -27,7 +27,7 @@ interface PlayerRow {
   status: 'active' | 'inactive' | 'archived'
   classifications: string[]
   track: 'performance' | 'participation'
-  mediaConsent: boolean | null
+  mediaConsent: 'none' | 'partial' | 'all'
   compInterest: string | null
   familyId: string
   familyDisplayId: string
