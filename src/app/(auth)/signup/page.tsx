@@ -52,15 +52,27 @@ function SignupForm() {
       <form action={signup} className="space-y-4">
         {invite && <input type="hidden" name="invite_token" value={invite} />}
 
-        <div className="space-y-2">
-          <Label htmlFor="full_name">Full name</Label>
-          <Input
-            id="full_name"
-            name="full_name"
-            type="text"
-            required
-            autoComplete="name"
-          />
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-2">
+            <Label htmlFor="first_name">First name</Label>
+            <Input
+              id="first_name"
+              name="first_name"
+              type="text"
+              required
+              autoComplete="given-name"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="last_name">Last name</Label>
+            <Input
+              id="last_name"
+              name="last_name"
+              type="text"
+              required
+              autoComplete="family-name"
+            />
+          </div>
         </div>
 
         <div className="space-y-2">

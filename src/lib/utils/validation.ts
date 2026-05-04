@@ -102,10 +102,14 @@ export const referralSourceSchema = z.enum([
   'word_of_mouth', 'google', 'social', 'school', 'walked_past', 'event', 'other',
 ])
 
+// Plan 17 Block B — split full_name into first_name + last_name. The
+// surname becomes families.family_name; the full "First Last" string is
+// the primary_contact display name.
 export const signupFormSchema = z.object({
   email: z.string().email('Valid email is required'),
   password: z.string().min(8, 'Password must be at least 8 characters').max(200),
-  full_name: requiredString('Full name is required'),
+  first_name: requiredString('First name is required'),
+  last_name: requiredString('Last name is required'),
   invite_token: optionalString(),
   accepted_terms: z.literal('on', { message: 'You must accept the Privacy Policy and Terms of Service' }),
   referral_source: referralSourceSchema.optional().or(z.literal('')),

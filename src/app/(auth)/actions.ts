@@ -149,11 +149,16 @@ export async function signup(formData: FormData) {
   const {
     email,
     password,
-    full_name: fullName,
+    first_name: firstName,
+    last_name: lastName,
     invite_token: inviteToken,
     referral_source: referralSource,
     referral_source_detail: referralSourceDetail,
   } = parsed.data
+
+  // Plan 17 Block B — surname is the family name, full string is the
+  // primary_contact display name. Both go into user_metadata.
+  const fullName = `${firstName} ${lastName}`.trim()
 
   // Rate limit: 3 signup attempts per minute per email
   if (!await checkRateLimitAsync(`signup:${email}`, 3, 60_000)) {
@@ -165,6 +170,8 @@ export async function signup(formData: FormData) {
     password,
     options: {
       data: {
+        first_name: firstName,
+        last_name: lastName,
         full_name: fullName,
         accepted_terms: true,
         accepted_terms_at: new Date().toISOString(),
@@ -185,7 +192,7 @@ export async function signup(formData: FormData) {
     redirect(`/signup?error=${encodeURIComponent(error.message)}${inviteParam}`)
   }
 
-  await logAuthEvent({ userId: data.user?.id, email, eventType: 'signup', method: 'password', success: true, metadata: { invite_token: inviteToken || null, full_name: fullName } })
+  await logAuthEvent({ userId: data.user?.id, email, eventType: 'signup', method: 'password', success: true, metadata: { invite_token: inviteToken || null, first_name: firstName, last_name: lastName, full_name: fullName } })
   redirect('/verify?type=signup')
 }
 

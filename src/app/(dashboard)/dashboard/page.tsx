@@ -48,13 +48,25 @@ export default async function DashboardPage() {
   // pending_review state via the SECURITY DEFINER RPC, then send them to
   // the onboarding wizard. The wizard branches on signup_source for the
   // 6-step self-signup intake (vs the 3-step admin-invite flow).
-  const fullName = (user.user_metadata?.full_name as string | undefined) ?? user.email ?? 'New family'
+  //
+  // Plan 17 Block B — surname becomes families.family_name (was full
+  // name pre-Plan-17). The full "First Last" string is the primary_contact
+  // display name. Older signups (pre-Plan-17) only have full_name in
+  // user_metadata; fall back to it for family_name in that case.
+  const firstName = (user.user_metadata?.first_name as string | undefined) ?? ''
+  const lastName = (user.user_metadata?.last_name as string | undefined) ?? ''
+  const metaFullName = user.user_metadata?.full_name as string | undefined
+  const fullName = metaFullName
+    || `${firstName} ${lastName}`.trim()
+    || user.email
+    || 'New family'
+  const familyName = lastName.trim() || fullName
   const referralSource = user.user_metadata?.referral_source as string | undefined
   const referralSourceDetail = user.user_metadata?.referral_source_detail as string | undefined
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: rpcResult, error: rpcError } = await (supabase as any).rpc('create_self_signup_family', {
-    p_family_name: fullName,
+    p_family_name: familyName,
     p_primary_contact: { name: fullName, email: user.email },
     p_referral_source: referralSource ?? null,
     p_referral_source_detail: referralSourceDetail ?? null,
