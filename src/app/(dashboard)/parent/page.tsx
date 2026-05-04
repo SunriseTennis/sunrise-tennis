@@ -7,6 +7,7 @@ import { getTermForDate, getNextTermStart } from '@/lib/utils/school-terms'
 import { EmptyState } from '@/components/empty-state'
 import { ImageHero } from '@/components/image-hero'
 import { PendingApprovalBanner } from '@/components/pending-approval-banner'
+import { JustApprovedBanner } from '@/components/just-approved-banner'
 import { Users, GraduationCap, ChevronRight, CalendarDays, MapPin, UserPlus, CreditCard, Calendar, Megaphone, Trophy } from 'lucide-react'
 import { EnrolledCalendar } from './enrolled-calendar'
 import { PreChargeBanner } from './pre-charge-banner'
@@ -308,6 +309,16 @@ export default async function ParentDashboard() {
   const isTermBreak = !getTermForDate(now)
   const nextTermStart = isTermBreak ? getNextTermStart(now) : null
 
+  // Plan 17 Block D — show "You're approved!" banner for 14 days post-approval,
+  // until parent dismisses it.
+  const approvedAt = (family as { approved_at?: string | null } | null)?.approved_at ?? null
+  const welcomeDismissedAt = (family as { welcome_banner_dismissed_at?: string | null } | null)?.welcome_banner_dismissed_at ?? null
+  const justApproved =
+    family?.approval_status === 'approved'
+    && !!approvedAt
+    && new Date(approvedAt).getTime() > Date.now() - 14 * 24 * 60 * 60 * 1000
+    && !welcomeDismissedAt
+
   return (
     <div className="space-y-6">
       {/* ── Pending Approval Banner (Plan 15 Phase C) ── */}
@@ -318,6 +329,9 @@ export default async function ParentDashboard() {
           hasPlayers={(players ?? []).length > 0}
         />
       )}
+
+      {/* ── Just Approved Banner (Plan 17 Block D) ── */}
+      {justApproved && family && <JustApprovedBanner familyId={family.id} />}
 
       {/* ── Hero Banner ── */}
       <ImageHero>

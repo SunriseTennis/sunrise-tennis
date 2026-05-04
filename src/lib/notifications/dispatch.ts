@@ -12,6 +12,7 @@
 import { createClient as createServiceClient, SupabaseClient } from '@supabase/supabase-js'
 import { sendPushToUser, getAdminUserIds } from '@/lib/push/send'
 import { getEligibleParentUserIds } from '@/lib/utils/private-booking'
+import { sendBrandedEmail } from './send-email'
 
 export interface DispatchContext {
   /** Family-level resolves to all parent userIds for this family. */
@@ -150,6 +151,36 @@ async function sendPush(
 }
 
 /**
+ * Plan 17 Block D — fanout the rendered notification over email via the
+ * Resend REST API. Each user's auth.users.email is resolved through the
+ * service-role client (auth.admin.getUserById). Failures per recipient
+ * are swallowed so one bad lookup doesn't drop the whole rule.
+ */
+async function sendEmailChannel(
+  service: SupabaseClient,
+  userIds: string[],
+  rendered: { title: string; body: string; url: string },
+): Promise<void> {
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://sunrisetennis.com.au'
+  for (const userId of userIds) {
+    try {
+      const { data: { user } } = await service.auth.admin.getUserById(userId)
+      const email = user?.email
+      if (!email) continue
+      await sendBrandedEmail({
+        to: email,
+        subject: rendered.title,
+        bodyMarkdown: rendered.body || '',
+        ctaLabel: rendered.url ? 'Open Sunrise' : undefined,
+        ctaUrl: rendered.url ? `${siteUrl}${rendered.url}` : undefined,
+      })
+    } catch (e) {
+      console.error('[dispatch] email lookup/send failed for', userId, e)
+    }
+  }
+}
+
+/**
  * Fire all enabled rules for `eventType`. Renders templates against
  * `context`, fans out to the audience for each rule, and writes
  * in_app rows + sends push per rule's channels.
@@ -198,6 +229,8 @@ export async function dispatchNotification(
     if (channels.includes('push')) {
       await sendPush(userIds, rendered)
     }
-    // 'email' channel — no-op until Resend/Postmark wired (see SYSTEM-MAP.md).
+    if (channels.includes('email')) {
+      await sendEmailChannel(service, userIds, rendered)
+    }
   }
 }

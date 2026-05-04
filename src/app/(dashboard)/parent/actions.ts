@@ -274,6 +274,24 @@ export async function createPlayerFromParent(formData: FormData) {
   redirect(`/parent/players/${created.id}?success=Player+added.+Admin+will+confirm+ball+level+shortly.`)
 }
 
+/**
+ * Plan 17 Block D — parent dismisses the "You're approved!" welcome
+ * banner. Stamps families.welcome_banner_dismissed_at so the page-level
+ * gate hides it on subsequent visits. Fire-and-forget from the client.
+ */
+export async function dismissJustApprovedBanner(familyId: string) {
+  const supabase = await createClient()
+  const ownFamilyId = await getParentFamilyId()
+  if (!ownFamilyId || ownFamilyId !== familyId) return
+
+  await supabase
+    .from('families')
+    .update({ welcome_banner_dismissed_at: new Date().toISOString() })
+    .eq('id', familyId)
+
+  revalidatePath('/parent')
+}
+
 export async function updateNotificationPreferences(formData: FormData) {
   const supabase = await createClient()
   const familyId = await getParentFamilyId()

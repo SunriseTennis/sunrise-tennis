@@ -1,6 +1,6 @@
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
-import { CheckCircle2, AlertCircle, XCircle, MessageSquare, ChevronLeft, ExternalLink } from 'lucide-react'
+import { CheckCircle2, AlertCircle, XCircle, MessageSquare, ChevronLeft, ExternalLink, Mail } from 'lucide-react'
 import { createClient, requireAdmin, decryptMedicalNotes } from '@/lib/supabase/server'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -9,11 +9,12 @@ import {
   approveFamilyAction,
   requestChangesAction,
   rejectFamilyAction,
+  resendApprovalNotification,
 } from '../actions'
 
 interface PageProps {
   params: Promise<{ familyId: string }>
-  searchParams: Promise<{ error?: string }>
+  searchParams: Promise<{ error?: string; success?: string }>
 }
 
 export const dynamic = 'force-dynamic'
@@ -31,7 +32,7 @@ const BALL_LEVEL_BADGE: Record<string, string> = {
 export default async function ApprovalDetailPage({ params, searchParams }: PageProps) {
   await requireAdmin()
   const { familyId } = await params
-  const { error } = await searchParams
+  const { error, success } = await searchParams
   const supabase = await createClient()
 
   const [{ data: family }, { data: players }] = await Promise.all([
@@ -80,6 +81,7 @@ export default async function ApprovalDetailPage({ params, searchParams }: PageP
   const approveBound = approveFamilyAction.bind(null, familyId)
   const requestChangesBound = requestChangesAction.bind(null, familyId)
   const rejectBound = rejectFamilyAction.bind(null, familyId)
+  const resendBound = resendApprovalNotification.bind(null, familyId)
 
   return (
     <div className="max-w-4xl space-y-5">
@@ -121,6 +123,12 @@ export default async function ApprovalDetailPage({ params, searchParams }: PageP
       {error && (
         <div className="rounded-lg border border-destructive/20 bg-destructive/10 px-4 py-3 text-sm text-destructive">
           {error}
+        </div>
+      )}
+
+      {success && (
+        <div className="rounded-lg border border-success/30 bg-success-light px-4 py-3 text-sm text-success">
+          {success}
         </div>
       )}
 
@@ -321,6 +329,25 @@ export default async function ApprovalDetailPage({ params, searchParams }: PageP
             <Link href={`/admin/families/${familyId}`} className="font-medium text-primary hover:text-primary/80">
               their family page
             </Link>.
+          </CardContent>
+        </Card>
+      )}
+
+      {family.approval_status === 'approved' && (
+        <Card>
+          <CardContent className="pt-6 space-y-3">
+            <div>
+              <h2 className="text-sm font-semibold text-foreground">Resend welcome notification</h2>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Re-fires the &ldquo;You&apos;re in&rdquo; notification across all configured channels (email, push, in-app). Use if the family was approved before email was wired or didn&apos;t see the original.
+              </p>
+            </div>
+            <form action={resendBound}>
+              <Button type="submit" variant="outline" size="sm">
+                <Mail className="mr-2 size-4" />
+                Resend welcome notification
+              </Button>
+            </form>
           </CardContent>
         </Card>
       )}
