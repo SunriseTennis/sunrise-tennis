@@ -390,7 +390,12 @@ export async function createInvitation(familyId: string, formData: FormData) {
 
   const user = await getSessionUser()
 
-  const { error } = await supabase
+  // Plan 18 — invitations now expire 7d after creation. The form copy has
+  // claimed this since day 1; the column was just never being written.
+  // claim_invitation already enforces non-NULL expires_at.
+  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
+
+  const { data: insertedInvite, error } = await supabase
     .from('invitations')
     .insert({
       family_id: familyId,
@@ -398,14 +403,56 @@ export async function createInvitation(familyId: string, formData: FormData) {
       token,
       status: 'pending',
       created_by: user?.id,
+      expires_at: expiresAt,
     })
+    .select('id')
+    .single()
 
-  if (error) {
-    redirect(`/admin/families/${familyId}?error=${encodeURIComponent(error.message)}`)
+  if (error || !insertedInvite) {
+    redirect(`/admin/families/${familyId}?error=${encodeURIComponent(error?.message ?? 'Could not create invite')}`)
+  }
+
+  // Plan 18 G1 — fire-and-forget branded invitation email via Resend.
+  // The link is also returned inline so admin can SMS it as a fallback.
+  try {
+    const { sendInvitationEmail } = await import('@/lib/notifications/send-invitation')
+    await sendInvitationEmail({ invitationId: insertedInvite.id })
+  } catch (e) {
+    console.error('[invitation] sendInvitationEmail failed:', e)
   }
 
   revalidatePath(`/admin/families/${familyId}`)
   redirect(`/admin/families/${familyId}?invited=${encodeURIComponent(token)}`)
+}
+
+// Plan 18 — manual resend of an existing pending invitation email.
+// Safe to call repeatedly; no DB mutation, just a re-fire of the email.
+export async function resendInvitationEmail(invitationId: string) {
+  await requireAdmin()
+  const supabase = await createClient()
+
+  const { data: inv, error } = await supabase
+    .from('invitations')
+    .select('id, family_id, status')
+    .eq('id', invitationId)
+    .single()
+
+  if (error || !inv) {
+    redirect('/admin?error=Invitation+not+found')
+  }
+  if (inv.status !== 'pending') {
+    redirect(`/admin/families/${inv.family_id}?error=Invitation+already+claimed`)
+  }
+
+  try {
+    const { sendInvitationEmail } = await import('@/lib/notifications/send-invitation')
+    await sendInvitationEmail({ invitationId: inv.id })
+  } catch (e) {
+    console.error('[invitation] resendInvitationEmail failed:', e)
+    redirect(`/admin/families/${inv.family_id}?error=Could+not+send+email`)
+  }
+
+  redirect(`/admin/families/${inv.family_id}?resent=1`)
 }
 
 // ── Programs ────────────────────────────────────────────────────────────

@@ -18,7 +18,7 @@ export default async function FamilyDetailPage({ params }: { params: Promise<{ i
   const { id } = await params
   const supabase = await createClient()
 
-  const [{ data: family }, { data: players }, { data: balance }, { data: pricingOverrides }, { data: allPrograms }, { data: coaches }, { data: allowedCoaches }, { data: outstandingCharges }] = await Promise.all([
+  const [{ data: family }, { data: players }, { data: balance }, { data: pricingOverrides }, { data: allPrograms }, { data: coaches }, { data: allowedCoaches }, { data: outstandingCharges }, { data: pendingInvites }] = await Promise.all([
     supabase.from('families').select('*').eq('id', id).single(),
     supabase.from('players').select('*').eq('family_id', id).order('first_name'),
     supabase.from('family_balance').select('balance_cents, confirmed_balance_cents, projected_balance_cents').eq('family_id', id).single(),
@@ -27,6 +27,7 @@ export default async function FamilyDetailPage({ params }: { params: Promise<{ i
     supabase.from('coaches').select('id, name, private_opt_in_required, delivers_privates').eq('status', 'active').order('name'),
     supabase.from('player_allowed_coaches').select('player_id, coach_id, auto_approve'),
     supabase.from('charges').select('id, description, amount_cents, status, type, created_at').eq('family_id', id).in('status', ['pending', 'confirmed']).gt('amount_cents', 0).order('created_at', { ascending: false }).limit(50),
+    supabase.from('invitations').select('id, email, expires_at, created_at, token').eq('family_id', id).eq('status', 'pending').order('created_at', { ascending: false }),
   ])
 
   if (!family) notFound()
@@ -202,6 +203,7 @@ export default async function FamilyDetailPage({ params }: { params: Promise<{ i
           <InviteParentForm
             familyId={id}
             siteUrl={process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'}
+            pendingInvites={pendingInvites ?? []}
           />
         </Suspense>
 

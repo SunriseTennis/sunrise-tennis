@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { subscribeToPush, getExistingSubscription } from '@/lib/push/subscribe'
+import { splitFullName } from '@/lib/utils/name'
 import {
   updateOnboardingContact,
   updateOnboardingPlayers,
@@ -27,7 +28,7 @@ interface OnboardingWizardProps {
   initialStep: number
   error: string | null
   userEmail: string
-  primaryContact: { name?: string; phone?: string; email?: string }
+  primaryContact: { name?: string; first_name?: string; last_name?: string; phone?: string; email?: string }
   players: Player[]
   signupSource: 'admin_invite' | 'self_signup' | 'legacy_import'
 }
@@ -89,11 +90,19 @@ function StepContact({
   userEmail,
   error,
 }: {
-  contact: { name?: string; phone?: string; email?: string }
+  contact: { name?: string; first_name?: string; last_name?: string; phone?: string; email?: string }
   userEmail: string
   error: string | null
 }) {
   const [pending, startTransition] = useTransition()
+
+  // Plan 18 — admin-invite wizard step 1 now collects first/last as separate
+  // fields to match the action's adminInviteContactSchema (which Plan 17
+  // updated). Pre-fill from stored split fields, fall back to splitting the
+  // legacy bundled `name` for migration-cohort families.
+  const fallback = splitFullName(contact.name)
+  const initialFirst = contact.first_name ?? fallback.first
+  const initialLast = contact.last_name ?? fallback.last
 
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -120,18 +129,33 @@ function StepContact({
       )}
 
       <div className="space-y-4">
-        <div>
-          <Label htmlFor="contact_name">Full name</Label>
-          <Input
-            id="contact_name"
-            name="contact_name"
-            type="text"
-            required
-            defaultValue={contact.name ?? ''}
-            placeholder="Your full name"
-            className="mt-1.5"
-            autoComplete="name"
-          />
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <Label htmlFor="contact_first_name">First name</Label>
+            <Input
+              id="contact_first_name"
+              name="contact_first_name"
+              type="text"
+              required
+              defaultValue={initialFirst}
+              placeholder="Your first name"
+              className="mt-1.5"
+              autoComplete="given-name"
+            />
+          </div>
+          <div>
+            <Label htmlFor="contact_last_name">Last name</Label>
+            <Input
+              id="contact_last_name"
+              name="contact_last_name"
+              type="text"
+              required
+              defaultValue={initialLast}
+              placeholder="Your surname"
+              className="mt-1.5"
+              autoComplete="family-name"
+            />
+          </div>
         </div>
         <div>
           <Label htmlFor="contact_phone">Phone number</Label>
