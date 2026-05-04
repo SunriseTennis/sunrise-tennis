@@ -152,6 +152,10 @@ export function PlayerEditForm({ player, familyId }: { player: Player; familyId:
             </select>
           </div>
           <div className="sm:col-span-2">
+            <Label htmlFor="school">School <span className="text-xs text-muted-foreground">(optional)</span></Label>
+            <Input id="school" name="school" type="text" defaultValue={player.school ?? ''} placeholder="e.g. McAuley Community School" className="mt-1" />
+          </div>
+          <div className="sm:col-span-2">
             <Label htmlFor="medical_notes">Medical notes</Label>
             <Textarea id="medical_notes" name="medical_notes" rows={2} defaultValue={player.medical_notes ?? ''} className="mt-1" />
           </div>

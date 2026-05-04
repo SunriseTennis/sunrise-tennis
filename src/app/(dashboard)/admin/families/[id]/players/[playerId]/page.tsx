@@ -110,6 +110,12 @@ export default async function PlayerDetailPage({
                 <dt className="text-xs font-medium text-muted-foreground">Competition Interest</dt>
                 <dd className="text-sm text-foreground capitalize">{player.comp_interest ?? '-'}</dd>
               </div>
+              {player.school && (
+                <div className="sm:col-span-2">
+                  <dt className="text-xs font-medium text-muted-foreground">School</dt>
+                  <dd className="text-sm text-foreground">{player.school}</dd>
+                </div>
+              )}
               {player.coach_id && coaches && (
                 <div>
                   <dt className="text-xs font-medium text-muted-foreground">Assigned Coach</dt>

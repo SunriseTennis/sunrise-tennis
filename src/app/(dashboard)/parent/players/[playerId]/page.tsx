@@ -206,6 +206,7 @@ export default async function ParentPlayerDetailPage({ params }: { params: Promi
               dob: player.dob,
               gender: player.gender,
               medical_notes: player.medical_notes,
+              school: (player as { school?: string | null }).school ?? null,
               media_consent_coaching: (player as { media_consent_coaching?: boolean }).media_consent_coaching ?? false,
               media_consent_family: (player as { media_consent_family?: boolean }).media_consent_family ?? false,
               media_consent_social: (player as { media_consent_social?: boolean }).media_consent_social ?? false,
@@ -226,6 +227,12 @@ export default async function ParentPlayerDetailPage({ params }: { params: Promi
               <div className="flex items-center justify-between px-5 py-3">
                 <span className="text-xs font-medium text-muted-foreground">Date of Birth</span>
                 <span className="text-sm text-foreground">{formatDate(player.dob)}</span>
+              </div>
+            )}
+            {(player as { school?: string | null }).school && (
+              <div className="flex items-center justify-between px-5 py-3">
+                <span className="text-xs font-medium text-muted-foreground">School</span>
+                <span className="text-sm text-foreground">{(player as { school?: string | null }).school}</span>
               </div>
             )}
             <div className="flex items-center justify-between px-5 py-3">

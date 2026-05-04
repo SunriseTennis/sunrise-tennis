@@ -132,6 +132,13 @@ export function ParentAddPlayerForm() {
       <Card>
         <CardContent className="p-4 space-y-3">
           <div>
+            <Label htmlFor="school">School <span className="text-muted-foreground">(optional)</span></Label>
+            <Input id="school" name="school" type="text" className="mt-1" placeholder="e.g. McAuley Community School" />
+            <p className="mt-1 text-xs text-muted-foreground">
+              Helps us match school programs and stay coordinated.
+            </p>
+          </div>
+          <div>
             <Label htmlFor="medical_notes">Medical notes</Label>
             <Textarea id="medical_notes" name="medical_notes" rows={2} className="mt-1" placeholder="Allergies, conditions, medications..." />
             <p className="mt-1 text-xs text-muted-foreground">

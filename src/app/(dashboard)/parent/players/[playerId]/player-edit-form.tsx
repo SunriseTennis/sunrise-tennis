@@ -20,6 +20,7 @@ export function ParentPlayerEditForm({
     dob: string | null
     gender: string | null
     medical_notes: string | null
+    school: string | null
     media_consent_coaching: boolean
     media_consent_family: boolean
     media_consent_social: boolean
@@ -113,6 +114,10 @@ export function ParentPlayerEditForm({
                   hint={CONSENT_LABELS.social.hint}
                 />
               </div>
+            </div>
+            <div className="sm:col-span-2">
+              <Label htmlFor="school">School <span className="text-muted-foreground">(optional)</span></Label>
+              <Input id="school" name="school" type="text" defaultValue={player.school ?? ''} placeholder="e.g. McAuley Community School" className="mt-1" />
             </div>
             <div className="sm:col-span-2">
               <Label htmlFor="medical_notes">Medical notes</Label>
