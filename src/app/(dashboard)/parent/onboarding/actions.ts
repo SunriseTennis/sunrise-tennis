@@ -243,20 +243,21 @@ export async function addOnboardingPlayer(formData: FormData) {
     dob,
     gender,
     ball_color,
-    classifications,
     medical_notes,
-    physical_notes,
     school,
   } = parsed.data
 
-  const VALID_CLASSES = new Set(['blue', 'red', 'orange', 'green', 'yellow', 'advanced', 'elite'])
-  const parsedClassifications = classifications
-    ? classifications.split(',').map((s) => s.trim()).filter((s) => VALID_CLASSES.has(s))
-    : []
+  // Plan 19 — wizard surface no longer asks for classifications. Auto-fill
+  // a single-element classification array from the parent's best-guess
+  // ball-colour; admin confirms via the parent.player.added notification
+  // on creation. "I'm not sure" → empty array.
+  const VALID_CLASSES = new Set(['blue', 'red', 'orange', 'green', 'yellow'])
+  const parsedClassifications = ball_color && VALID_CLASSES.has(ball_color) ? [ball_color] : []
 
   // Plan 17 Block A — three granular consent toggles default to false
-  // (opt-in). Wizard step 4 is where the parent grants per-player consent.
-  const { error } = await supabase
+  // (opt-in). Wizard step 3 (admin-invite) / step 4 (self-signup) is where
+  // the parent grants per-player consent.
+  const { data: insertedPlayer, error } = await supabase
     .from('players')
     .insert({
       family_id: familyId,
@@ -270,17 +271,39 @@ export async function addOnboardingPlayer(formData: FormData) {
       classifications: parsedClassifications,
       track: 'participation',
       medical_notes: medical_notes || null,
-      physical_notes: physical_notes || null,
       school: school || null,
       media_consent_coaching: false,
       media_consent_family: false,
       media_consent_social: false,
       status: 'active',
     })
+    .select('id')
+    .single()
 
-  if (error) {
+  if (error || !insertedPlayer) {
     console.error('[onboarding] addOnboardingPlayer:', error)
-    redirect(`/parent/onboarding?step=2&error=${encodeURIComponent(error.message)}`)
+    redirect(`/parent/onboarding?step=2&error=${encodeURIComponent(error?.message ?? 'Failed to add player')}`)
+  }
+
+  // Plan 19 Phase 8 — admin gets pinged so they can confirm the
+  // parent's best-guess ball-colour + assign classifications. Mirrors
+  // the dispatch from createPlayerFromParent (/parent/players/new).
+  try {
+    const { dispatchNotification } = await import('@/lib/notifications/dispatch')
+    const { data: family } = await supabase
+      .from('families')
+      .select('family_name')
+      .eq('id', familyId)
+      .single()
+    await dispatchNotification('parent.player.added', {
+      familyId,
+      familyName: family?.family_name ?? 'A family',
+      playerName: `${first_name} ${last_name}`,
+      ballColorSuffix: ball_color ? ` (${ball_color})` : '',
+      excludeUserId: userId,
+    })
+  } catch (e) {
+    console.error('[onboarding] addOnboardingPlayer dispatch:', e)
   }
 
   revalidatePath('/parent/onboarding')
@@ -403,19 +426,19 @@ export async function advancePastA2HS() {
 // ── Final step: Complete onboarding (both flows) ────────────────────────
 //
 // Self-signup: fires parent.signup.submitted to admins so the family hits
-// /admin/approvals immediately. Admin-invite: skips the dispatch — the family
-// is already approved at invite time.
+// /admin/approvals immediately. Admin-invite (Plan 19): also fires
+// family.approval.granted so the welcome banner lights up on /parent and
+// the welcome email goes out. The admin-invite path doesn't go through
+// /admin/approvals — we mark approved_at = now() at completeOnboarding
+// time so the JustApprovedBanner trigger has a real timestamp.
 //
-// Plan 18 — `termsAccepted` is the explicit T&C tick from the admin-invite
-// final step. Self-signup acks T&C at step 4 already, so it omits the arg
-// (we only enforce the new gate when terms_acknowledged_at is null AND
-// the caller passed `termsAccepted=false`). Migration cohort families that
-// ran the old wizard still complete because their terms_acknowledged_at
-// was backfilled at the time.
+// Plan 19 — `termsAccepted` arg removed. T&C is now acked on its own
+// dedicated step (3 for admin-invite, 4 for self-signup) via
+// `acknowledgeOnboardingTerms`, which sets `terms_acknowledged_at`
+// before the parent ever reaches the final step.
 
 export async function completeOnboarding(
   pushSubscription: string | null,
-  termsAccepted?: boolean,
 ) {
   const { userId, familyId } = await getOnboardingAuth()
   const supabase = await createClient()
@@ -445,7 +468,7 @@ export async function completeOnboarding(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: familyBefore } = await (supabase as any)
     .from('families')
-    .select('signup_source, family_name, primary_contact, terms_acknowledged_at')
+    .select('signup_source, family_name, primary_contact, terms_acknowledged_at, approved_at')
     .eq('id', familyId)
     .single()
   const { count: playerCount } = await supabase
@@ -453,22 +476,21 @@ export async function completeOnboarding(
     .select('id', { count: 'exact', head: true })
     .eq('family_id', familyId)
 
-  // Plan 18 G3 — if the caller explicitly opted out of accepting terms
-  // (admin-invite path with checkbox unchecked) AND the family has no
-  // prior acknowledgement, block completion. `termsAccepted=undefined`
-  // means the caller is the self-signup path or migration cohort; trust
-  // the existing terms_acknowledged_at column.
-  if (termsAccepted === false && !familyBefore?.terms_acknowledged_at) {
-    redirect('/parent/onboarding?error=Please+accept+the+Terms+%26+Conditions+to+continue.')
-  }
+  // Plan 19 — for admin-invite (and legacy_import) paths, stamp approved_at
+  // at completion so the JustApprovedBanner lights up on /parent. The family
+  // is already in approval_status='approved' from creation; we just need a
+  // recent timestamp for the 14-day banner window.
+  const isAdminInvite = (familyBefore?.signup_source ?? 'admin_invite') !== 'self_signup'
+  const stampApprovedAt = isAdminInvite && !familyBefore?.approved_at
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { error } = await (supabase as any)
     .from('families')
     .update({
       completed_onboarding: true,
-      // Backfill terms_acknowledged_at for legacy paths that didn't go through step 4.
+      // Backfill terms_acknowledged_at for legacy paths that didn't go through the consent step.
       ...(familyBefore?.terms_acknowledged_at ? {} : { terms_acknowledged_at: new Date().toISOString() }),
+      ...(stampApprovedAt ? { approved_at: new Date().toISOString() } : {}),
     })
     .eq('id', familyId)
 
@@ -489,6 +511,23 @@ export async function completeOnboarding(
         excludeUserId: userId,
       })
     } catch (e) { console.error('[onboarding] dispatch:', e) }
+  } else if (isAdminInvite) {
+    // Plan 19 Phase 9 — fire the same welcome event self-signup-approved
+    // families get, so the banner + welcome email also reach admin-invite
+    // parents at the moment they finish onboarding. Skip if the family
+    // already had an approved_at (re-completing is rare and shouldn't
+    // re-fire the welcome).
+    if (stampApprovedAt) {
+      try {
+        const { dispatchNotification } = await import('@/lib/notifications/dispatch')
+        await dispatchNotification('family.approval.granted', {
+          familyId,
+          familyName: familyBefore?.family_name ?? 'your family',
+          adminNote: '',
+          excludeUserId: undefined,
+        })
+      } catch (e) { console.error('[onboarding] welcome dispatch:', e) }
+    }
   }
 
   revalidatePath('/parent')

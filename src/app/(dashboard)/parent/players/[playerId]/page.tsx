@@ -73,11 +73,12 @@ export default async function ParentPlayerDetailPage({ params }: { params: Promi
 
   if (!player) notFound()
 
-  // Decrypt medical notes (stored encrypted at rest)
-  if (player.medical_notes || player.physical_notes) {
+  // Decrypt medical notes (stored encrypted at rest). physical_notes
+  // column dropped in Plan 19; helper still returns its key for back-compat
+  // but we only read medical_notes here.
+  if (player.medical_notes) {
     const decrypted = await decryptMedicalNotes(supabase, playerId)
     player.medical_notes = decrypted.medical_notes
-    player.physical_notes = decrypted.physical_notes
   }
 
   const [{ data: enrollments }, { data: lessonNotes }] = await Promise.all([

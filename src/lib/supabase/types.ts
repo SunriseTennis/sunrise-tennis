@@ -1735,7 +1735,6 @@ export type Database = {
           media_consent_family: boolean
           media_consent_social: boolean
           medical_notes: string | null
-          physical_notes: string | null
           preferred_name: string | null
           school: string | null
           short_term_goal: string | null
@@ -1763,7 +1762,6 @@ export type Database = {
           media_consent_family?: boolean
           media_consent_social?: boolean
           medical_notes?: string | null
-          physical_notes?: string | null
           preferred_name?: string | null
           school?: string | null
           short_term_goal?: string | null
@@ -1791,7 +1789,6 @@ export type Database = {
           media_consent_family?: boolean
           media_consent_social?: boolean
           medical_notes?: string | null
-          physical_notes?: string | null
           preferred_name?: string | null
           school?: string | null
           short_term_goal?: string | null
@@ -2778,7 +2775,6 @@ export type Database = {
         Args: { p_player_id: string }
         Returns: {
           medical_notes: string
-          physical_notes: string
         }[]
       }
       get_private_default_rate: {

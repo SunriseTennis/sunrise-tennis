@@ -79,7 +79,6 @@ export const createPlayerSchema = z.object({
   level: ballColorSchema.optional(),
   ball_color: ballColorSchema.optional(),
   medical_notes: z.string().optional(),
-  physical_notes: z.string().optional(),
   current_focus: z.array(z.string()).optional(),
   short_term_goal: z.string().optional(),
   long_term_goal: z.string().optional(),
@@ -176,7 +175,6 @@ export const createPlayerFormSchema = z.object({
   classifications: optionalString(500),
   track: trackSchema.optional().or(z.literal('')),
   medical_notes: optionalString(5000),
-  physical_notes: optionalString(5000),
 })
 
 export const updatePlayerFormSchema = z.object({
@@ -192,7 +190,6 @@ export const updatePlayerFormSchema = z.object({
   track: trackSchema.optional().or(z.literal('')),
   status: playerStatusSchema.optional().or(z.literal('')),
   medical_notes: optionalString(5000),
-  physical_notes: optionalString(5000),
   current_focus: optionalString(2000),
   short_term_goal: optionalString(1000),
   long_term_goal: optionalString(1000),
@@ -329,9 +326,9 @@ export const updatePlayerDetailsFormSchema = z.object({
 })
 
 // Parent - add a new player from /parent/players/new
-// Plan 17 Block A: media consent is three granular checkboxes parsed in
-// the action layer; the acknowledgement step (parent has read the
-// explanation) is gone — the three labels carry their own copy now.
+// Plan 19 — parent surface no longer asks for classifications/track/
+// physical_notes (admin-only concerns). Classifications auto-fill from
+// ball_color in the action; physical_notes column dropped.
 export const parentCreatePlayerFormSchema = z.object({
   first_name: requiredString('First name is required'),
   last_name: requiredString('Last name is required'),
@@ -339,17 +336,14 @@ export const parentCreatePlayerFormSchema = z.object({
   dob: requiredString('Date of birth is required'),
   gender: genderSchema.refine((v) => !!v, { message: 'Gender is required' }),
   ball_color: ballColorSchema.optional().or(z.literal('')),
-  classifications: optionalString(500),
-  track: trackSchema.optional().or(z.literal('')),
   medical_notes: optionalString(5000),
-  physical_notes: optionalString(5000),
   school: optionalString(200),
 })
 
-// Plan 15 Phase D — wizard add-player intake (self-signup flow). Trims the
-// requirements vs `parentCreatePlayerFormSchema`: media-consent ack moves to
-// its own dedicated wizard step (across all players at once), so it isn't
-// required here. ball_color allows empty ("I'm not sure" UI option) → NULL.
+// Plan 15 Phase D — wizard add-player intake (self-signup + admin-invite).
+// Plan 19 — same parent-surface simplification: drop classifications/
+// physical_notes; classifications auto-fill from ball_color in the action.
+// Media-consent ack lives on its own dedicated wizard step.
 export const wizardAddPlayerSchema = z.object({
   first_name: requiredString('First name is required'),
   last_name: requiredString('Last name is required'),
@@ -357,9 +351,7 @@ export const wizardAddPlayerSchema = z.object({
   dob: requiredString('Date of birth is required'),
   gender: genderSchema.refine((v) => !!v, { message: 'Gender is required' }),
   ball_color: ballColorSchema.optional().or(z.literal('')),
-  classifications: optionalString(500),
   medical_notes: optionalString(5000),
-  physical_notes: optionalString(5000),
   school: optionalString(200),
 })
 

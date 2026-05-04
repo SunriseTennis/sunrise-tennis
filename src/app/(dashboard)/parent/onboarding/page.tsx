@@ -90,14 +90,18 @@ export default async function ParentOnboardingPage({
     )
   }
 
-  // Admin-invite + legacy_import paths use the 4-step wizard
-  // (Plan 18 — A2HS + Push split out from the legacy combined Step 3,
-  // and an explicit T&C tick replaces the silent terms_acknowledged_at
-  // backfill on completeOnboarding).
-  const currentStep = Math.max(
+  // Admin-invite + legacy_import paths use the 5-step wizard
+  // (Plan 18 — A2HS + Push split out from the legacy combined Step 3.
+  // Plan 19 — adds Step 3 Terms+Consent shared with self-signup; players
+  // can be added inline at Step 2; ≥1 player required to advance.)
+  const requestedStep = parseInt(stepParam ?? '1', 10) || 1
+  let currentStep = Math.max(
     1,
-    Math.min(ADMIN_INVITE_TOTAL_STEPS, parseInt(stepParam ?? '1', 10) || 1),
+    Math.min(ADMIN_INVITE_TOTAL_STEPS, requestedStep),
   )
+  if (currentStep >= 3 && playerList.length === 0) currentStep = 2
+  const termsAck = family?.terms_acknowledged_at ?? null
+  if (currentStep >= 4 && !termsAck) currentStep = 3
 
   return (
     <OnboardingWizard
@@ -106,7 +110,6 @@ export default async function ParentOnboardingPage({
       userEmail={user.email ?? ''}
       primaryContact={primaryContact}
       players={playerList}
-      signupSource={signupSource}
     />
   )
 }

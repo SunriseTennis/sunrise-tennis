@@ -7,12 +7,9 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { splitFullName } from '@/lib/utils/name'
-import {
-  updateOnboardingContact,
-  updateOnboardingPlayers,
-} from './actions'
+import { updateOnboardingContact } from './actions'
 import { ADMIN_INVITE_TOTAL_STEPS } from './constants'
-import { A2HSStep, PushStep } from './_steps/shared-steps'
+import { A2HSStep, AddPlayerForm, PushStep, TermsAndConsentStep } from './_steps/shared-steps'
 
 // ── Types ────────────────────────────────────────────────────────────────
 
@@ -22,6 +19,9 @@ interface Player {
   last_name: string
   dob: string | null
   level: string | null
+  media_consent_coaching: boolean
+  media_consent_family: boolean
+  media_consent_social: boolean
 }
 
 interface OnboardingWizardProps {
@@ -30,7 +30,6 @@ interface OnboardingWizardProps {
   userEmail: string
   primaryContact: { name?: string; first_name?: string; last_name?: string; phone?: string; email?: string }
   players: Player[]
-  signupSource: 'admin_invite' | 'self_signup' | 'legacy_import'
 }
 
 // ── Ball level labels ────────────────────────────────────────────────────
@@ -191,34 +190,33 @@ function StepContact({
   )
 }
 
-// ── Step 2: Review players ───────────────────────────────────────────────
+// ── Step 2: Players list + inline add ────────────────────────────────────
+//
+// Plan 19 — admin-invite parents can now add players in the wizard
+// (matches self-signup). At least one player is required to advance.
+// In-line edit of pre-existing names/DOB is gone (parent edits later
+// via /parent/players/[id]); the migration cohort already passed
+// through the old flow, so removing it doesn't regress anyone.
 
 function StepPlayers({
   players,
   error,
-  signupSource,
 }: {
   players: Player[]
   error: string | null
-  signupSource: 'admin_invite' | 'self_signup' | 'legacy_import'
 }) {
-  const [pending, startTransition] = useTransition()
-  const [editingId, setEditingId] = useState<string | null>(null)
-
-  function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault()
-    const formData = new FormData(e.currentTarget)
-    startTransition(async () => {
-      await updateOnboardingPlayers(formData)
-    })
-  }
+  const [showAddForm, setShowAddForm] = useState(players.length === 0)
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-5">
+    <div className="space-y-5">
       <div className="text-center">
-        <h2 className="text-xl font-bold text-foreground">Your players</h2>
+        <h2 className="text-xl font-bold text-foreground">
+          {players.length === 0 ? 'Add your first player' : 'Your players'}
+        </h2>
         <p className="mt-1.5 text-sm text-muted-foreground">
-          Check the details look right. You can edit names and dates of birth here.
+          {players.length === 0
+            ? 'You&apos;ll need at least one player before we can finish setup.'
+            : 'Add another, or continue once you&apos;re happy with the list.'}
         </p>
       </div>
 
@@ -229,134 +227,75 @@ function StepPlayers({
         </div>
       )}
 
-      {players.length === 0 ? (
-        signupSource === 'self_signup' ? (
-          <div className="rounded-xl border border-border bg-muted/40 px-4 py-6 text-center text-sm text-muted-foreground">
-            <p className="font-medium text-foreground">Add your first player</p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              You&apos;ll be able to fill out their details after signing up.
-            </p>
-            <Link
-              href="/parent/players/new"
-              className="mt-3 inline-flex items-center gap-1 rounded-md bg-primary px-3 py-2 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+      {players.length > 0 && (
+        <div className="space-y-2">
+          {players.map((player) => (
+            <div
+              key={player.id}
+              className="flex items-start justify-between rounded-xl border border-border bg-card px-4 py-3 shadow-card"
             >
-              + Add a player
-            </Link>
-            <p className="mt-3 text-[11px] text-muted-foreground/70">
-              Or skip for now and Maxim will add them after reviewing your signup.
-            </p>
-          </div>
-        ) : (
-          <div className="rounded-xl border border-border bg-muted/40 px-4 py-6 text-center text-sm text-muted-foreground">
-            No players linked to your account yet. Your coach will add them.
-          </div>
-        )
-      ) : (
-        <div className="space-y-3">
-          {players.map((player) => {
-            const isEditing = editingId === player.id
-            return (
-              <div
-                key={player.id}
-                className="rounded-xl border border-border bg-card px-4 py-4 shadow-card"
-              >
-                {/* Hidden field so server action sees this player */}
-                <input type="hidden" name={`player_id_${player.id}`} value={player.id} />
-
-                {isEditing ? (
-                  <div className="space-y-3">
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <Label htmlFor={`first_name_${player.id}`} className="text-xs">
-                          First name
-                        </Label>
-                        <Input
-                          id={`first_name_${player.id}`}
-                          name={`first_name_${player.id}`}
-                          type="text"
-                          required
-                          defaultValue={player.first_name}
-                          className="mt-1"
-                        />
-                      </div>
-                      <div>
-                        <Label className="text-xs text-muted-foreground">Last name</Label>
-                        <p className="mt-1 rounded-md border border-input bg-muted/50 px-3 py-2 text-sm text-muted-foreground">
-                          {player.last_name}
-                        </p>
-                      </div>
-                    </div>
-                    <div>
-                      <Label htmlFor={`dob_${player.id}`} className="text-xs">
-                        Date of birth
-                      </Label>
-                      <Input
-                        id={`dob_${player.id}`}
-                        name={`dob_${player.id}`}
-                        type="date"
-                        defaultValue={player.dob ?? ''}
-                        className="mt-1"
-                      />
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setEditingId(null)}
-                      className="text-xs font-medium text-primary hover:underline"
-                    >
-                      Done editing
-                    </button>
+              <div>
+                <p className="font-semibold text-sm text-foreground">
+                  {player.first_name} {player.last_name}
+                </p>
+                {player.dob && (
+                  <p className="mt-0.5 text-xs text-muted-foreground">DOB: {player.dob}</p>
+                )}
+                {player.level && (
+                  <div className="mt-1.5">
+                    <BallBadge level={player.level} />
                   </div>
-                ) : (
-                  <>
-                    {/* Hidden fields to preserve values when not editing */}
-                    <input type="hidden" name={`first_name_${player.id}`} value={player.first_name} />
-                    <input type="hidden" name={`dob_${player.id}`} value={player.dob ?? ''} />
-                    <div className="flex items-start justify-between">
-                      <div>
-                        <p className="font-semibold text-foreground">
-                          {player.first_name} {player.last_name}
-                        </p>
-                        {player.dob ? (
-                          <p className="mt-0.5 text-xs text-muted-foreground">
-                            DOB: {player.dob}
-                          </p>
-                        ) : (
-                          <p className="mt-0.5 text-xs text-muted-foreground/60">
-                            No date of birth on file
-                          </p>
-                        )}
-                        {player.level && (
-                          <div className="mt-1.5">
-                            <BallBadge level={player.level} />
-                          </div>
-                        )}
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => setEditingId(player.id)}
-                        className="text-xs font-medium text-primary transition-colors hover:text-primary/80"
-                      >
-                        Edit
-                      </button>
-                    </div>
-                  </>
                 )}
               </div>
-            )
-          })}
+              <Link
+                href={`/parent/players/${player.id}`}
+                className="text-xs font-medium text-muted-foreground hover:text-foreground"
+              >
+                Edit later →
+              </Link>
+            </div>
+          ))}
         </div>
       )}
 
-      <Button type="submit" disabled={pending} className="w-full">
-        {pending ? 'Saving...' : 'Looks good — continue'}
-      </Button>
-    </form>
+      {showAddForm ? (
+        <div className="rounded-xl border border-border bg-card p-4 shadow-card">
+          <AddPlayerForm
+            hideHeading={players.length === 0}
+            submitLabel={players.length === 0 ? 'Save & continue' : 'Save player'}
+          />
+          {players.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setShowAddForm(false)}
+              className="mt-3 w-full text-center text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
+            >
+              Cancel
+            </button>
+          )}
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={() => setShowAddForm(true)}
+          className="w-full rounded-lg border border-dashed border-border bg-muted/30 px-3.5 py-3 text-sm font-medium text-foreground transition-colors hover:bg-muted/50"
+        >
+          + Add another player
+        </button>
+      )}
+
+      {players.length > 0 && (
+        <Button asChild className="w-full">
+          <Link href="/parent/onboarding?step=3">Continue to consent</Link>
+        </Button>
+      )}
+    </div>
   )
 }
 
-// Plan 18 — Steps 3 (A2HS) and 4 (Push + T&C) are now shared with the
-// self-signup wizard via _steps/shared-steps.tsx. The legacy combined
-// "notifications + A2HS" Step 3 is gone.
+// Plan 18 — Steps 4 (A2HS) and 5 (Push) are shared with the self-signup
+// wizard via _steps/shared-steps.tsx. Plan 19 — Step 3 (Terms + media
+// consent) is also now shared; T&C tick moved off the Push step.
 
 // ── Main wizard ──────────────────────────────────────────────────────────
 
@@ -366,7 +305,6 @@ export function OnboardingWizard({
   userEmail,
   primaryContact,
   players,
-  signupSource,
 }: OnboardingWizardProps) {
   const step = initialStep
 
@@ -401,14 +339,11 @@ export function OnboardingWizard({
             />
           )}
           {step === 2 && (
-            <StepPlayers
-              players={players}
-              error={error}
-              signupSource={signupSource}
-            />
+            <StepPlayers players={players} error={error} />
           )}
           {step === 3 && (
-            <A2HSStep
+            <TermsAndConsentStep
+              players={players}
               error={error}
               stepNumber={3}
               totalSteps={ADMIN_INVITE_TOTAL_STEPS}
@@ -416,12 +351,19 @@ export function OnboardingWizard({
             />
           )}
           {step === 4 && (
-            <PushStep
+            <A2HSStep
               error={error}
               stepNumber={4}
               totalSteps={ADMIN_INVITE_TOTAL_STEPS}
-              showTermsCheckbox
               backToStep={3}
+            />
+          )}
+          {step === 5 && (
+            <PushStep
+              error={error}
+              stepNumber={5}
+              totalSteps={ADMIN_INVITE_TOTAL_STEPS}
+              backToStep={4}
             />
           )}
         </div>

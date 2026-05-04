@@ -203,7 +203,6 @@ export async function createPlayer(familyId: string, formData: FormData) {
     classifications,
     track,
     medical_notes: medicalNotes,
-    physical_notes: physicalNotes,
   } = parsed.data
 
   // Plan 17 Block A — three granular consent toggles parsed from FormData.
@@ -229,7 +228,6 @@ export async function createPlayer(familyId: string, formData: FormData) {
       classifications: parsedClassifications,
       track: track || 'participation',
       medical_notes: medicalNotes || null,
-      physical_notes: physicalNotes || null,
       media_consent_coaching: coaching,
       media_consent_family: familyConsent,
       media_consent_social: social,
@@ -253,7 +251,7 @@ export async function updatePlayer(playerId: string, familyId: string, formData:
     redirect(`/admin/families/${familyId}/players/${playerId}?error=${encodeURIComponent(parsed.error)}`)
   }
 
-  const { first_name: firstName, last_name: lastName, preferred_name: preferredName, gender, dob, ball_color: ballColor, level, classifications, track, status, medical_notes: medicalNotes, physical_notes: physicalNotes, current_focus: currentFocus, short_term_goal: shortTermGoal, long_term_goal: longTermGoal, comp_interest: compInterest, school } = parsed.data
+  const { first_name: firstName, last_name: lastName, preferred_name: preferredName, gender, dob, ball_color: ballColor, level, classifications, track, status, medical_notes: medicalNotes, current_focus: currentFocus, short_term_goal: shortTermGoal, long_term_goal: longTermGoal, comp_interest: compInterest, school } = parsed.data
 
   // Plan 17 Block A — three granular consent toggles parsed from FormData.
   const coaching = formData.get('media_consent_coaching') === 'on'
@@ -280,7 +278,6 @@ export async function updatePlayer(playerId: string, familyId: string, formData:
       track: track || 'participation',
       status: status || 'active',
       medical_notes: medicalNotes || null,
-      physical_notes: physicalNotes || null,
       current_focus: currentFocus ? currentFocus.split(',').map((s) => s.trim()) : null,
       short_term_goal: shortTermGoal || null,
       long_term_goal: longTermGoal || null,

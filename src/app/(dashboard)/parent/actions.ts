@@ -249,10 +249,7 @@ export async function createPlayerFromParent(formData: FormData) {
     dob,
     gender,
     ball_color: ballColor,
-    classifications,
-    track,
     medical_notes: medicalNotes,
-    physical_notes: physicalNotes,
     school,
   } = parsed.data
 
@@ -261,10 +258,12 @@ export async function createPlayerFromParent(formData: FormData) {
   const familyConsent = formData.get('media_consent_family') === 'on'
   const social = formData.get('media_consent_social') === 'on'
 
-  const VALID_CLASSES = new Set(['blue', 'red', 'orange', 'green', 'yellow', 'advanced', 'elite'])
-  const parsedClassifications = classifications
-    ? classifications.split(',').map((s) => s.trim()).filter((s) => VALID_CLASSES.has(s))
-    : []
+  // Plan 19 — parent surface no longer asks for classifications/track.
+  // Auto-fill classifications from ball_color (single-element array, or
+  // empty when "I'm not sure"). Admin confirms via the parent.player.added
+  // notification on creation.
+  const VALID_CLASSES = new Set(['blue', 'red', 'orange', 'green', 'yellow'])
+  const parsedClassifications = ballColor && VALID_CLASSES.has(ballColor) ? [ballColor] : []
 
   const { data: created, error } = await supabase
     .from('players')
@@ -278,9 +277,8 @@ export async function createPlayerFromParent(formData: FormData) {
       ball_color: ballColor || null,
       level: ballColor || null,
       classifications: parsedClassifications,
-      track: track || 'participation',
+      track: 'participation',
       medical_notes: medicalNotes || null,
-      physical_notes: physicalNotes || null,
       school: school || null,
       media_consent_coaching: coaching,
       media_consent_family: familyConsent,

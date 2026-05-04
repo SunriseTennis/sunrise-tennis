@@ -159,10 +159,6 @@ export function PlayerEditForm({ player, familyId }: { player: Player; familyId:
             <Label htmlFor="medical_notes">Medical notes</Label>
             <Textarea id="medical_notes" name="medical_notes" rows={2} defaultValue={player.medical_notes ?? ''} className="mt-1" />
           </div>
-          <div className="sm:col-span-2">
-            <Label htmlFor="physical_notes">Physical notes</Label>
-            <Textarea id="physical_notes" name="physical_notes" rows={2} defaultValue={player.physical_notes ?? ''} className="mt-1" />
-          </div>
           <div className="sm:col-span-2 space-y-2">
             <Label className="text-xs font-semibold">Media consent</Label>
             <div className="space-y-1.5">

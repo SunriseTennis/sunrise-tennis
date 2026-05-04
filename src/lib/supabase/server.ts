@@ -148,19 +148,21 @@ export async function requireApprovedFamily(): Promise<string> {
 }
 
 /**
- * Decrypt medical_notes and physical_notes for a player via the
- * authorized RPC function. Returns decrypted text or null.
- * The RPC function enforces auth: admin, parent of family, or assigned coach.
+ * Decrypt medical_notes for a player via the authorized RPC function.
+ * Returns decrypted text or null. The RPC enforces auth: admin, parent
+ * of family, or assigned coach.
+ *
+ * Plan 19 — `physical_notes` column dropped; the RPC's return signature
+ * was reduced to a single column.
  */
 export async function decryptMedicalNotes(
   supabase: SupabaseClient<Database>,
   playerId: string,
-): Promise<{ medical_notes: string | null; physical_notes: string | null }> {
+): Promise<{ medical_notes: string | null }> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data } = await (supabase as any).rpc('get_player_medical_notes', { p_player_id: playerId })
   const row = Array.isArray(data) ? data[0] : data
   return {
     medical_notes: row?.medical_notes ?? null,
-    physical_notes: row?.physical_notes ?? null,
   }
 }

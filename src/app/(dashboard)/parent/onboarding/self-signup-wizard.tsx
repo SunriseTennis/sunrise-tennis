@@ -68,16 +68,6 @@ const BALL_LEVELS: { value: string; label: string; hint: string }[] = [
   { value: 'yellow', label: 'Yellow', hint: 'Standard tennis ball, ages 10+.' },
 ]
 
-const CLASSIFICATION_OPTIONS: { value: string; label: string; hint?: string }[] = [
-  { value: 'blue', label: 'Blue' },
-  { value: 'red', label: 'Red' },
-  { value: 'orange', label: 'Orange' },
-  { value: 'green', label: 'Green' },
-  { value: 'yellow', label: 'Yellow' },
-  { value: 'advanced', label: 'Advanced', hint: 'UTR 3.5+' },
-  { value: 'elite', label: 'Elite', hint: 'UTR 7.5+' },
-]
-
 const BALL_BADGE: Record<string, string> = {
   blue: 'bg-blue-100 text-blue-700',
   red: 'bg-red-100 text-red-700',
@@ -258,17 +248,7 @@ function StepAddPlayer({
   hasExistingPlayers: boolean
 }) {
   const [pending, startTransition] = useTransition()
-  const [classifications, setClassifications] = useState<Set<string>>(new Set())
   const [showOptional, setShowOptional] = useState(false)
-
-  function toggle(value: string) {
-    setClassifications((prev) => {
-      const next = new Set(prev)
-      if (next.has(value)) next.delete(value)
-      else next.add(value)
-      return next
-    })
-  }
 
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -297,8 +277,6 @@ function StepAddPlayer({
       </div>
 
       <ErrorBanner message={error} />
-
-      <input type="hidden" name="classifications" value={[...classifications].join(',')} />
 
       <div className="space-y-3.5">
         <div className="grid grid-cols-2 gap-3">
@@ -359,7 +337,7 @@ function StepAddPlayer({
         onClick={() => setShowOptional((v) => !v)}
         className="flex w-full items-center justify-between rounded-lg border border-dashed border-border bg-muted/30 px-3.5 py-2.5 text-xs font-medium text-foreground transition-colors hover:bg-muted/50"
       >
-        <span>{showOptional ? 'Hide' : 'Add'} optional details (preferred name, school, classifications, medical notes)</span>
+        <span>{showOptional ? 'Hide' : 'Add'} optional details (preferred name, school, medical notes)</span>
         <span className="text-muted-foreground">{showOptional ? '–' : '+'}</span>
       </button>
 
@@ -379,38 +357,10 @@ function StepAddPlayer({
           </div>
 
           <div>
-            <Label>Classifications</Label>
-            <p className="mt-0.5 text-xs text-muted-foreground">
-              Pick anything that applies. <span className="font-medium">Advanced</span> and <span className="font-medium">Elite</span> open up our higher-level squads.
-            </p>
-            <div className="mt-2 flex flex-wrap gap-1.5">
-              {CLASSIFICATION_OPTIONS.map((c) => {
-                const selected = classifications.has(c.value)
-                return (
-                  <button
-                    key={c.value}
-                    type="button"
-                    onClick={() => toggle(c.value)}
-                    className={cn(
-                      'rounded-full border px-3 py-1.5 text-xs font-medium transition-colors',
-                      selected
-                        ? 'border-primary bg-primary/10 text-primary'
-                        : 'border-border bg-background text-muted-foreground hover:border-primary/30',
-                    )}
-                  >
-                    {c.label}
-                    {c.hint && <span className="ml-1 text-[10px] opacity-70">{c.hint}</span>}
-                  </button>
-                )
-              })}
-            </div>
-          </div>
-
-          <div>
-            <Label htmlFor="medical_notes">Medical &amp; physical notes</Label>
-            <Textarea id="medical_notes" name="medical_notes" rows={3} placeholder="Allergies, conditions, medications, injuries, mobility limits…" className="mt-1.5" />
+            <Label htmlFor="medical_notes">Medical notes</Label>
+            <Textarea id="medical_notes" name="medical_notes" rows={3} placeholder="Allergies, asthma, recent injuries…" className="mt-1.5" />
             <p className="mt-1 text-xs text-muted-foreground">
-              Encrypted at rest. Only Maxim and your child&apos;s coaches can see this.
+              Anything we should know to keep your child safe on court.
             </p>
           </div>
         </div>

@@ -34,11 +34,11 @@ export default async function PlayerDetailPage({
 
   if (!player || !family) notFound()
 
-  // Decrypt medical notes (stored encrypted at rest)
-  if (player.medical_notes || player.physical_notes) {
+  // Decrypt medical notes (stored encrypted at rest). physical_notes
+  // column dropped in Plan 19.
+  if (player.medical_notes) {
     const decrypted = await decryptMedicalNotes(supabase, playerId)
     player.medical_notes = decrypted.medical_notes
-    player.physical_notes = decrypted.physical_notes
   }
 
   return (
@@ -138,12 +138,6 @@ export default async function PlayerDetailPage({
                 <div className="sm:col-span-2">
                   <dt className="text-xs font-medium text-muted-foreground">Medical Notes</dt>
                   <dd className="text-sm text-foreground">{player.medical_notes}</dd>
-                </div>
-              )}
-              {player.physical_notes && (
-                <div className="sm:col-span-2">
-                  <dt className="text-xs font-medium text-muted-foreground">Physical Notes</dt>
-                  <dd className="text-sm text-foreground">{player.physical_notes}</dd>
                 </div>
               )}
             </dl>

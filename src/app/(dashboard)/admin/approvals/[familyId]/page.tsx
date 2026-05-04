@@ -43,19 +43,20 @@ export default async function ApprovalDetailPage({ params, searchParams }: PageP
       .single(),
     supabase
       .from('players')
-      .select('id, first_name, last_name, dob, gender, ball_color, level, classifications, track, medical_notes, physical_notes, media_consent_coaching, media_consent_family, media_consent_social, status')
+      .select('id, first_name, last_name, dob, gender, ball_color, level, classifications, track, medical_notes, media_consent_coaching, media_consent_family, media_consent_social, status')
       .eq('family_id', familyId)
       .order('first_name'),
   ])
 
   if (!family) notFound()
 
-  // Decrypt medical/physical notes for each player so admin can review them.
+  // Decrypt medical notes for each player so admin can review them.
+  // Plan 19 — physical_notes column dropped.
   const playersWithDecrypted = await Promise.all(
     (players ?? []).map(async (p) => {
-      if (p.medical_notes || p.physical_notes) {
+      if (p.medical_notes) {
         const dec = await decryptMedicalNotes(supabase, p.id)
-        return { ...p, medical_notes: dec.medical_notes, physical_notes: dec.physical_notes }
+        return { ...p, medical_notes: dec.medical_notes }
       }
       return p
     })
@@ -234,11 +235,6 @@ export default async function ApprovalDetailPage({ params, searchParams }: PageP
                       {p.medical_notes && (
                         <p className="mt-2 rounded-md border border-rose-200 bg-rose-50 px-2 py-1.5 text-xs text-rose-900">
                           <span className="font-medium">Medical: </span>{p.medical_notes}
-                        </p>
-                      )}
-                      {p.physical_notes && (
-                        <p className="mt-1 rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5 text-xs text-amber-900">
-                          <span className="font-medium">Physical: </span>{p.physical_notes}
                         </p>
                       )}
                     </div>
