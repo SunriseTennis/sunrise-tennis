@@ -11,6 +11,7 @@ import { isEligible, getActiveEarlyBird } from '@/lib/utils/eligibility'
 import { getPlayerSessionPriceBreakdown, formatDiscountSuffix, buildPricingBreakdown } from '@/lib/utils/player-pricing'
 import { createTermSessionCharges } from '@/lib/utils/term-charges'
 import { dispatchNotification } from '@/lib/notifications/dispatch'
+import { adelaideTodayString, filterFutureSessions } from '@/lib/utils/sessions-filter'
 
 async function getParentFamilyId(): Promise<{ userId: string; familyId: string } | null> {
   const supabase = await createClient()
@@ -115,15 +116,18 @@ export async function enrolInProgram(programId: string, familyId: string, formDa
   const effectivePaymentOption = isTermEnrollment ? (paymentOption || 'pay_later') : null
 
   // Get all upcoming scheduled sessions for this program (used for term enrol).
+  // Adelaide-aware: drop today's-already-started sessions via filterFutureSessions.
   const { data: upcomingSessions } = await supabase
     .from('sessions')
-    .select('id, date')
+    .select('id, date, start_time')
     .eq('program_id', programId)
-    .gte('date', new Date().toISOString().split('T')[0])
+    .gte('date', adelaideTodayString())
     .eq('status', 'scheduled')
     .order('date', { ascending: true })
 
-  const sessionsList = (upcomingSessions ?? []) as { id: string; date: string }[]
+  const sessionsList = filterFutureSessions(
+    (upcomingSessions ?? []) as { id: string; date: string; start_time: string | null }[],
+  )
   const sessionsTotal = sessionsList.length
 
   // Active early-bird percent (term path only).
@@ -614,18 +618,20 @@ export async function unenrolFromProgram(
   // the matching payment unmatched = positive credit (pay-now credit-back).
   // Plan-review §1b confirmed this is safe; orphan allocations are filtered
   // out of PaymentHistory at the page-query level (Phase F).
-  const today = new Date().toISOString().split('T')[0]
+  // Adelaide-aware: a 5am unenrol still voids the 6:45am session (start_time
+  // hasn't passed yet); a 1pm unenrol does NOT void the 6:45am session (delivered).
+  const { isSessionFuture } = await import('@/lib/utils/sessions-filter')
   const { data: futureSessionCharges } = await supabase
     .from('charges')
-    .select('id, session_id, status, sessions:session_id(date)')
+    .select('id, session_id, status, sessions:session_id(date, start_time)')
     .eq('family_id', auth.familyId)
     .eq('player_id', playerId)
     .eq('program_id', programId)
     .in('status', ['pending', 'confirmed'])
 
   for (const c of futureSessionCharges ?? []) {
-    const session = c.sessions as unknown as { date: string } | null
-    if (session && session.date > today) {
+    const session = c.sessions as unknown as { date: string; start_time: string | null } | null
+    if (session && isSessionFuture(session)) {
       await voidCharge(service, c.id, auth.familyId)
     }
   }
@@ -770,15 +776,19 @@ export async function prepareEnrolPayment(
     .maybeSingle()
   if (existing) return { ok: false, error: 'Player already enrolled' }
 
-  // Compute price + breakdown
-  const { count: sessionsRemaining } = await supabase
+  // Compute price + breakdown.
+  // Adelaide-aware future filter: today's-already-started sessions are excluded.
+  const { data: futureSessions } = await supabase
     .from('sessions')
-    .select('*', { count: 'exact', head: true })
+    .select('id, date, start_time')
     .eq('program_id', programId)
-    .gte('date', new Date().toISOString().split('T')[0])
+    .gte('date', adelaideTodayString())
     .eq('status', 'scheduled')
 
-  const sessionsTotal = sessionsRemaining ?? 0
+  const sessionsList = filterFutureSessions(
+    (futureSessions ?? []) as { id: string; date: string; start_time: string | null }[],
+  )
+  const sessionsTotal = sessionsList.length
   const termPrice = await getTermPrice(supabase, auth.familyId, programId, program.type)
   const breakdown = await getPlayerSessionPriceBreakdown(
     supabase, auth.familyId, programId, program.type, playerId,
@@ -980,15 +990,18 @@ export async function finalizeEnrolPayment(intentId: string): Promise<FinalizeRe
   })
 
   // Pull the actual upcoming sessions so per-session charges are bound by id+date.
+  // Adelaide-aware: drop today's-already-started sessions via filterFutureSessions.
   const { data: upcomingSessions } = await supabase
     .from('sessions')
-    .select('id, date')
+    .select('id, date, start_time')
     .eq('program_id', programId)
-    .gte('date', new Date().toISOString().split('T')[0])
+    .gte('date', adelaideTodayString())
     .eq('status', 'scheduled')
     .order('date', { ascending: true })
 
-  const sessionsList = (upcomingSessions ?? []) as { id: string; date: string }[]
+  const sessionsList = filterFutureSessions(
+    (upcomingSessions ?? []) as { id: string; date: string; start_time: string | null }[],
+  )
   const sessionsTotal = sessionsList.length
 
   const eb = getActiveEarlyBird({

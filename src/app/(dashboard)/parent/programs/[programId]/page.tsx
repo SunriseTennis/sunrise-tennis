@@ -9,8 +9,9 @@ import { WarmToast } from '@/components/warm-toast'
 import { Calendar, MapPin, DollarSign, Users, CheckCircle } from 'lucide-react'
 import { UnenrolButton } from './unenrol-button'
 import { isEligible } from '@/lib/utils/eligibility'
-import { isMultiGroupEligibleType } from '@/lib/utils/player-pricing'
+import { isMultiGroupEligibleType, getPlayerSessionPriceBreakdown } from '@/lib/utils/player-pricing'
 import { stripDayPrefix } from '@/lib/utils/program-display'
+import { adelaideTodayString, filterFutureSessions } from '@/lib/utils/sessions-filter'
 
 const MORNING_SQUAD_SLUGS = ['tue-morning-squad', 'wed-morning-squad']
 
@@ -63,13 +64,19 @@ export default async function ParentProgramDetailPage({
     supabase.from('program_roster').select('id, player_id, status').eq('program_id', programId),
     supabase.from('sessions').select('id, date, start_time, end_time, status')
       .eq('program_id', programId)
-      .gte('date', new Date().toISOString().split('T')[0])
+      .gte('date', adelaideTodayString())
       .eq('status', 'scheduled')
       .order('date'),
     supabase.from('family_balance').select('confirmed_balance_cents').eq('family_id', familyId).single(),
   ])
 
   if (!program) notFound()
+
+  // Adelaide-aware: drop today's-already-started sessions so term math + the
+  // upcoming sessions list never include a session whose start_time has passed.
+  const futureSessions = filterFutureSessions(
+    (upcomingSessions ?? []) as { id: string; date: string; start_time: string | null; end_time: string | null; status: string }[],
+  )
 
   const confirmedCreditCents = Math.max(0, balance?.confirmed_balance_cents ?? 0)
 
@@ -204,14 +211,14 @@ export default async function ParentProgramDetailPage({
                   </div>
                 </div>
               )}
-              {program.per_session_cents && upcomingSessions && upcomingSessions.length > 0 && (
+              {program.per_session_cents && futureSessions.length > 0 && (
                 <div className="flex items-start gap-2.5">
                   <DollarSign className="mt-0.5 size-4 text-primary/60" />
                   <div>
                     <dt className="text-xs font-medium text-muted-foreground">Term Fee</dt>
                     <dd className="text-sm text-foreground">
-                      {formatCurrency(program.per_session_cents * upcomingSessions.length)}
-                      <span className="ml-1.5 text-xs text-muted-foreground">({upcomingSessions.length} sessions)</span>
+                      {formatCurrency(program.per_session_cents * futureSessions.length)}
+                      <span className="ml-1.5 text-xs text-muted-foreground">({futureSessions.length} sessions)</span>
                     </dd>
                   </div>
                 </div>
@@ -243,7 +250,7 @@ export default async function ParentProgramDetailPage({
                     playerId={player.id}
                     playerName={player.first_name}
                     programName={displayName}
-                    remainingSessions={upcomingSessions?.length ?? 0}
+                    remainingSessions={futureSessions.length}
                   />
                 </div>
               ))}
@@ -272,7 +279,7 @@ export default async function ParentProgramDetailPage({
             earlyBirdDeadline={program.early_bird_deadline}
             earlyPayDiscountPctTier2={program.early_pay_discount_pct_tier2}
             earlyBirdDeadlineTier2={program.early_bird_deadline_tier2}
-            remainingSessions={upcomingSessions?.length ?? null}
+            remainingSessions={futureSessions.length}
             confirmedCreditCents={confirmedCreditCents}
           />
         </div>
@@ -291,7 +298,7 @@ export default async function ParentProgramDetailPage({
       )}
 
       {/* ── Upcoming Sessions ── */}
-      {upcomingSessions && upcomingSessions.length > 0 && (
+      {futureSessions.length > 0 && (
         <div
           className="animate-fade-up overflow-hidden rounded-xl border border-border bg-card shadow-card"
           style={{ animationDelay: '240ms' }}
@@ -303,7 +310,7 @@ export default async function ParentProgramDetailPage({
             </h2>
           </div>
           <div className="divide-y divide-border/40">
-            {upcomingSessions.map((session) => (
+            {futureSessions.map((session) => (
               <div key={session.id} id={`session-${session.id}`} className="flex items-center justify-between px-5 py-3 text-sm">
                 <span className="text-foreground">{formatDateFriendly(session.date)}</span>
                 <span className="text-muted-foreground tabular-nums">

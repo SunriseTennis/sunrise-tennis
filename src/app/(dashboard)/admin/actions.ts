@@ -1696,20 +1696,21 @@ export async function adminUnenrolFromProgram(formData: FormData) {
     redirect(`/admin/programs/${programId}?error=${encodeURIComponent(rosterError.message)}`)
   }
 
-  // Void all future pending charges for this player+program
-  const today = new Date().toISOString().split('T')[0]
+  // Void all future pending charges for this player+program.
+  // Adelaide-aware: a 5am unenrol still voids the 6:45am session that hasn't started.
   const { data: futureCharges } = await supabase
     .from('charges')
-    .select('id, family_id, session_id, sessions:session_id(date)')
+    .select('id, family_id, session_id, sessions:session_id(date, start_time)')
     .eq('player_id', playerId)
     .eq('program_id', programId)
     .eq('status', 'pending')
 
   const { voidCharge } = await import('@/lib/utils/billing')
+  const { isSessionFuture } = await import('@/lib/utils/sessions-filter')
   let voidedCount = 0
   for (const c of futureCharges ?? []) {
-    const session = c.sessions as unknown as { date: string } | null
-    if (session && session.date > today) {
+    const session = c.sessions as unknown as { date: string; start_time: string | null } | null
+    if (session && isSessionFuture(session)) {
       await voidCharge(supabase, c.id, c.family_id)
       voidedCount++
     }
