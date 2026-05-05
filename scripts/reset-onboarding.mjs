@@ -169,6 +169,50 @@ if (famUpdErr) {
   console.log(`  ✓ reset family onboarding state`)
 }
 
+// 3e. Orphan-auth-user safety net.
+//
+// If a previous reset run renamed the original auth user, and then a
+// parent signed up via a fresh invite (creating a NEW auth user) and
+// got partway through, the user_roles row may have been wiped by step
+// 3a but the new auth user remains. That orphan still owns the target
+// email, so a NEXT signupViaInvite call fails with "user already
+// exists". Always do a final email-based scan + rename pass to keep
+// the email free for the next walk-through.
+const targetEmail = (typeof fam.primary_contact === 'object' && fam.primary_contact && 'email' in fam.primary_contact)
+  ? String(fam.primary_contact.email ?? '').toLowerCase()
+  : (EMAIL ?? '').toLowerCase()
+if (targetEmail) {
+  console.log(`  scanning for orphan auth users with email ${targetEmail}…`)
+  let page = 1
+  let renamed = 0
+  while (true) {
+    const { data, error } = await sb.auth.admin.listUsers({ page, perPage: 1000 })
+    if (error) { console.error(`  listUsers failed:`, error.message); break }
+    const orphans = data.users.filter((u) =>
+      (u.email ?? '').toLowerCase() === targetEmail && !authUserIds.has(u.id),
+    )
+    for (const u of orphans) {
+      const stamped = `archived+${Date.now()}+${u.email ?? u.id}`.replace(/[^A-Za-z0-9@._+-]/g, '-')
+      const { error: delErr } = await sb.auth.admin.deleteUser(u.id)
+      if (!delErr) {
+        console.log(`  ✓ deleted orphan auth user ${u.id}`)
+        renamed += 1
+        continue
+      }
+      const { error: renErr } = await sb.auth.admin.updateUserById(u.id, { email: stamped, email_confirm: true })
+      if (renErr) {
+        console.error(`  ✗ orphan rename failed (${u.id}):`, renErr.message)
+      } else {
+        console.log(`  ✓ renamed orphan auth user ${u.id} → ${stamped}`)
+        renamed += 1
+      }
+    }
+    if (data.users.length < 1000) break
+    page += 1
+  }
+  console.log(`  ✓ orphan scan complete (${renamed} renamed/deleted)`)
+}
+
 console.log('')
 console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
 console.log(' WIPE COMPLETE')
