@@ -43,6 +43,79 @@ const ADJUSTMENT_REASON_COPY: Record<NonNullable<PricingBreakdownData['adjustmen
 }
 
 /**
+ * Synthesize a "bundle breakdown" by summing N per-row pricing breakdowns.
+ * Invariant fields (per_session_cents, multi_group_pct, early_bird_pct,
+ * labels, deadlines) come from the first row that has them; cents fields
+ * sum across the bundle. Used by both `<ChargesList>` (term-level breakdown
+ * inside an expanded service group) and `<PaymentHistory>` (bundle card
+ * summary above the per-session row list) so the same "named discount,
+ * total saved" UX shows everywhere a parent might look.
+ *
+ * Caller maps to a flat array of breakdowns (keeps this helper out of the
+ * union-narrowing weeds for inputs that vary by snake_case vs camelCase
+ * naming conventions). Returns null when no row carries a breakdown.
+ */
+export function aggregateBundleBreakdown(
+  breakdowns: ReadonlyArray<PricingBreakdownData | null | undefined>,
+): PricingBreakdownData | null {
+  let perSession: number | undefined
+  let morningSquadPartner: boolean | undefined
+  let multiGroupPct: number | undefined
+  let multiGroupLabel: string | undefined
+  let earlyBirdPct: number | undefined
+  let earlyBirdLabel: string | undefined
+  let earlyBirdTier: 1 | 2 | undefined
+  let earlyBirdDeadline: string | undefined
+  let tier2Pct: number | undefined
+  let tier2Deadline: string | undefined
+  let subtotal = 0
+  let multiGroupOff = 0
+  let earlyBirdOff = 0
+  let total = 0
+  let sessions = 0
+  let any = false
+
+  for (const b of breakdowns) {
+    if (!b) continue
+    any = true
+    sessions += b.sessions ?? 1
+    subtotal += b.subtotal_cents ?? 0
+    multiGroupOff += b.multi_group_cents_off ?? 0
+    earlyBirdOff += b.early_bird_cents_off ?? 0
+    total += b.total_cents ?? 0
+    if (perSession === undefined && b.per_session_cents != null) perSession = b.per_session_cents
+    if (morningSquadPartner === undefined && b.morning_squad_partner_applied != null) morningSquadPartner = b.morning_squad_partner_applied
+    if (multiGroupPct === undefined && b.multi_group_pct != null) multiGroupPct = b.multi_group_pct
+    if (multiGroupLabel === undefined && b.multi_group_label) multiGroupLabel = b.multi_group_label
+    if (earlyBirdPct === undefined && b.early_bird_pct != null) earlyBirdPct = b.early_bird_pct
+    if (earlyBirdLabel === undefined && b.early_bird_label) earlyBirdLabel = b.early_bird_label
+    if (earlyBirdTier === undefined && b.early_bird_tier != null) earlyBirdTier = b.early_bird_tier
+    if (earlyBirdDeadline === undefined && b.early_bird_deadline) earlyBirdDeadline = b.early_bird_deadline
+    if (tier2Pct === undefined && b.tier2_pct != null) tier2Pct = b.tier2_pct
+    if (tier2Deadline === undefined && b.tier2_deadline) tier2Deadline = b.tier2_deadline
+  }
+
+  if (!any) return null
+  return {
+    sessions,
+    per_session_cents: perSession,
+    subtotal_cents: subtotal,
+    morning_squad_partner_applied: morningSquadPartner,
+    multi_group_pct: multiGroupPct,
+    multi_group_cents_off: multiGroupOff > 0 ? multiGroupOff : undefined,
+    multi_group_label: multiGroupLabel,
+    early_bird_pct: earlyBirdPct,
+    early_bird_cents_off: earlyBirdOff > 0 ? earlyBirdOff : undefined,
+    early_bird_label: earlyBirdLabel,
+    early_bird_tier: earlyBirdTier,
+    early_bird_deadline: earlyBirdDeadline,
+    tier2_pct: tier2Pct,
+    tier2_deadline: tier2Deadline,
+    total_cents: total,
+  }
+}
+
+/**
  * Itemised pricing breakdown panel for a charge with a non-null
  * `charges.pricing_breakdown`. Renders the per-session line, any active
  * discounts (multi-group, early-bird), and the total. Also handles the

@@ -155,21 +155,6 @@ export default async function ParentPaymentsPage({
   const projectedBalanceCents = balance?.projected_balance_cents ?? 0
   const totalBalanceCents = balance?.balance_cents ?? 0
 
-  // "Prepaid for upcoming sessions" = sum of allocations attached to charges
-  // whose session is still scheduled (future). This is the figure that today
-  // shows up as misleading "Credit on account" when a parent has paid a term
-  // up-front but no sessions have run yet.
-  const prepaidUpcomingCents = (payments ?? []).reduce((sum, p) => {
-    const allocations = (p.payment_allocations ?? []) as unknown as {
-      amount_cents: number
-      charges: { sessions: { status: string } | null } | null
-    }[]
-    return sum + allocations.reduce((s, a) => {
-      const sess = a.charges?.sessions
-      return s + (sess?.status === 'scheduled' ? (a.amount_cents ?? 0) : 0)
-    }, 0)
-  }, 0)
-
   // "Upcoming outstanding" = sum of OUTSTANDING (still owed) on charges with
   // a future-scheduled session. Future-paid scheduled charges contribute 0.
   const todayIso = new Date().toISOString().split('T')[0]
@@ -235,7 +220,6 @@ export default async function ParentPaymentsPage({
         <BalanceHero
           confirmedBalanceCents={confirmedBalanceCents}
           projectedBalanceCents={projectedBalanceCents}
-          prepaidUpcomingCents={prepaidUpcomingCents}
           upcomingOutstandingCents={upcomingOutstandingCents}
         />
 

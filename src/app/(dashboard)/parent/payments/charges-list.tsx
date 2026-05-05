@@ -7,6 +7,7 @@ import { formatDateFriendly } from '@/lib/utils/dates'
 import { ChargeRow, type ChargeRowData, type ChargeBadge, type PricingBreakdownData } from './charge-row'
 import { usePayment } from './payment-context'
 import { cn } from '@/lib/utils/cn'
+import { PricingBreakdownPanel, aggregateBundleBreakdown } from '@/components/pricing-breakdown-panel'
 
 interface Charge {
   id: string
@@ -305,22 +306,42 @@ export function ChargesList({ charges }: { charges: Charge[] }) {
                       )}
                     </div>
 
-                    {/* Expanded: individual charge rows */}
-                    {isGroupExpanded && (
-                      <div className="border-t border-border/20 bg-muted/5">
-                        <div className="divide-y divide-border/20">
-                          {sCharges.map(c => (
-                            <ChargeRow
-                              key={c.id}
-                              charge={toRowData(c)}
-                              compact
-                              isExpanded={expandedChargeId === c.id}
-                              onToggle={() => setExpandedChargeId(expandedChargeId === c.id ? null : c.id)}
+                    {/* Expanded: term-level breakdown (when applicable) + individual charge rows */}
+                    {isGroupExpanded && (() => {
+                      // Synthesize a term-level breakdown across the whole
+                      // service group so the parent sees "8 sessions × $30,
+                      // − Multi-group, − Early Bird, Total" once at the top
+                      // — instead of having to expand each session row to
+                      // reconstruct the math themselves.
+                      const aggregated = aggregateBundleBreakdown(sCharges.map(c => c.pricing_breakdown))
+                      const showAggregate =
+                        aggregated != null &&
+                        sCharges.length > 1 &&
+                        ((aggregated.subtotal_cents ?? 0) > aggregated.total_cents ||
+                          (aggregated.sessions ?? 0) > 1)
+                      return (
+                        <div className="border-t border-border/20 bg-muted/5">
+                          {showAggregate && aggregated && (
+                            <PricingBreakdownPanel
+                              breakdown={aggregated}
+                              heading="Term breakdown"
+                              className="border-b border-border/20 bg-card/40 px-4 py-2.5"
                             />
-                          ))}
+                          )}
+                          <div className="divide-y divide-border/20">
+                            {sCharges.map(c => (
+                              <ChargeRow
+                                key={c.id}
+                                charge={toRowData(c)}
+                                compact
+                                isExpanded={expandedChargeId === c.id}
+                                onToggle={() => setExpandedChargeId(expandedChargeId === c.id ? null : c.id)}
+                              />
+                            ))}
+                          </div>
                         </div>
-                      </div>
-                    )}
+                      )
+                    })()}
                   </div>
                 )
               })}

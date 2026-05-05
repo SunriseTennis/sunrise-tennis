@@ -6,7 +6,7 @@ import { formatDate } from '@/lib/utils/dates'
 import { EmptyState } from '@/components/empty-state'
 import { CreditCard, ChevronDown, CheckCircle2, Clock, CloudRain, XCircle } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
-import { PricingBreakdownPanel, type PricingBreakdownData } from '@/components/pricing-breakdown-panel'
+import { PricingBreakdownPanel, aggregateBundleBreakdown, type PricingBreakdownData } from '@/components/pricing-breakdown-panel'
 
 // SA school terms 2026 (approximate)
 const TERMS: { label: string; start: string; end: string }[] = [
@@ -62,69 +62,6 @@ interface AllocationBundle {
   aggregatedBreakdown: PricingBreakdownData | null
 }
 
-function aggregateBundleBreakdown(allocations: Allocation[]): PricingBreakdownData | null {
-  // Synthesize a "bundle breakdown" by summing the per-row breakdowns.
-  // Invariant fields (per_session_cents, multi_group_pct, early_bird_pct,
-  // labels, deadlines) come from the first row that has them; cents fields
-  // sum across the bundle.
-  let perSession: number | undefined
-  let morningSquadPartner: boolean | undefined
-  let multiGroupPct: number | undefined
-  let multiGroupLabel: string | undefined
-  let earlyBirdPct: number | undefined
-  let earlyBirdLabel: string | undefined
-  let earlyBirdTier: 1 | 2 | undefined
-  let earlyBirdDeadline: string | undefined
-  let tier2Pct: number | undefined
-  let tier2Deadline: string | undefined
-  let subtotal = 0
-  let multiGroupOff = 0
-  let earlyBirdOff = 0
-  let total = 0
-  let sessions = 0
-  let any = false
-
-  for (const a of allocations) {
-    const b = a.pricingBreakdown
-    if (!b) continue
-    any = true
-    sessions += b.sessions ?? 1
-    subtotal += b.subtotal_cents ?? 0
-    multiGroupOff += b.multi_group_cents_off ?? 0
-    earlyBirdOff += b.early_bird_cents_off ?? 0
-    total += b.total_cents ?? a.amountCents
-    if (perSession === undefined && b.per_session_cents != null) perSession = b.per_session_cents
-    if (morningSquadPartner === undefined && b.morning_squad_partner_applied != null) morningSquadPartner = b.morning_squad_partner_applied
-    if (multiGroupPct === undefined && b.multi_group_pct != null) multiGroupPct = b.multi_group_pct
-    if (multiGroupLabel === undefined && b.multi_group_label) multiGroupLabel = b.multi_group_label
-    if (earlyBirdPct === undefined && b.early_bird_pct != null) earlyBirdPct = b.early_bird_pct
-    if (earlyBirdLabel === undefined && b.early_bird_label) earlyBirdLabel = b.early_bird_label
-    if (earlyBirdTier === undefined && b.early_bird_tier != null) earlyBirdTier = b.early_bird_tier
-    if (earlyBirdDeadline === undefined && b.early_bird_deadline) earlyBirdDeadline = b.early_bird_deadline
-    if (tier2Pct === undefined && b.tier2_pct != null) tier2Pct = b.tier2_pct
-    if (tier2Deadline === undefined && b.tier2_deadline) tier2Deadline = b.tier2_deadline
-  }
-
-  if (!any) return null
-  return {
-    sessions,
-    per_session_cents: perSession,
-    subtotal_cents: subtotal,
-    morning_squad_partner_applied: morningSquadPartner,
-    multi_group_pct: multiGroupPct,
-    multi_group_cents_off: multiGroupOff > 0 ? multiGroupOff : undefined,
-    multi_group_label: multiGroupLabel,
-    early_bird_pct: earlyBirdPct,
-    early_bird_cents_off: earlyBirdOff > 0 ? earlyBirdOff : undefined,
-    early_bird_label: earlyBirdLabel,
-    early_bird_tier: earlyBirdTier,
-    early_bird_deadline: earlyBirdDeadline,
-    tier2_pct: tier2Pct,
-    tier2_deadline: tier2Deadline,
-    total_cents: total,
-  }
-}
-
 function groupAllocations(allocations: Allocation[]): AllocationBundle[] {
   const groups = new Map<string, AllocationBundle>()
   allocations.forEach((a, idx) => {
@@ -161,7 +98,7 @@ function groupAllocations(allocations: Allocation[]): AllocationBundle[] {
       const b = y.sessionDate ?? ''
       return a.localeCompare(b)
     })
-    g.aggregatedBreakdown = aggregateBundleBreakdown(g.allocations)
+    g.aggregatedBreakdown = aggregateBundleBreakdown(g.allocations.map(a => a.pricingBreakdown))
   }
   return [...groups.values()]
 }

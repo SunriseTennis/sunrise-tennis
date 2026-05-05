@@ -10,8 +10,6 @@ interface Props {
   confirmedBalanceCents: number
   /** Negative = owed in total (incl. scheduled future); positive = real usable credit (excess of all charges). */
   projectedBalanceCents: number
-  /** Sum of allocations attached to scheduled future per-session charges. Positive number. */
-  prepaidUpcomingCents: number
   /** Sum of OUTSTANDING (still owed) cents on future-scheduled charges. Positive number. */
   upcomingOutstandingCents: number
 }
@@ -34,7 +32,6 @@ interface Props {
 export function BalanceHero({
   confirmedBalanceCents,
   projectedBalanceCents,
-  prepaidUpcomingCents,
   upcomingOutstandingCents,
 }: Props) {
   const [showInfo, setShowInfo] = useState(false)
@@ -57,7 +54,11 @@ export function BalanceHero({
       ? 'Usable credit on your account'
       : 'Account up to date'
 
-  const upcomingTotalCents = upcomingOutstandingCents + prepaidUpcomingCents
+  // Upcoming = only what's still owed. Prepaid future sessions aren't in
+  // here — they're visible per-row in ChargesList with a "Paid" badge, so
+  // the hero stays a clean two-number view: current position + what's owed
+  // that hasn't been billed yet.
+  const upcomingOwedCents = upcomingOutstandingCents
 
   return (
     <ImageHero>
@@ -78,21 +79,11 @@ export function BalanceHero({
       </p>
       <p className="mt-0.5 text-xs text-white/60">{headlineSubline}</p>
 
-      {/* Secondary line — what's still ahead */}
-      {upcomingTotalCents > 0 && (
+      {/* Secondary line — what's still ahead, owed but not yet billed */}
+      {upcomingOwedCents > 0 && (
         <div className="mt-3 flex items-baseline justify-between gap-3 rounded-lg bg-white/10 px-3 py-2 text-xs text-white/85 backdrop-blur-sm">
           <span className="font-medium">Upcoming</span>
-          <span className="text-right tabular-nums">
-            <span className="font-semibold">{formatCurrency(upcomingTotalCents)}</span>
-            {prepaidUpcomingCents > 0 && (
-              <>
-                {' '}
-                <span className="text-[11px] text-white/60">
-                  ({formatCurrency(prepaidUpcomingCents)} already paid)
-                </span>
-              </>
-            )}
-          </span>
+          <span className="font-semibold tabular-nums">{formatCurrency(upcomingOwedCents)}</span>
         </div>
       )}
 
@@ -105,9 +96,9 @@ export function BalanceHero({
                 Negative = owing, positive = usable credit, zero = settled.
               </p>
               <p>
-                <strong>Upcoming</strong> is the total of every future-scheduled session that&apos;s
-                been booked or enroled. The &quot;already paid&quot; portion is what you&apos;ve pre-paid
-                for term sessions that haven&apos;t run yet.
+                <strong>Upcoming</strong> is the total still owed for sessions that have been
+                booked but haven&apos;t run yet. Sessions you&apos;ve already pre-paid for don&apos;t show here —
+                you&apos;ll see them in the charges list below with a <em>Paid</em> badge.
               </p>
               <p className="text-white/70">
                 The current balance only goes up when a session actually runs. Cancellations
@@ -125,7 +116,7 @@ export function BalanceHero({
       )}
 
       {/* Visually-quiet hint when nothing's owed and nothing's upcoming */}
-      {allClear && upcomingTotalCents === 0 && (
+      {allClear && upcomingOwedCents === 0 && (
         <p className="mt-2 text-xs text-white/55">No upcoming charges right now.</p>
       )}
     </ImageHero>
