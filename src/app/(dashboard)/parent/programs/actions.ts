@@ -821,12 +821,23 @@ export async function prepareEnrolPayment(
 
   // Create Stripe PaymentIntent
   const { getStripe } = await import('@/lib/stripe/client')
+  const { getOrCreateStripeCustomerForFamily } = await import('@/lib/stripe/customer')
   const stripe = getStripe()
+
+  let customerId: string
+  try {
+    customerId = await getOrCreateStripeCustomerForFamily(supabase, auth.familyId)
+  } catch (e) {
+    console.error('Stripe customer lookup/create failed (term enrol pay-now):', e instanceof Error ? e.message : e)
+    return { ok: false, error: 'Payment could not be initialised. Please try again.' }
+  }
+
   let intent
   try {
     intent = await stripe.paymentIntents.create({
       amount: priceCents,
       currency: 'aud',
+      customer: customerId,
       automatic_payment_methods: { enabled: true },
       description: `${program.name} — Term enrolment for ${player.first_name}`,
       metadata: {

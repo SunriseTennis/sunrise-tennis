@@ -949,6 +949,7 @@ export type Database = {
           secondary_contact: Json | null
           signup_source: string
           status: string
+          stripe_customer_id: string | null
           terms_acknowledged_at: string | null
           updated_at: string | null
           welcome_banner_dismissed_at: string | null
@@ -976,6 +977,7 @@ export type Database = {
           secondary_contact?: Json | null
           signup_source?: string
           status?: string
+          stripe_customer_id?: string | null
           terms_acknowledged_at?: string | null
           updated_at?: string | null
           welcome_banner_dismissed_at?: string | null
@@ -1003,6 +1005,7 @@ export type Database = {
           secondary_contact?: Json | null
           signup_source?: string
           status?: string
+          stripe_customer_id?: string | null
           terms_acknowledged_at?: string | null
           updated_at?: string | null
           welcome_banner_dismissed_at?: string | null
@@ -2847,6 +2850,7 @@ export type Database = {
         Returns: number
       }
       is_admin: { Args: { user_uuid: string }; Returns: boolean }
+      peek_invitation_email: { Args: { p_token: string }; Returns: Json }
       private_partner_summary: {
         Args: { booking_ids: string[] }
         Returns: {

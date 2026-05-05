@@ -7,6 +7,7 @@ import { createClient, getSessionUser } from '@/lib/supabase/server'
 import { validateFormData } from '@/lib/utils/validation'
 import { checkRateLimit } from '@/lib/utils/rate-limit'
 import { getStripe } from '@/lib/stripe/client'
+import { getOrCreateStripeCustomerForFamily } from '@/lib/stripe/customer'
 
 const createPaymentIntentSchema = z.object({
   family_id: z.string().uuid('Invalid family'),
@@ -74,11 +75,20 @@ export async function createPaymentIntent(formData: FormData): Promise<CreatePay
 
   const stripe = getStripe()
 
+  let customerId: string
+  try {
+    customerId = await getOrCreateStripeCustomerForFamily(supabase, familyId)
+  } catch (e) {
+    console.error('Stripe customer lookup/create failed:', e instanceof Error ? e.message : e)
+    return { ok: false, error: 'Payment could not be initialised. Please try again.' }
+  }
+
   let intent
   try {
     intent = await stripe.paymentIntents.create({
       amount: amountCents,
       currency: 'aud',
+      customer: customerId,
       automatic_payment_methods: { enabled: true },
       description: description || 'Sunrise Tennis payment',
       metadata: {
