@@ -115,6 +115,20 @@ export const signupFormSchema = z.object({
   referral_source_detail: optionalString(500),
 })
 
+// Plan 20 — invite-only signup path. Token-bound (peek_invitation_email
+// returns the email server-side), so no email field; just password +
+// confirm + T&C. Skips Supabase's confirmation email step — the parent
+// already proved email ownership by clicking the invite link.
+export const signupViaInviteFormSchema = z.object({
+  invite_token: z.string().uuid('Invalid invite link'),
+  password: z.string().min(8, 'Password must be at least 8 characters').max(200),
+  password_confirm: z.string().min(8, 'Please re-enter the same password'),
+  accepted_terms: z.literal('on', { message: 'You must accept the Privacy Policy and Terms of Service' }),
+}).refine((d) => d.password === d.password_confirm, {
+  message: "Passwords don't match",
+  path: ['password_confirm'],
+})
+
 export const magicLinkFormSchema = z.object({
   email: z.string().email('Valid email is required'),
 })

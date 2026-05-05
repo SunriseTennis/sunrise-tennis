@@ -2,11 +2,12 @@
 
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
-import { createClient, getSessionUser } from '@/lib/supabase/server'
+import { createClient, createServiceClient, getSessionUser } from '@/lib/supabase/server'
 import {
   validateFormData,
   loginFormSchema,
   signupFormSchema,
+  signupViaInviteFormSchema,
   magicLinkFormSchema,
   forgotPasswordFormSchema,
   updatePasswordFormSchema,
@@ -194,6 +195,99 @@ export async function signup(formData: FormData) {
 
   await logAuthEvent({ userId: data.user?.id, email, eventType: 'signup', method: 'password', success: true, metadata: { invite_token: inviteToken || null, first_name: firstName, last_name: lastName, full_name: fullName } })
   redirect('/verify?type=signup')
+}
+
+// ── Plan 20 — invite-only signup, no second confirmation email ──────────
+//
+// Token-bound: the parent received the invite link in the mailbox at the
+// invitation's email, so receiving the link is itself proof of email
+// ownership. We pre-confirm the auth user via service-role
+// admin.createUser({ email_confirm: true }) so Supabase doesn't fire its
+// (now redundant) confirmation email — saving one round-trip + one tab
+// switch in the wizard.
+//
+// Name is intentionally NOT collected here — wizard step 1 takes it.
+// (Drops the "first/last typed twice" complaint.)
+//
+// Self-signup keeps the original `signup` action (where the
+// confirmation email is the right safety check on a parent we don't
+// yet trust).
+
+export async function signupViaInvite(formData: FormData) {
+  const parsed = validateFormData(formData, signupViaInviteFormSchema)
+  if (!parsed.success) {
+    const inviteToken = (formData.get('invite_token') as string | null) ?? ''
+    redirect(`/signup?invite=${encodeURIComponent(inviteToken)}&error=${encodeURIComponent(parsed.error)}`)
+  }
+
+  const { invite_token: inviteToken, password } = parsed.data
+
+  // Look up the invitation server-side to get the bound email.
+  const supabaseRead = await createClient()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: peek } = await (supabaseRead as any).rpc('peek_invitation_email', { p_token: inviteToken })
+  const peekResult = (peek ?? { valid: false }) as {
+    valid: boolean
+    reason?: 'missing_token' | 'not_found_or_claimed' | 'expired'
+    email?: string
+  }
+  if (!peekResult.valid || !peekResult.email) {
+    const msg = peekResult.reason === 'expired'
+      ? 'This invite has expired. Please ask Maxim to send a new one.'
+      : 'This invite link is no longer valid. If you already signed up, sign in instead.'
+    redirect(`/signup?invite=${encodeURIComponent(inviteToken)}&error=${encodeURIComponent(msg)}`)
+  }
+  const email = peekResult.email
+
+  // Rate-limit per email (rate-limit by token would be trivially bypassed).
+  if (!await checkRateLimitAsync(`signup-invite:${email}`, 3, 60_000)) {
+    redirect(`/signup?invite=${encodeURIComponent(inviteToken)}&error=${encodeURIComponent('Too many signup attempts. Please wait a minute.')}`)
+  }
+
+  // Pre-confirmed admin.createUser via service role. email_confirm:true
+  // marks email_confirmed_at immediately so Supabase Auth does NOT fire
+  // a confirmation email. The invite_token in user_metadata is what
+  // /dashboard later passes to claim_invitation.
+  const service = createServiceClient()
+  const { data: created, error: createErr } = await service.auth.admin.createUser({
+    email,
+    password,
+    email_confirm: true,
+    user_metadata: {
+      invite_token: inviteToken,
+      accepted_terms: true,
+      accepted_terms_at: new Date().toISOString(),
+    },
+  })
+
+  if (createErr || !created.user) {
+    // Most common: parent has a stale account from a previous aborted
+    // attempt. Surface a clear "sign in instead" hint.
+    const friendly = (createErr?.message ?? '').toLowerCase().includes('already')
+      ? 'An account with this email already exists. Sign in instead.'
+      : (createErr?.message ?? 'Could not create account. Please try again.')
+    await logAuthEvent({ email, eventType: 'signup', method: 'password', success: false, metadata: { error: createErr?.message ?? 'unknown', invite_token: inviteToken, path: 'invite' } })
+    redirect(`/signup?invite=${encodeURIComponent(inviteToken)}&error=${encodeURIComponent(friendly)}`)
+  }
+
+  await logAuthEvent({ userId: created.user.id, email, eventType: 'signup', method: 'password', success: true, metadata: { invite_token: inviteToken, path: 'invite' } })
+
+  // Sign them in via the JWT-scoped client so the session cookie is set
+  // and they land on /dashboard authenticated. /dashboard then calls
+  // claim_invitation(token), creates the user_roles parent row, and
+  // redirects to /parent/onboarding.
+  const supabase = await createClient()
+  const { error: signInErr } = await supabase.auth.signInWithPassword({ email, password })
+  if (signInErr) {
+    // The user IS created; sign-in just failed. Send them to /login
+    // with a hint instead of leaving them in limbo.
+    await logAuthEvent({ userId: created.user.id, email, eventType: 'login_failed', method: 'password', success: false, metadata: { error: signInErr.message, path: 'invite-post-signup' } })
+    redirect(`/login?error=${encodeURIComponent('Account created — please sign in to continue.')}`)
+  }
+
+  await logAuthEvent({ userId: created.user.id, email, eventType: 'login', method: 'password', success: true, metadata: { path: 'invite-post-signup' } })
+  revalidatePath('/', 'layout')
+  redirect('/dashboard')
 }
 
 // ── Plan 15 Phase E — password reset ──────────────────────────────────────
