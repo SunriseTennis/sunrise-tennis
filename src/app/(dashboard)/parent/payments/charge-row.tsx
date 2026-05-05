@@ -82,15 +82,18 @@ export function ChargeRow({
   const expanded = isExpanded ?? false
   const handleToggle = onToggle ?? (() => {})
 
+  // Paid charges can still be expanded (Phase F) — the breakdown panel surfaces
+  // the per-session math for transparency. The Pay button is gated below.
+  const canExpand = charge.pricingBreakdown != null || !isPaid
   return (
     <div>
       <button
         type="button"
-        onClick={() => !isPaid && handleToggle()}
-        disabled={isPaid}
+        onClick={() => canExpand && handleToggle()}
+        disabled={!canExpand}
         className={cn(
           'flex w-full items-start gap-3 px-4 py-3 text-left transition-colors',
-          !isPaid && 'hover:bg-muted/20 cursor-pointer',
+          canExpand && 'hover:bg-muted/20 cursor-pointer',
           expanded && 'bg-muted/10',
         )}
       >
@@ -126,28 +129,33 @@ export function ChargeRow({
               {formatCurrency(grossPerSessionCents)}
             </span>
           )}
+          {/* For paid rows: show the actual paid amount (charge.amountCents),
+              not the displayCents (which is outstanding=0 for paid). */}
           <span className={cn(
             'tabular-nums font-semibold',
-            isPaid ? 'text-muted-foreground line-through' :
+            isPaid ? 'text-muted-foreground' :
             displayCents < 0 ? 'text-success' :
             charge.badge === 'due' ? 'text-amber-700' :
             'text-foreground',
           )}>
-            {formatCurrency(displayCents)}
+            {isPaid
+              ? formatCurrency(charge.amountCents)
+              : formatCurrency(displayCents)}
           </span>
-          {!isPaid && (
+          {canExpand && (
             <ChevronDown className={cn('size-3.5 text-muted-foreground transition-transform', expanded && 'rotate-180')} />
           )}
         </div>
       </button>
 
       {/* Action sheet */}
-      {expanded && !isPaid && (
+      {expanded && canExpand && (
         <>
           {/* Breakdown panel — only shown when we have an itemised breakdown */}
           {charge.pricingBreakdown && (
             <PricingBreakdownPanel breakdown={charge.pricingBreakdown} />
           )}
+          {!isPaid && (
           <div className="border-t border-border/30 bg-muted/5 px-4 py-2.5 flex flex-wrap gap-2">
             {/* Private-lesson charges → /parent/bookings/[bookingId].
                 Privates have no program_id (so program_type from the join is null);
@@ -192,6 +200,7 @@ export function ChargeRow({
             </button>
           )}
           </div>
+          )}
         </>
       )}
     </div>

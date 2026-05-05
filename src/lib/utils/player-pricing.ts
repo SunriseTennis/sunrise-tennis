@@ -249,6 +249,22 @@ export function formatDiscountSuffix({
   return parts.length ? parts.join(' + ') : null
 }
 
+/** Default copy used when a caller doesn't override. Kept here so the panel
+ *  always has *something* to render even on legacy rows. */
+export const DEFAULT_MULTI_GROUP_LABEL = 'Multi-group (25% off the 2nd group, per child)'
+export const DEFAULT_EARLY_BIRD_LABEL = 'Early Bird Special'
+
+export interface EarlyBirdMeta {
+  /** Which tier was active at calculation time. */
+  tier?: 1 | 2 | null
+  /** ISO date (YYYY-MM-DD) the active tier ends. */
+  deadline?: string | null
+  /** Tier-2 percent if configured (used to render "drops to N% after" footnote when tier=1). */
+  tier2Pct?: number | null
+  /** Tier-2 deadline if configured. */
+  tier2Deadline?: string | null
+}
+
 /**
  * Build the pricing_breakdown JSONB payload for a charge from a per-session
  * breakdown + (optional) sessions count + (optional) early-bird percent.
@@ -259,6 +275,11 @@ export function formatDiscountSuffix({
  *
  * The total returned matches the math used at the call site so it can be
  * cross-checked against `amount_cents`.
+ *
+ * Optional `earlyBirdMeta` + `multiGroupLabel` + `earlyBirdLabel` thread the
+ * named-discount + tier-deadline data into the JSON so PricingBreakdownPanel
+ * can render "Early Bird Special — 15% off, ends 12-May" with a tier-2
+ * footnote where applicable.
  */
 export function buildPricingBreakdown({
   basePriceCents,
@@ -267,6 +288,9 @@ export function buildPricingBreakdown({
   multiGroupApplied,
   sessions,
   earlyBirdPct,
+  earlyBirdMeta,
+  multiGroupLabel,
+  earlyBirdLabel,
 }: {
   /** The per-session base before multi-group (post-override, post-morning-squad-partner). */
   basePriceCents: number
@@ -278,6 +302,12 @@ export function buildPricingBreakdown({
   sessions?: number
   /** Active early-bird percent (e.g. 10, 15). 0 / undefined when not applied. */
   earlyBirdPct?: number
+  /** Optional metadata for the early-bird tier/deadline footnote. */
+  earlyBirdMeta?: EarlyBirdMeta | null
+  /** Custom label for the multi-group line; defaults to DEFAULT_MULTI_GROUP_LABEL. */
+  multiGroupLabel?: string
+  /** Custom label for the early-bird line; defaults to DEFAULT_EARLY_BIRD_LABEL. */
+  earlyBirdLabel?: string
 }) {
   const n = sessions ?? 1
   const subtotal = basePriceCents * n
@@ -297,10 +327,21 @@ export function buildPricingBreakdown({
   if (multiGroupApplied) {
     breakdown.multi_group_pct = MULTI_GROUP_DISCOUNT_PCT
     breakdown.multi_group_cents_off = multiGroupOff
+    breakdown.multi_group_label = multiGroupLabel ?? DEFAULT_MULTI_GROUP_LABEL
   }
   if (ebPct > 0) {
     breakdown.early_bird_pct = ebPct
     breakdown.early_bird_cents_off = earlyBirdOff
+    breakdown.early_bird_label = earlyBirdLabel ?? DEFAULT_EARLY_BIRD_LABEL
+    if (earlyBirdMeta) {
+      if (earlyBirdMeta.tier != null) breakdown.early_bird_tier = earlyBirdMeta.tier
+      if (earlyBirdMeta.deadline) breakdown.early_bird_deadline = earlyBirdMeta.deadline
+      // Only surface tier-2 footnote when tier-1 is active AND tier-2 is configured.
+      if (earlyBirdMeta.tier === 1 && earlyBirdMeta.tier2Pct && earlyBirdMeta.tier2Pct > 0) {
+        breakdown.tier2_pct = earlyBirdMeta.tier2Pct
+        if (earlyBirdMeta.tier2Deadline) breakdown.tier2_deadline = earlyBirdMeta.tier2Deadline
+      }
+    }
   }
   return breakdown
 }

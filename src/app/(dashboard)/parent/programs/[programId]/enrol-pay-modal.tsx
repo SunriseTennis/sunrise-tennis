@@ -11,8 +11,8 @@ import {
 } from '@stripe/react-stripe-js'
 import { prepareEnrolPayment, finalizeEnrolPayment } from '../actions'
 import { Button } from '@/components/ui/button'
-import { formatCurrency } from '@/lib/utils/currency'
 import { AlertCircle, X } from 'lucide-react'
+import { PricingBreakdownPanel, type PricingBreakdownData } from '@/components/pricing-breakdown-panel'
 
 const publishableKey = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
 
@@ -24,17 +24,7 @@ function getStripeJs() {
   return stripePromise
 }
 
-type Breakdown = {
-  sessions?: number
-  per_session_cents?: number
-  subtotal_cents?: number
-  morning_squad_partner_applied?: boolean
-  multi_group_pct?: number
-  multi_group_cents_off?: number
-  early_bird_pct?: number
-  early_bird_cents_off?: number
-  total_cents: number
-}
+type Breakdown = PricingBreakdownData
 
 export function EnrolPayModal({
   open,
@@ -119,35 +109,12 @@ export function EnrolPayModal({
         </button>
       </div>
 
-      {/* Breakdown */}
+      {/* Breakdown — uses shared component so labels/expiry/tier-2 stay consistent */}
       {breakdown && (
-        <div className="mb-4 rounded-lg border border-border bg-muted/30 px-4 py-3">
-          <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Breakdown</p>
-          <div className="space-y-0.5 text-xs">
-            {breakdown.sessions != null && breakdown.per_session_cents != null && (
-              <div className="flex justify-between text-muted-foreground">
-                <span>{breakdown.sessions} sessions × {formatCurrency(breakdown.per_session_cents)}</span>
-                <span className="tabular-nums">{formatCurrency(breakdown.subtotal_cents ?? 0)}</span>
-              </div>
-            )}
-            {breakdown.multi_group_cents_off != null && breakdown.multi_group_cents_off > 0 && (
-              <div className="flex justify-between text-success">
-                <span>– Multi-group ({breakdown.multi_group_pct}%)</span>
-                <span className="tabular-nums">−{formatCurrency(breakdown.multi_group_cents_off)}</span>
-              </div>
-            )}
-            {breakdown.early_bird_cents_off != null && breakdown.early_bird_cents_off > 0 && (
-              <div className="flex justify-between text-success">
-                <span>– Early-bird ({breakdown.early_bird_pct}%)</span>
-                <span className="tabular-nums">−{formatCurrency(breakdown.early_bird_cents_off)}</span>
-              </div>
-            )}
-            <div className="flex justify-between border-t border-border/50 pt-0.5 text-sm font-bold text-primary">
-              <span>Total</span>
-              <span className="tabular-nums">{formatCurrency(breakdown.total_cents)}</span>
-            </div>
-          </div>
-        </div>
+        <PricingBreakdownPanel
+          breakdown={breakdown}
+          className="mb-4 rounded-lg border border-border bg-muted/30 px-4 py-3"
+        />
       )}
 
       {error && (

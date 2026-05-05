@@ -191,12 +191,35 @@ export interface PricingBreakdown {
   multi_group_pct?: number
   /** Multi-group discount in cents (positive number — amount saved). */
   multi_group_cents_off?: number
+  /** Friendly label for the multi-group line, e.g. "Multi-group (25% off the 2nd group, per child)". */
+  multi_group_label?: string
   /** Early-bird percent (e.g. 10 or 15). Omitted when not applied. */
   early_bird_pct?: number
   /** Early-bird discount in cents (positive number — amount saved). */
   early_bird_cents_off?: number
+  /** Friendly label for the early-bird line, e.g. "Early Bird Special". */
+  early_bird_label?: string
+  /** Which early-bird tier was active when the charge was billed. */
+  early_bird_tier?: 1 | 2
+  /** ISO date the active tier ends (used by PricingBreakdownPanel to show "ends DD-MMM"). */
+  early_bird_deadline?: string
+  /** Tier-2 percent — only set when tier-1 is currently active and tier-2 is configured. */
+  tier2_pct?: number
+  /** Tier-2 deadline. */
+  tier2_deadline?: string
   /** Final amount in cents — should equal amount_cents on the row. */
   total_cents: number
+  // ── Adjustment-charge variant (Phase D) ───────────────────────────────────
+  /** When set, identifies the original (paid) charge that this adjustment reverses. */
+  adjustment_for_charge_id?: string
+  /** Reason this adjustment was created. Drives the explanation copy in PricingBreakdownPanel. */
+  adjustment_reason?: 'multi_group_no_longer_eligible' | 'morning_squad_partner_lost'
+  /** Snapshot of the original charge's description (so the panel can name what was adjusted). */
+  original_charge_description?: string
+  /** Cents of multi-group discount that's being clawed back (informational). */
+  surrendered_multi_group_cents_off?: number
+  /** Early-bird percent that stays applied to the surviving charge (informational). */
+  residual_early_bird_pct?: number
 }
 
 export interface CreateChargeParams {

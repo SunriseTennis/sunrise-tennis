@@ -1,7 +1,7 @@
 import { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/lib/supabase/types'
 import { createCharge, formatChargeDescription, type CreateChargeParams } from './billing'
-import { getPlayerSessionPriceBreakdown, formatDiscountSuffix, buildPricingBreakdown } from './player-pricing'
+import { getPlayerSessionPriceBreakdown, formatDiscountSuffix, buildPricingBreakdown, type EarlyBirdMeta } from './player-pricing'
 import { getTermLabel } from './school-terms'
 
 type Supabase = SupabaseClient<Database>
@@ -14,6 +14,8 @@ export interface BuildTermChargesArgs {
   programType: string | null | undefined
   /** Active early-pay discount percent (0 when none). Applied per-session deterministically. */
   earlyBirdPct: number
+  /** Optional metadata for the early-bird tier (deadline + tier-2 footnote in pricing_breakdown). */
+  earlyBirdMeta?: EarlyBirdMeta | null
   chargeStatus: 'pending' | 'confirmed'
   createdBy: string
   /** Sessions to bill — must be already filtered to scheduled+future. */
@@ -83,6 +85,7 @@ export async function buildTermSessionCharges(
       multiGroupApplied: breakdown.multiGroupApplied,
       sessions: 1,
       earlyBirdPct: ebPct,
+      earlyBirdMeta: args.earlyBirdMeta ?? null,
     })
     // Override total_cents on the last row so the displayed math matches
     // the actual stored amount (off by ≤ N cents in edge cases).

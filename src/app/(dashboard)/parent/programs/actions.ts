@@ -127,14 +127,23 @@ export async function enrolInProgram(programId: string, familyId: string, formDa
   const sessionsTotal = sessionsList.length
 
   // Active early-bird percent (term path only).
-  const earlyBirdPct = isTermEnrollment
+  const earlyBirdInfo = isTermEnrollment
     ? getActiveEarlyBird({
         early_pay_discount_pct: program?.early_pay_discount_pct ?? null,
         early_bird_deadline: program?.early_bird_deadline ?? null,
         early_pay_discount_pct_tier2: program?.early_pay_discount_pct_tier2 ?? null,
         early_bird_deadline_tier2: program?.early_bird_deadline_tier2 ?? null,
-      }).pct
-    : 0
+      })
+    : { pct: 0, tier: null as 1 | 2 | null, deadline: null as string | null }
+  const earlyBirdPct = earlyBirdInfo.pct
+  const earlyBirdMeta = isTermEnrollment
+    ? {
+        tier: earlyBirdInfo.tier,
+        deadline: earlyBirdInfo.deadline,
+        tier2Pct: program?.early_pay_discount_pct_tier2 ?? null,
+        tier2Deadline: program?.early_bird_deadline_tier2 ?? null,
+      }
+    : null
 
   // Rough projected total stored on bookings.price_cents for reference.
   // Real charges are created per-session below for term enrolments.
@@ -205,6 +214,7 @@ export async function enrolInProgram(programId: string, familyId: string, formDa
         bookingId: booking.id,
         programType: program?.type,
         earlyBirdPct,
+        earlyBirdMeta,
         chargeStatus,
         createdBy: auth.userId,
         sessions: sessionsList,
@@ -598,16 +608,20 @@ export async function unenrolFromProgram(
     return { error: 'Failed to unenrol. Please try again.' }
   }
 
-  // Void all future pending charges for this player+program. Charges may also
-  // lack a parent UPDATE path; use the service client here too.
+  // Void all future per-session charges for this player+program. Includes BOTH
+  // pending (pay-later) AND confirmed (pay-now) — voiding a paid charge causes
+  // recalculate_family_balance to drop it from the active-charges sum, leaving
+  // the matching payment unmatched = positive credit (pay-now credit-back).
+  // Plan-review §1b confirmed this is safe; orphan allocations are filtered
+  // out of PaymentHistory at the page-query level (Phase F).
   const today = new Date().toISOString().split('T')[0]
   const { data: futureSessionCharges } = await supabase
     .from('charges')
-    .select('id, session_id, sessions:session_id(date)')
+    .select('id, session_id, status, sessions:session_id(date)')
     .eq('family_id', auth.familyId)
     .eq('player_id', playerId)
     .eq('program_id', programId)
-    .eq('status', 'pending')
+    .in('status', ['pending', 'confirmed'])
 
   for (const c of futureSessionCharges ?? []) {
     const session = c.sessions as unknown as { date: string } | null
@@ -616,12 +630,33 @@ export async function unenrolFromProgram(
     }
   }
 
+  // Phase D — Multi-group adjustment for the player's OTHER paid programs
+  // that previously qualified for 25% off because of THIS now-withdrawn anchor.
+  // The roster is already at status='withdrawn' above, so the multi-group
+  // recompute uses the post-unenrol enrolment set automatically.
+  const { data: program } = await supabase.from('programs').select('name').eq('id', programId).single()
+  const programName = program?.name ?? null
+  try {
+    const { generateMultiGroupAdjustments } = await import('@/lib/utils/charge-recompute')
+    await generateMultiGroupAdjustments(
+      service,
+      auth.familyId,
+      playerId,
+      programId,
+      programName,
+      auth.userId,
+    )
+  } catch (e) {
+    console.error('Multi-group adjustment generation failed (unenrol):', e instanceof Error ? e.message : e)
+    // Non-blocking — the unenrol still completes; admin can manually adjust
+    // if the helper failed mid-run.
+  }
+
   // Notify admin via the rules-driven dispatcher.
   try {
-    const { data: program } = await supabase.from('programs').select('name').eq('id', programId).single()
     await dispatchNotification('parent.program.unenrolled', {
       playerName: player.first_name,
-      programName: program?.name ?? 'a program',
+      programName: programName ?? 'a program',
       excludeUserId: auth.userId,
     })
   } catch { /* non-blocking */ }
@@ -750,6 +785,12 @@ export async function prepareEnrolPayment(
     priceCents = priceCents - Math.round(priceCents * (eb.pct / 100))
     activeDiscountPct = eb.pct
   }
+  const earlyBirdMeta = {
+    tier: eb.tier,
+    deadline: eb.deadline,
+    tier2Pct: program.early_pay_discount_pct_tier2 ?? null,
+    tier2Deadline: program.early_bird_deadline_tier2 ?? null,
+  }
 
   if (priceCents < 100) {
     return { ok: false, error: 'Total is below the minimum payable amount ($1)' }
@@ -763,6 +804,7 @@ export async function prepareEnrolPayment(
         multiGroupApplied: breakdown.multiGroupApplied,
         sessions: sessionsTotal,
         earlyBirdPct: activeDiscountPct,
+        earlyBirdMeta,
       })
     : null
 
@@ -934,6 +976,12 @@ export async function finalizeEnrolPayment(intentId: string): Promise<FinalizeRe
     early_bird_deadline_tier2: program.early_bird_deadline_tier2 ?? null,
   })
   const earlyPct = eb.pct
+  const earlyBirdMeta = {
+    tier: eb.tier,
+    deadline: eb.deadline,
+    tier2Pct: program.early_pay_discount_pct_tier2 ?? null,
+    tier2Deadline: program.early_bird_deadline_tier2 ?? null,
+  }
 
   // Booking row — embed intent id in notes for idempotency on future calls
   const { data: booking } = await supabase
@@ -967,6 +1015,7 @@ export async function finalizeEnrolPayment(intentId: string): Promise<FinalizeRe
         bookingId: booking.id,
         programType: program.type,
         earlyBirdPct: earlyPct,
+        earlyBirdMeta,
         chargeStatus: 'confirmed',
         createdBy: auth.userId,
         sessions: sessionsList,

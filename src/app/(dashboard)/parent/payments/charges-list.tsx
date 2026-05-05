@@ -35,6 +35,10 @@ interface Charge {
 
 function classifyBadge(c: Charge): ChargeBadge {
   const today = new Date().toISOString().split('T')[0]
+  // A charge is "paid" when allocations cover the full gross amount and the
+  // status is one of the settled-money statuses. Show Paid badge regardless
+  // of whether the underlying session is past or future.
+  if (c.amount_cents > 0 && c.outstanding_cents <= 0) return 'paid'
   if (c.session_date && c.session_date > today && c.session_status === 'scheduled') {
     return 'scheduled'
   }
@@ -86,11 +90,13 @@ interface ServiceGroup {
   key: string
   label: string
   charges: Charge[]
+  /** Sum of outstanding (still-owed) cents across this group's charges. Paid rows contribute 0. */
   subtotalCents: number
   /** Sum of (subtotal − total) across charges' pricing_breakdown — i.e. amount saved across this group. */
   savingsCents: number
   dueCount: number
   scheduledCount: number
+  paidCount: number
 }
 
 function buildGroups(charges: Charge[]): { playerGroups: PlayerGroup[]; dueTotalCents: number; scheduledTotalCents: number; totalCents: number } {
@@ -132,19 +138,25 @@ function buildGroups(charges: Charge[]): { playerGroups: PlayerGroup[]; dueTotal
       }, 0)
       let dueCount = 0
       let scheduledCount = 0
+      let paidCount = 0
       for (const c of sCharges) {
-        if (c.session_date && c.session_date > today && c.session_status === 'scheduled') {
+        if (c.amount_cents > 0 && c.outstanding_cents <= 0) {
+          paidCount++
+        } else if (c.session_date && c.session_date > today && c.session_status === 'scheduled') {
           scheduledCount++
         } else {
           dueCount++
         }
       }
-      return { key, label, charges: sCharges, subtotalCents, savingsCents, dueCount, scheduledCount }
+      return { key, label, charges: sCharges, subtotalCents, savingsCents, dueCount, scheduledCount, paidCount }
     })
 
     const subtotalCents = playerCharges.reduce((sum, c) => sum + c.outstanding_cents, 0)
 
     for (const c of playerCharges) {
+      // Paid rows don't contribute to either due/scheduled totals — they are
+      // shown for transparency only.
+      if (c.amount_cents > 0 && c.outstanding_cents <= 0) continue
       if (c.session_date && c.session_date > today && c.session_status === 'scheduled') {
         scheduledTotalCents += c.outstanding_cents
       } else {
@@ -165,10 +177,25 @@ export function ChargesList({ charges }: { charges: Charge[] }) {
   const payment = usePayment()
 
   const active = charges.filter(c => c.status !== 'voided')
-  // A charge is "still owing" only when it has a positive remaining balance.
-  // outstanding_cents handles partial-payment + webhook-race cases where
-  // status is still 'confirmed' but allocations cover the full amount.
-  const positive = active.filter(c => c.amount_cents > 0 && c.outstanding_cents > 0 && c.status !== 'paid' && c.status !== 'credited')
+  // Phase F: include both still-owing charges AND paid scheduled future
+  // per-session charges. The latter render with a "Paid" badge so the parent
+  // sees what has been pre-paid for upcoming sessions, but no Pay button.
+  // Past-completed paid charges stay out of the list (they live in PaymentHistory).
+  const today = new Date().toISOString().split('T')[0]
+  const positive = active.filter(c => {
+    if (c.amount_cents <= 0) return false
+    if (c.status === 'credited') return false
+    const isFullyPaid = c.outstanding_cents <= 0
+    const isFutureScheduled =
+      !!c.session_date && c.session_date >= today && c.session_status === 'scheduled'
+    if (isFullyPaid) {
+      // Only keep paid rows for upcoming scheduled sessions — past payments
+      // belong in PaymentHistory, not in the "current commitment" list.
+      return isFutureScheduled
+    }
+    // Outstanding-but-not-paid: keep.
+    return c.outstanding_cents > 0
+  })
   const credits = active.filter(c => c.amount_cents < 0)
 
   const { playerGroups, dueTotalCents, scheduledTotalCents, totalCents } = buildGroups(positive)
@@ -206,15 +233,21 @@ export function ChargesList({ charges }: { charges: Charge[] }) {
               )}
 
               {/* Service groups — collapsed by default */}
-              {services.map(({ key, label, charges: sCharges, subtotalCents: sSubtotal, savingsCents: sSavings, dueCount, scheduledCount }) => {
+              {services.map(({ key, label, charges: sCharges, subtotalCents: sSubtotal, savingsCents: sSavings, dueCount, scheduledCount, paidCount }) => {
                 const groupKey = `${playerName}-${key}`
                 const isGroupExpanded = expandedGroups.has(groupKey)
                 const statusParts: string[] = []
                 if (dueCount > 0) statusParts.push(`${dueCount} due`)
                 if (scheduledCount > 0) statusParts.push(`${scheduledCount} scheduled`)
+                if (paidCount > 0) statusParts.push(`${paidCount} paid`)
                 // Color subtotal amber if any charges are due
                 const hasOwed = dueCount > 0
                 const grossSubtotal = sSavings > 0 ? sSubtotal + sSavings : null
+                // Hide Pay on a group that's fully paid (subtotal=0 = no outstanding)
+                const showGroupPayButton = sSubtotal > 0
+                // When everything in the group is paid, show "All paid" badge
+                // instead of a $0 number that reads as "nothing owed for $0".
+                const isFullyPaidGroup = paidCount > 0 && dueCount === 0 && scheduledCount === 0
 
                 return (
                   <div key={key} className="border-b border-border/20 last:border-b-0">
@@ -240,26 +273,36 @@ export function ChargesList({ charges }: { charges: Charge[] }) {
                           </p>
                         </div>
                         <div className="flex items-center gap-1.5 shrink-0">
-                          {grossSubtotal !== null && (
-                            <span className="text-xs tabular-nums text-muted-foreground line-through">
-                              {formatCurrency(grossSubtotal)}
+                          {isFullyPaidGroup ? (
+                            <span className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-800">
+                              All paid
                             </span>
+                          ) : (
+                            <>
+                              {grossSubtotal !== null && (
+                                <span className="text-xs tabular-nums text-muted-foreground line-through">
+                                  {formatCurrency(grossSubtotal)}
+                                </span>
+                              )}
+                              <span className={cn(
+                                'text-sm font-bold tabular-nums',
+                                hasOwed ? 'text-amber-700' : 'text-foreground',
+                              )}>
+                                {formatCurrency(sSubtotal)}
+                              </span>
+                            </>
                           )}
-                          <span className={cn(
-                            'text-sm font-bold tabular-nums',
-                            hasOwed ? 'text-amber-700' : 'text-foreground',
-                          )}>
-                            {formatCurrency(sSubtotal)}
-                          </span>
                         </div>
                       </button>
-                      <button
-                        type="button"
-                        onClick={() => handlePaySubtotal(sSubtotal, `${label} - ${playerName}`)}
-                        className="shrink-0 mr-2 rounded-lg border border-primary/30 bg-primary/5 px-3 py-1.5 text-xs font-medium text-primary hover:bg-primary/10 transition-colors"
-                      >
-                        Pay
-                      </button>
+                      {showGroupPayButton && (
+                        <button
+                          type="button"
+                          onClick={() => handlePaySubtotal(sSubtotal, `${label} - ${playerName}`)}
+                          className="shrink-0 mr-2 rounded-lg border border-primary/30 bg-primary/5 px-3 py-1.5 text-xs font-medium text-primary hover:bg-primary/10 transition-colors"
+                        >
+                          Pay
+                        </button>
+                      )}
                     </div>
 
                     {/* Expanded: individual charge rows */}
@@ -282,7 +325,7 @@ export function ChargesList({ charges }: { charges: Charge[] }) {
                 )
               })}
 
-              {/* Player subtotal */}
+              {/* Player subtotal — hide Pay button when nothing outstanding */}
               {hasMultiplePlayers && (
                 <div className="border-t border-border/50 bg-gradient-to-r from-muted/20 to-transparent px-4 py-3 flex justify-between items-center">
                   <span className="text-sm font-semibold text-muted-foreground">{playerName} total</span>
@@ -293,20 +336,24 @@ export function ChargesList({ charges }: { charges: Charge[] }) {
                     )}>
                       {formatCurrency(subtotalCents)}
                     </span>
-                    <button
-                      type="button"
-                      onClick={() => handlePaySubtotal(subtotalCents, `All charges - ${playerName}`)}
-                      className="rounded-lg border border-primary/30 bg-primary/5 px-3 py-1.5 text-xs font-medium text-primary hover:bg-primary/10 transition-colors"
-                    >
-                      Pay
-                    </button>
+                    {subtotalCents > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => handlePaySubtotal(subtotalCents, `All charges - ${playerName}`)}
+                        className="rounded-lg border border-primary/30 bg-primary/5 px-3 py-1.5 text-xs font-medium text-primary hover:bg-primary/10 transition-colors"
+                      >
+                        Pay
+                      </button>
+                    )}
                   </div>
                 </div>
               )}
             </div>
           ))}
 
-          {/* Grand totals */}
+          {/* Grand totals — only render when there's something outstanding to pay.
+              Pure-paid views (everything pre-paid for the term) skip this card. */}
+          {totalCents > 0 && (
           <div className="overflow-hidden rounded-xl border border-border bg-card shadow-elevated">
             <div className="divide-y divide-border/50">
               {dueTotalCents > 0 && (
@@ -358,6 +405,7 @@ export function ChargesList({ charges }: { charges: Charge[] }) {
               </div>
             </div>
           </div>
+          )}
         </div>
       ) : (
         <p className="text-sm text-muted-foreground">No outstanding charges.</p>

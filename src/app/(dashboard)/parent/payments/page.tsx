@@ -9,6 +9,7 @@ import { VoucherForm, VoucherHistory } from './voucher-form'
 import { BalanceHero } from './balance-hero'
 import { PaymentHistory } from './payment-history'
 import { PaymentProvider } from './payment-context'
+import { recomputePendingChargesForFamily, persistChargeRecompute } from '@/lib/utils/charge-recompute'
 
 export default async function ParentPaymentsPage({
   searchParams,
@@ -43,7 +44,7 @@ export default async function ParentPaymentsPage({
 
   const [balanceRes, paymentsRes, chargesRes, vouchersRes, playersRes, familyRes] = await Promise.all([
     supabase.from('family_balance').select('balance_cents, confirmed_balance_cents, projected_balance_cents').eq('family_id', familyId).single(),
-    supabase.from('payments').select('*, payment_allocations(amount_cents, charge_id, charges:charge_id(description, session_id, program_id, booking_id, pricing_breakdown, sessions:session_id(date, status)))').eq('family_id', familyId).neq('status', 'voided').neq('status', 'pending').order('created_at', { ascending: false }).limit(100),
+    supabase.from('payments').select('*, payment_allocations(amount_cents, charge_id, charges:charge_id(description, status, session_id, program_id, booking_id, pricing_breakdown, sessions:session_id(date, status)))').eq('family_id', familyId).neq('status', 'voided').neq('status', 'pending').order('created_at', { ascending: false }).limit(100),
     supabase.from('charges').select('id, type, source_type, description, amount_cents, status, program_id, session_id, booking_id, player_id, created_at, pricing_breakdown, sessions:session_id(date, status), players:player_id(first_name), payment_allocations(amount_cents)').eq('family_id', familyId).in('status', ['pending', 'confirmed', 'paid', 'credited']).order('created_at', { ascending: false }).limit(150),
     supabase.from('vouchers').select('id, child_first_name, child_surname, amount_cents, status, submitted_at, rejection_reason, voucher_number, submission_method').eq('family_id', familyId).order('submitted_at', { ascending: false }).limit(20),
     supabase.from('players').select('id, first_name, last_name, dob, gender').eq('family_id', familyId).eq('status', 'active').order('first_name'),
@@ -80,6 +81,29 @@ export default async function ParentPaymentsPage({
       programInfo = Object.fromEntries(programs.map(p => [p.id, { name: p.name, type: p.type }]))
     }
   }
+  // Phase B — Live recompute for pending unpaid charges. The DB-stored
+  // `pricing_breakdown` is frozen at charge-creation; the live one reflects
+  // today's roster + today's early-bird tier. Cached per (player, program)
+  // tuple inside the helper to avoid N+1 RPC calls.
+  const liveBreakdowns = await recomputePendingChargesForFamily(supabase, familyId)
+
+  // Phase C — Persist the live recompute to DB so the prefilled Pay amount,
+  // the Stripe intent, and the FIFO webhook allocation all agree. Idempotent
+  // (running twice writes the same values). Service client because parents
+  // don't have UPDATE policy on charges. Quietly skip on failure (display
+  // still renders correctly via liveBreakdowns; the only risk is a webhook
+  // allocation against frozen amounts, which the next page load fixes).
+  if (liveBreakdowns.size > 0) {
+    try {
+      const { createServiceClient } = await import('@/lib/supabase/server')
+      const service = createServiceClient()
+      const chargeIds = [...liveBreakdowns.keys()]
+      await persistChargeRecompute(service, chargeIds, familyId, liveBreakdowns)
+    } catch (e) {
+      console.error('Phase C persist on page render failed:', e instanceof Error ? e.message : e)
+    }
+  }
+
   const enrichedCharges = (charges ?? []).map(c => {
     const session = c.sessions as unknown as { date: string; status: string } | null
     const player = c.players as unknown as { first_name: string } | null
@@ -90,14 +114,28 @@ export default async function ParentPaymentsPage({
     const outstanding_cents = c.amount_cents > 0
       ? Math.max(0, c.amount_cents - paid_cents)
       : c.amount_cents
+
+    // For pending unpaid charges, override the displayed breakdown + amount
+    // with today's live values. Past-paid charges keep their frozen state.
+    const live = c.status === 'pending' && outstanding_cents > 0
+      ? liveBreakdowns.get(c.id)
+      : null
+    const displayedBreakdown = live
+      ? (live.breakdown as unknown as { total_cents: number })
+      : ((c.pricing_breakdown as unknown as { total_cents: number } | null) ?? null)
+    const displayedAmount = live ? live.amountCents : c.amount_cents
+    const displayedOutstanding = live
+      ? Math.max(0, live.amountCents - paid_cents)
+      : outstanding_cents
+
     return {
       id: c.id,
       type: c.type,
       source_type: c.source_type,
       description: c.description,
-      amount_cents: c.amount_cents,
+      amount_cents: displayedAmount,
       paid_cents,
-      outstanding_cents,
+      outstanding_cents: displayedOutstanding,
       status: c.status,
       program_id: c.program_id,
       session_id: c.session_id,
@@ -109,20 +147,40 @@ export default async function ParentPaymentsPage({
       player_name: player?.first_name ?? null,
       session_date: session?.date ?? null,
       session_status: session?.status ?? null,
-      pricing_breakdown: (c.pricing_breakdown as unknown as { total_cents: number } | null) ?? null,
+      pricing_breakdown: displayedBreakdown,
     }
   })
 
   const confirmedBalanceCents = balance?.confirmed_balance_cents ?? 0
+  const projectedBalanceCents = balance?.projected_balance_cents ?? 0
   const totalBalanceCents = balance?.balance_cents ?? 0
 
-  // Build payment data with allocations for the history component
+  // "Prepaid for upcoming sessions" = sum of allocations attached to charges
+  // whose session is still scheduled (future). This is the figure that today
+  // shows up as misleading "Credit on account" when a parent has paid a term
+  // up-front but no sessions have run yet.
+  const prepaidUpcomingCents = (payments ?? []).reduce((sum, p) => {
+    const allocations = (p.payment_allocations ?? []) as unknown as {
+      amount_cents: number
+      charges: { sessions: { status: string } | null } | null
+    }[]
+    return sum + allocations.reduce((s, a) => {
+      const sess = a.charges?.sessions
+      return s + (sess?.status === 'scheduled' ? (a.amount_cents ?? 0) : 0)
+    }, 0)
+  }, 0)
+
+  // Build payment data with allocations for the history component.
+  // Filter voided allocations: when a charge is later voided (e.g. parent
+  // unenrols a pay-now program → its charges are voided to credit the family),
+  // the allocation row stays but should NOT continue to claim "applied to: X".
   const paymentRows = (payments ?? []).map((payment) => {
     const allocations = (payment.payment_allocations ?? []) as unknown as {
       amount_cents: number
       charge_id: string
       charges: {
         description: string
+        status: string
         session_id: string | null
         program_id: string | null
         booking_id: string | null
@@ -130,6 +188,7 @@ export default async function ParentPaymentsPage({
         sessions: { date: string; status: string } | null
       } | null
     }[]
+    const visibleAllocations = allocations.filter(a => a.charges?.status !== 'voided')
     return {
       id: payment.id,
       date: payment.created_at ?? '',
@@ -137,7 +196,7 @@ export default async function ParentPaymentsPage({
       method: payment.payment_method,
       amountCents: payment.amount_cents,
       status: payment.status,
-      allocations: allocations.map(a => ({
+      allocations: visibleAllocations.map(a => ({
         amountCents: a.amount_cents,
         chargeDescription: a.charges?.description ?? 'Unknown charge',
         sessionDate: a.charges?.sessions?.date ?? null,
@@ -161,7 +220,11 @@ export default async function ParentPaymentsPage({
         )}
 
         {/* ── Balance Hero ── */}
-        <BalanceHero confirmedBalanceCents={confirmedBalanceCents} />
+        <BalanceHero
+          confirmedBalanceCents={confirmedBalanceCents}
+          projectedBalanceCents={projectedBalanceCents}
+          prepaidUpcomingCents={prepaidUpcomingCents}
+        />
 
         {/* ── Make a Payment / Pay Ahead ── */}
         <section id="payment-section" className="animate-fade-up" style={{ animationDelay: '80ms' }}>
