@@ -94,19 +94,15 @@ export function A2HSStep({ error, stepNumber, totalSteps, backToStep }: A2HSStep
     /iPad|iPhone|iPod/.test(navigator.userAgent) &&
     !(window as { MSStream?: unknown }).MSStream
 
-  // Auto-skip if already standalone.
-  useEffect(() => {
-    if (typeof window === 'undefined') return
-    const isStandalone =
-      window.matchMedia('(display-mode: standalone)').matches ||
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (window.navigator as any).standalone === true
-    if (isStandalone) {
-      startTransition(async () => {
-        await advancePastA2HS()
-      })
-    }
-  }, [])
+  // Plan 20 follow-up — auto-skip-if-standalone removed. On Maxim's
+  // phone the wizard briefly flashed step 4 then advanced on its own
+  // because Safari reported standalone (cached install state from a
+  // previous test). The parent should always be able to read the
+  // instructions and explicitly press "I've installed it" — installs
+  // are short, the auto-skip saved nothing, and the flash was
+  // disorienting. If we ever want to short-circuit, it should be a
+  // page-level redirect (server-side) not a useEffect that fires
+  // mid-render.
 
   function handleContinue() {
     startTransition(async () => {
