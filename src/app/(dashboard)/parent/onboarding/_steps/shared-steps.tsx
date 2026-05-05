@@ -216,31 +216,67 @@ export function PushStep({
   backToStep,
 }: PushStepProps) {
   const [platform] = useState<PushPlatform>(() => detectPushPlatform())
-  const [pushState, setPushState] = useState<'idle' | 'loading' | 'granted' | 'denied' | 'unsupported'>(
+  const [pushState, setPushState] = useState<'idle' | 'loading' | 'granted' | 'denied' | 'unsupported' | 'error'>(
     () => detectPushPlatform() === 'ios-not-standalone' ? 'unsupported' : 'idle',
   )
+  const [pushError, setPushError] = useState<string | null>(null)
   const [subscriptionJson, setSubscriptionJson] = useState<string | null>(null)
   const [pending, startTransition] = useTransition()
 
   useEffect(() => {
     if (platform === 'ios-not-standalone') return
     void (async () => {
-      const existing = await getExistingSubscription()
-      if (existing) {
-        setSubscriptionJson(JSON.stringify(existing))
-        setPushState('granted')
+      try {
+        const existing = await getExistingSubscription()
+        if (existing) {
+          setSubscriptionJson(JSON.stringify(existing))
+          setPushState('granted')
+        }
+      } catch {
+        // Best-effort prefill; silent failure is fine — user can still
+        // press "Enable notifications" to retry the full flow.
       }
     })()
   }, [platform])
 
+  // Plan 20 follow-up — wrap the whole flow in try/catch + a 30s
+  // safety timeout. Without this the button hung in 'loading' forever
+  // when subscribeToPush threw (the actual cause was the SW never
+  // being registered — fixed in lib/push/subscribe.ts — but the
+  // hung-loading state pattern itself was a footgun).
   async function handleEnablePush() {
     setPushState('loading')
-    const subscription = await subscribeToPush()
-    if (subscription) {
-      setSubscriptionJson(JSON.stringify(subscription))
-      setPushState('granted')
-    } else {
-      setPushState('denied')
+    setPushError(null)
+
+    // Fallback: if something hangs we still surface a message after 30s.
+    const timeoutId = window.setTimeout(() => {
+      setPushState((prev) => prev === 'loading' ? 'error' : prev)
+      setPushError('Notifications are taking too long to set up. Try again, or skip and enable from Settings later.')
+    }, 30_000)
+
+    try {
+      const subscription = await subscribeToPush()
+      window.clearTimeout(timeoutId)
+      if (subscription) {
+        setSubscriptionJson(JSON.stringify(subscription))
+        setPushState('granted')
+        return
+      }
+      // No subscription returned — usually means the user denied the
+      // browser permission prompt. Double-check Notification.permission
+      // to give a clearer message.
+      const perm = typeof Notification !== 'undefined' ? Notification.permission : 'default'
+      if (perm === 'denied') {
+        setPushState('denied')
+        setPushError('Notifications are blocked. Open your phone Settings → Sunrise Tennis → Notifications to allow.')
+      } else {
+        setPushState('denied')
+      }
+    } catch (e) {
+      window.clearTimeout(timeoutId)
+      console.error('[push] subscribeToPush threw:', e)
+      setPushState('error')
+      setPushError(e instanceof Error ? e.message : 'Could not enable notifications. Try again, or skip and enable from Settings later.')
     }
   }
 
@@ -327,10 +363,27 @@ export function PushStep({
               </div>
             )}
             {pushState === 'denied' && (
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <BellOff className="size-4 shrink-0" />
-                Permission not granted. You can enable later in Settings.
-              </div>
+              <>
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <BellOff className="size-4 shrink-0" />
+                  {pushError ?? 'Permission not granted. You can enable later in Settings.'}
+                </div>
+                <Button type="button" variant="outline" size="sm" className="mt-2 w-full" onClick={handleEnablePush}>
+                  <Bell className="mr-2 size-4" />
+                  Try again
+                </Button>
+              </>
+            )}
+            {pushState === 'error' && (
+              <>
+                <div className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                  {pushError ?? 'Could not enable notifications. Try again, or skip and enable from Settings later.'}
+                </div>
+                <Button type="button" variant="outline" size="sm" className="mt-2 w-full" onClick={handleEnablePush}>
+                  <Bell className="mr-2 size-4" />
+                  Try again
+                </Button>
+              </>
             )}
           </div>
         </div>
