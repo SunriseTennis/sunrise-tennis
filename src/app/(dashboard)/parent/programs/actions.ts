@@ -154,6 +154,20 @@ export async function enrolInProgram(programId: string, familyId: string, formDa
     redirect(`/parent/programs/${programId}?error=${encodeURIComponent('Enrollment failed. Please try again.')}`)
   }
 
+  // Reverse any past claw-back adjustments whose trigger condition no longer
+  // holds now that this program is back in the roster (e.g. previous unenrol
+  // of THIS player created a multi_group_adjustment on another program because
+  // this anchor was withdrawn — re-enrolling restores the discount, so the
+  // adjustment must void). Service client because parents have no UPDATE
+  // policy on `charges`.
+  try {
+    const { reverseAdjustmentsAfterEnrol } = await import('@/lib/utils/charge-recompute')
+    await reverseAdjustmentsAfterEnrol(createServiceClient(), familyId, playerId)
+  } catch (e) {
+    console.error('Adjustment reversal failed (enrol):', e instanceof Error ? e.message : e)
+    // Non-blocking — enrol still succeeds; admin can manually void any stale adjustments.
+  }
+
   // ── Financial logic ──────────────────────────────────────────────────
 
   const isTermEnrollment = bookingType === 'term_enrollment' || bookingType === 'term'
@@ -1096,6 +1110,15 @@ export async function finalizeEnrolPayment(intentId: string): Promise<FinalizeRe
     return { ok: false, error: 'Enrolment record failed — contact admin (your payment is recorded).' }
   }
 
+  // Reverse any stale claw-back adjustments now that the roster is back to
+  // the post-enrol state. See enrolInProgram for the full rationale.
+  try {
+    const { reverseAdjustmentsAfterEnrol } = await import('@/lib/utils/charge-recompute')
+    await reverseAdjustmentsAfterEnrol(createServiceClient(), auth.familyId, playerId)
+  } catch (e) {
+    console.error('Adjustment reversal failed (finalize):', e instanceof Error ? e.message : e, 'PI:', intentId)
+  }
+
   // Pull the actual upcoming sessions so per-session charges are bound by id+date.
   // Adelaide-aware: drop today's-already-started sessions via filterFutureSessions.
   const { data: upcomingSessions } = await supabase
@@ -1351,6 +1374,15 @@ export async function applyCreditOnlyEnrol(
   if (!rosterResult.ok && !('alreadyEnrolled' in rosterResult)) {
     console.error('credit-only roster enrol failed:', rosterResult.error)
     return { ok: false, error: 'Enrolment record failed. Please try again.' }
+  }
+
+  // Reverse any stale claw-back adjustments now that the roster is back to
+  // the post-enrol state. See enrolInProgram for the full rationale.
+  try {
+    const { reverseAdjustmentsAfterEnrol } = await import('@/lib/utils/charge-recompute')
+    await reverseAdjustmentsAfterEnrol(createServiceClient(), auth.familyId, playerId)
+  } catch (e) {
+    console.error('Adjustment reversal failed (credit-only):', e instanceof Error ? e.message : e)
   }
 
   const { data: booking } = await supabase

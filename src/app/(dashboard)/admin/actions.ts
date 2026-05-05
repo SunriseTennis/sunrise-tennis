@@ -1356,6 +1356,15 @@ export async function adminBookPlayer(formData: FormData) {
       })
   }
 
+  // Reverse any stale claw-back adjustments whose trigger condition no longer
+  // holds now that this program is back in the roster.
+  try {
+    const { reverseAdjustmentsAfterEnrol } = await import('@/lib/utils/charge-recompute')
+    await reverseAdjustmentsAfterEnrol(supabase, familyId, playerId)
+  } catch (e) {
+    console.error('Adjustment reversal failed (admin book):', e instanceof Error ? e.message : e)
+  }
+
   // Create booking record
   const { error } = await supabase
     .from('bookings')
@@ -1570,6 +1579,17 @@ export async function bulkEnrolPlayers(formData: FormData) {
     }))
 
     await supabase.from('bookings').insert(bookingRows)
+  }
+
+  // Reverse any stale claw-back adjustments for each (re-)enrolled player
+  // whose trigger condition no longer holds.
+  try {
+    const { reverseAdjustmentsAfterEnrol } = await import('@/lib/utils/charge-recompute')
+    for (const p of playerFamilies ?? []) {
+      await reverseAdjustmentsAfterEnrol(supabase, p.family_id, p.id)
+    }
+  } catch (e) {
+    console.error('Adjustment reversal failed (bulk enrol):', e instanceof Error ? e.message : e)
   }
 
   // Send notification to each unique family

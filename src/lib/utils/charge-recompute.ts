@@ -1,6 +1,6 @@
 import { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/lib/supabase/types'
-import { createCharge, getSessionPrice, recalculateBalance, type PricingBreakdown } from './billing'
+import { createCharge, getSessionPrice, recalculateBalance, voidCharge, type PricingBreakdown } from './billing'
 import {
   getPlayerSessionPriceBreakdown,
   getPlayerEligibleEnrolmentsWithPrices,
@@ -324,6 +324,137 @@ export async function generateMorningSquadPartnerAdjustments(
   }
 
   return { adjustmentsCreated }
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Reverse claw-back adjustments after enrol (Plan "re-enrol fix", 05-May-2026).
+//
+// `generateMultiGroupAdjustments` and `generateMorningSquadPartnerAdjustments`
+// fire on unenrol and create `multi_group_adjustment` / `morning_squad_partner_adjustment`
+// charges that claw back a discount on OTHER paid programs because the anchor
+// (or partner) was withdrawn.
+//
+// When the player is enrolled (or re-enrolled) into a program, the trigger
+// condition for some of those past adjustments may no longer hold — the source
+// charge's program could once again qualify for the discount that was clawed
+// back. In that case, void the adjustment so the family isn't penalised for a
+// state they're no longer in.
+//
+// Idempotent + safe to run on every enrol path:
+//   - For a fresh family with no adjustments, this is a one-query no-op.
+//   - For a re-enrol that re-establishes the anchor / partner, only the
+//     adjustments that the *current* roster contradicts are voided.
+//
+// Caller is responsible for: (a) flipping `program_roster.status='enrolled'`
+// BEFORE calling this so the multi-group + partner-rate recompute uses the
+// post-enrol roster, and (b) passing a Supabase client with UPDATE access
+// on `charges` (service-role for the parent-facing path; admin JWT-scoped
+// works elsewhere).
+// ──────────────────────────────────────────────────────────────────────────
+
+const MORNING_SQUAD_PARTNERS: Record<string, string> = {
+  'tue-morning-squad': 'wed-morning-squad',
+  'wed-morning-squad': 'tue-morning-squad',
+}
+
+interface AdjustmentRow {
+  id: string
+  type: string
+  source_id: string | null
+}
+
+interface SourceChargeRow {
+  id: string
+  program_id: string | null
+  programs: { slug: string | null } | null
+}
+
+export async function reverseAdjustmentsAfterEnrol(
+  supabase: Supabase,
+  familyId: string,
+  playerId: string,
+): Promise<{ adjustmentsReversed: number }> {
+  // 1. Find non-voided claw-back adjustments for this player.
+  const { data: adjustmentsRaw } = await supabase
+    .from('charges')
+    .select('id, type, source_id')
+    .eq('family_id', familyId)
+    .eq('player_id', playerId)
+    .in('type', ['multi_group_adjustment', 'morning_squad_partner_adjustment'])
+    .neq('status', 'voided')
+
+  const adjustments = (adjustmentsRaw ?? []) as AdjustmentRow[]
+  if (adjustments.length === 0) return { adjustmentsReversed: 0 }
+
+  const sourceIds = adjustments
+    .map(a => a.source_id)
+    .filter((id): id is string => !!id)
+  if (sourceIds.length === 0) return { adjustmentsReversed: 0 }
+
+  // 2. Resolve source charges + their program slugs (slugs needed for the
+  //    morning-squad-partner check; program_id alone is enough for multi-group).
+  const { data: sourceChargesRaw } = await supabase
+    .from('charges')
+    .select('id, program_id, programs:program_id(slug)')
+    .in('id', sourceIds)
+  const sourceById = new Map<string, SourceChargeRow>(
+    ((sourceChargesRaw ?? []) as unknown as SourceChargeRow[]).map(s => [s.id, s]),
+  )
+
+  // 3. Compute the post-enrol enrolment set + slug membership in one shot.
+  const enrolments = await getPlayerEligibleEnrolmentsWithPrices(supabase, familyId, playerId)
+  const sorted = [...enrolments].sort((a, b) => {
+    if (b.base_price_cents !== a.base_price_cents) return b.base_price_cents - a.base_price_cents
+    return a.enrolled_at.localeCompare(b.enrolled_at)
+  })
+  const top = sorted[0] ?? null
+
+  // For partner check we need slugs of currently-enrolled programs.
+  const { data: enrolledSlugRows } = await supabase
+    .from('program_roster')
+    .select('programs:program_id(slug)')
+    .eq('player_id', playerId)
+    .eq('status', 'enrolled')
+  const enrolledSlugs = new Set(
+    ((enrolledSlugRows ?? []) as unknown as { programs: { slug: string | null } | null }[])
+      .map(r => r.programs?.slug)
+      .filter((s): s is string => !!s),
+  )
+
+  // 4. For each adjustment, decide whether the trigger condition still holds.
+  //    Void it if the source program would now qualify for the discount that
+  //    was clawed back.
+  let adjustmentsReversed = 0
+  for (const adj of adjustments) {
+    if (!adj.source_id) continue
+    const source = sourceById.get(adj.source_id)
+    if (!source || !source.program_id) continue
+
+    let shouldReverse = false
+
+    if (adj.type === 'multi_group_adjustment') {
+      // Adjustment was created because source.program_id lost multi-group.
+      // Reverse if the player's current roster makes it eligible again:
+      //   (a) the source program is currently enrolled, AND
+      //   (b) there is a top-priced anchor that is NOT this same program.
+      const stillEnrolled = enrolments.some(e => e.program_id === source.program_id)
+      const stillMultiGroup = stillEnrolled && top != null && top.program_id !== source.program_id
+      if (stillMultiGroup) shouldReverse = true
+    } else if (adj.type === 'morning_squad_partner_adjustment') {
+      // Adjustment was created because source's morning-squad partner was
+      // withdrawn. Reverse if the partner is currently enrolled again.
+      const sourceSlug = source.programs?.slug ?? null
+      const partnerSlug = sourceSlug ? MORNING_SQUAD_PARTNERS[sourceSlug] : null
+      if (partnerSlug && enrolledSlugs.has(partnerSlug)) shouldReverse = true
+    }
+
+    if (shouldReverse) {
+      await voidCharge(supabase, adj.id, familyId)
+      adjustmentsReversed++
+    }
+  }
+
+  return { adjustmentsReversed }
 }
 
 // ──────────────────────────────────────────────────────────────────────────
