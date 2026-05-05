@@ -2,7 +2,7 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
 import { EmptyState } from '@/components/empty-state'
 import { Button } from '@/components/ui/button'
-import { Users, Plus } from 'lucide-react'
+import { Users, Plus, Mail } from 'lucide-react'
 import { FamiliesTable } from './families-table'
 import { InviteParentModal } from './invite-parent-modal'
 
@@ -44,6 +44,12 @@ export default async function FamiliesPage() {
             <p className="mt-0.5 text-sm text-white/70">{rows.length} {rows.length === 1 ? 'family' : 'families'} registered</p>
           </div>
           <div className="flex items-center gap-2">
+            <Button asChild variant="ghost" className="text-white hover:bg-white/10 backdrop-blur-sm">
+              <Link href="/admin/families/bulk-invite">
+                <Mail className="size-4" />
+                Bulk invite
+              </Link>
+            </Button>
             <InviteParentModal
               families={rows.map(r => ({ id: r.id, display_id: r.displayId, family_name: r.familyName }))}
             />
