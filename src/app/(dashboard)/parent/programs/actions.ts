@@ -30,6 +30,52 @@ async function getParentFamilyId(): Promise<{ userId: string; familyId: string }
   return { userId: user.id, familyId: userRole.family_id }
 }
 
+// program_roster has UNIQUE(program_id, player_id), and unenrolFromProgram
+// soft-deletes via status='withdrawn' rather than removing the row. So a
+// previously-unenrolled player cannot be re-enrolled by a plain INSERT — it
+// hits the unique constraint. This helper detects an existing row (any
+// status), reactivates it via the service client when withdrawn (parents
+// have INSERT + SELECT but no UPDATE policy on program_roster — same shape
+// as unenrolFromProgram), and INSERTs a fresh row only when none exists.
+//
+// Returns:
+//   { ok: true }                                — newly enrolled (insert OR reactivate)
+//   { ok: false, alreadyEnrolled: true }        — already enrolled, caller decides UX
+//   { ok: false, error }                        — DB-level failure
+async function ensureRosterEnrolled(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: any,
+  programId: string,
+  playerId: string,
+): Promise<{ ok: true } | { ok: false; alreadyEnrolled: true } | { ok: false; error: string }> {
+  const { data: existing } = await supabase
+    .from('program_roster')
+    .select('id, status')
+    .eq('program_id', programId)
+    .eq('player_id', playerId)
+    .maybeSingle()
+
+  if (existing?.status === 'enrolled') {
+    return { ok: false, alreadyEnrolled: true }
+  }
+
+  if (existing?.id) {
+    const service = createServiceClient()
+    const { error } = await service
+      .from('program_roster')
+      .update({ status: 'enrolled', enrolled_at: new Date().toISOString() })
+      .eq('id', existing.id)
+    if (error) return { ok: false, error: error.message }
+    return { ok: true }
+  }
+
+  const { error } = await supabase
+    .from('program_roster')
+    .insert({ program_id: programId, player_id: playerId, status: 'enrolled' })
+  if (error) return { ok: false, error: error.message }
+  return { ok: true }
+}
+
 export async function enrolInProgram(programId: string, familyId: string, formData: FormData) {
   const supabase = await createClient()
   const auth = await getParentFamilyId()
@@ -63,14 +109,15 @@ export async function enrolInProgram(programId: string, familyId: string, formDa
     redirect(`/parent/programs/${programId}?error=${encodeURIComponent('Player not found')}`)
   }
 
-  // Check not already enrolled
+  // Check not already enrolled (a 'withdrawn' row is fine — ensureRosterEnrolled
+  // will reactivate it below).
   const { data: existing } = await supabase
     .from('program_roster')
     .select('id')
     .eq('program_id', programId)
     .eq('player_id', playerId)
     .eq('status', 'enrolled')
-    .single()
+    .maybeSingle()
 
   if (existing) {
     redirect(`/parent/programs/${programId}?error=${encodeURIComponent('Player is already enrolled in this program')}`)
@@ -97,17 +144,13 @@ export async function enrolInProgram(programId: string, familyId: string, formDa
     redirect(`/parent/programs/${programId}?error=${encodeURIComponent('This program is full')}`)
   }
 
-  // Add to roster
-  const { error: rosterError } = await supabase
-    .from('program_roster')
-    .insert({
-      program_id: programId,
-      player_id: playerId,
-      status: 'enrolled',
-    })
-
-  if (rosterError) {
-    console.error('Roster enrollment failed:', rosterError.message)
+  // Add to roster (handles the previously-withdrawn re-enrol case via UPDATE)
+  const rosterResult = await ensureRosterEnrolled(supabase, programId, playerId)
+  if (!rosterResult.ok) {
+    if ('alreadyEnrolled' in rosterResult) {
+      redirect(`/parent/programs/${programId}?error=${encodeURIComponent('Player is already enrolled in this program')}`)
+    }
+    console.error('Roster enrollment failed:', rosterResult.error)
     redirect(`/parent/programs/${programId}?error=${encodeURIComponent('Enrollment failed. Please try again.')}`)
   }
 
@@ -774,7 +817,8 @@ export async function prepareEnrolPayment(
     return { ok: false, error: 'This program is full' }
   }
 
-  // Already enrolled?
+  // Already enrolled? (a 'withdrawn' row is fine — finalizeEnrolPayment will
+  // reactivate it via ensureRosterEnrolled after Stripe success.)
   const { data: existing } = await supabase
     .from('program_roster')
     .select('id')
@@ -1043,12 +1087,14 @@ export async function finalizeEnrolPayment(intentId: string): Promise<FinalizeRe
     return { ok: false, error: 'Program filled while you were paying — contact admin for refund' }
   }
 
-  // Add to roster
-  await supabase.from('program_roster').insert({
-    program_id: programId,
-    player_id: playerId,
-    status: 'enrolled',
-  })
+  // Add to roster (reactivate withdrawn row OR insert fresh).
+  // alreadyEnrolled here is a benign no-op — Stripe already charged; we just
+  // proceed with charge/allocation finalisation idempotently.
+  const rosterResult = await ensureRosterEnrolled(supabase, programId, playerId)
+  if (!rosterResult.ok && !('alreadyEnrolled' in rosterResult)) {
+    console.error('finalize roster enrol failed:', rosterResult.error, 'PI:', intentId)
+    return { ok: false, error: 'Enrolment record failed — contact admin (your payment is recorded).' }
+  }
 
   // Pull the actual upcoming sessions so per-session charges are bound by id+date.
   // Adelaide-aware: drop today's-already-started sessions via filterFutureSessions.
@@ -1299,11 +1345,13 @@ export async function applyCreditOnlyEnrol(
   }
 
   // Create roster + booking + per-session charges, then allocate from credit.
-  await supabase.from('program_roster').insert({
-    program_id: programId,
-    player_id: playerId,
-    status: 'enrolled',
-  })
+  // Reactivates a previously-withdrawn roster row instead of failing on the
+  // (program_id, player_id) unique constraint.
+  const rosterResult = await ensureRosterEnrolled(supabase, programId, playerId)
+  if (!rosterResult.ok && !('alreadyEnrolled' in rosterResult)) {
+    console.error('credit-only roster enrol failed:', rosterResult.error)
+    return { ok: false, error: 'Enrolment record failed. Please try again.' }
+  }
 
   const { data: booking } = await supabase
     .from('bookings')

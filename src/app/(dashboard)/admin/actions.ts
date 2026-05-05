@@ -1330,16 +1330,23 @@ export async function adminBookPlayer(formData: FormData) {
 
   const { family_id: familyId, player_id: playerId, program_id: programId, booking_type: bookingType, notes } = parsed.data
 
-  // Add to roster if term/casual enrolment
+  // Add to roster if term/casual enrolment. program_roster has
+  // UNIQUE(program_id, player_id) and unenrol soft-deletes via
+  // status='withdrawn' — so re-enrol must reactivate the existing row, not
+  // INSERT (which would violate the unique constraint).
   const { data: existing } = await supabase
     .from('program_roster')
-    .select('id')
+    .select('id, status')
     .eq('program_id', programId)
     .eq('player_id', playerId)
-    .eq('status', 'enrolled')
-    .single()
+    .maybeSingle()
 
-  if (!existing) {
+  if (existing?.id && existing.status !== 'enrolled') {
+    await supabase
+      .from('program_roster')
+      .update({ status: 'enrolled', enrolled_at: new Date().toISOString() })
+      .eq('id', existing.id)
+  } else if (!existing) {
     await supabase
       .from('program_roster')
       .insert({
@@ -1483,33 +1490,66 @@ export async function bulkEnrolPlayers(formData: FormData) {
     redirect(`/admin/programs/${programId}?error=${encodeURIComponent('No players selected')}`)
   }
 
-  // Get existing roster to skip duplicates
+  // Get existing roster (any status) so we know who needs INSERT vs UPDATE.
+  // UNIQUE(program_id, player_id) — withdrawn rows must be reactivated, not
+  // re-INSERTed.
   const { data: existingRoster } = await supabase
     .from('program_roster')
-    .select('player_id')
+    .select('id, player_id, status')
     .eq('program_id', programId)
-    .eq('status', 'enrolled')
+    .in('player_id', playerIds)
 
-  const existingIds = new Set((existingRoster ?? []).map(r => r.player_id))
-  const newPlayerIds = playerIds.filter(id => !existingIds.has(id))
+  const existingByPlayer = new Map(
+    (existingRoster ?? []).map(r => [r.player_id, r]),
+  )
+
+  const insertPlayerIds = playerIds.filter(id => !existingByPlayer.has(id))
+  const reactivateRowIds = playerIds
+    .map(id => existingByPlayer.get(id))
+    .filter((r): r is { id: string; player_id: string; status: string } => !!r && r.status !== 'enrolled')
+    .map(r => r.id)
+
+  // newPlayerIds drives downstream booking/charge creation — keep it as the
+  // set of players who actually became (re-)enrolled in this call.
+  const newPlayerIds = [
+    ...insertPlayerIds,
+    ...playerIds.filter(id => {
+      const row = existingByPlayer.get(id)
+      return row && row.status !== 'enrolled'
+    }),
+  ]
 
   if (newPlayerIds.length === 0) {
     redirect(`/admin/programs/${programId}?error=${encodeURIComponent('All selected players are already enrolled')}`)
   }
 
-  // Bulk insert roster entries
-  const rosterRows = newPlayerIds.map(playerId => ({
-    program_id: programId,
-    player_id: playerId,
-    status: 'enrolled',
-  }))
+  // Bulk insert fresh rows
+  if (insertPlayerIds.length > 0) {
+    const rosterRows = insertPlayerIds.map(playerId => ({
+      program_id: programId,
+      player_id: playerId,
+      status: 'enrolled',
+    }))
 
-  const { error: rosterError } = await supabase
-    .from('program_roster')
-    .insert(rosterRows)
+    const { error: rosterError } = await supabase
+      .from('program_roster')
+      .insert(rosterRows)
 
-  if (rosterError) {
-    redirect(`/admin/programs/${programId}?error=${encodeURIComponent(rosterError.message)}`)
+    if (rosterError) {
+      redirect(`/admin/programs/${programId}?error=${encodeURIComponent(rosterError.message)}`)
+    }
+  }
+
+  // Reactivate withdrawn rows
+  if (reactivateRowIds.length > 0) {
+    const { error: reactivateError } = await supabase
+      .from('program_roster')
+      .update({ status: 'enrolled', enrolled_at: new Date().toISOString() })
+      .in('id', reactivateRowIds)
+
+    if (reactivateError) {
+      redirect(`/admin/programs/${programId}?error=${encodeURIComponent(reactivateError.message)}`)
+    }
   }
 
   // Get player-family mapping for booking records
