@@ -1,6 +1,6 @@
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
-import { CheckCircle2, AlertCircle, XCircle, MessageSquare, ChevronLeft, ExternalLink, Mail } from 'lucide-react'
+import { CheckCircle2, AlertCircle, XCircle, MessageSquare, ChevronLeft, ExternalLink, Mail, Link2, Trash2 } from 'lucide-react'
 import { createClient, requireAdmin, decryptMedicalNotes } from '@/lib/supabase/server'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -11,6 +11,9 @@ import {
   rejectFamilyAction,
   resendApprovalNotification,
 } from '../actions'
+import { deleteFamily } from '../../actions'
+import { DeletePlayerButton } from './delete-player-button'
+import { LinkSignupForm } from './link-signup-form'
 
 interface PageProps {
   params: Promise<{ familyId: string }>
@@ -35,7 +38,7 @@ export default async function ApprovalDetailPage({ params, searchParams }: PageP
   const { error, success } = await searchParams
   const supabase = await createClient()
 
-  const [{ data: family }, { data: players }] = await Promise.all([
+  const [{ data: family }, { data: players }, { data: familiesForLink }] = await Promise.all([
     supabase
       .from('families')
       .select('id, display_id, family_name, primary_contact, secondary_contact, address, approval_status, signup_source, approval_note, created_at, referral_source, referral_source_detail')
@@ -46,6 +49,15 @@ export default async function ApprovalDetailPage({ params, searchParams }: PageP
       .select('id, first_name, last_name, dob, gender, ball_color, level, classifications, track, medical_notes, media_consent_coaching, media_consent_social, status')
       .eq('family_id', familyId)
       .order('first_name'),
+    // Plan 21 — Pool of legacy/admin-invite families the self-signup
+    // can be linked into. Excludes self-signup families (we don't
+    // chain) and the family currently being viewed.
+    supabase
+      .from('families')
+      .select('id, display_id, family_name, signup_source')
+      .eq('status', 'active')
+      .neq('signup_source', 'self_signup')
+      .order('display_id'),
   ])
 
   if (!family) notFound()
@@ -83,6 +95,16 @@ export default async function ApprovalDetailPage({ params, searchParams }: PageP
   const requestChangesBound = requestChangesAction.bind(null, familyId)
   const rejectBound = rejectFamilyAction.bind(null, familyId)
   const resendBound = resendApprovalNotification.bind(null, familyId)
+  // Plan 21 — inline Server Action wrapping `deleteFamily` so we can
+  // hand it directly to <form action>. Inline async function in a
+  // server component with `'use server'` is the canonical Next.js
+  // shape; closure captures familyId.
+  async function deleteFamilyBound() {
+    'use server'
+    await deleteFamily(familyId, 'approvals')
+  }
+  const canDeleteFamily = playersWithDecrypted.length === 0
+  const isSelfSignup = family.signup_source === 'self_signup'
 
   return (
     <div className="max-w-4xl space-y-5">
@@ -237,13 +259,21 @@ export default async function ApprovalDetailPage({ params, searchParams }: PageP
                         </p>
                       )}
                     </div>
-                    <Link
-                      href={`/admin/families/${familyId}/players/${p.id}`}
-                      className="inline-flex shrink-0 items-center gap-1 rounded-md border border-border bg-background px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-muted"
-                    >
-                      Edit
-                      <ExternalLink className="size-3" />
-                    </Link>
+                    <div className="flex shrink-0 items-center gap-2">
+                      <Link
+                        href={`/admin/families/${familyId}/players/${p.id}`}
+                        className="inline-flex items-center gap-1 rounded-md border border-border bg-background px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-muted"
+                      >
+                        Edit
+                        <ExternalLink className="size-3" />
+                      </Link>
+                      <DeletePlayerButton
+                        playerId={p.id}
+                        familyId={familyId}
+                        playerName={`${p.first_name} ${p.last_name}`}
+                        returnTo="approvals"
+                      />
+                    </div>
                   </div>
                 </li>
               ))}
@@ -251,6 +281,41 @@ export default async function ApprovalDetailPage({ params, searchParams }: PageP
           )}
         </CardContent>
       </Card>
+
+      {/* Plan 21 — Link to existing family (self-signup only). The
+          parent self-signed up before admin sent an invite; we re-
+          point their account to the existing legacy/admin-invite
+          family rather than approving them as new. */}
+      {isSelfSignup && isPending && (
+        <Card className="border-primary/20">
+          <CardContent className="space-y-3 pt-6">
+            <div className="flex items-start gap-2">
+              <Link2 className="mt-0.5 size-4 shrink-0 text-primary" />
+              <div>
+                <h2 className="text-lg font-semibold text-foreground">
+                  Or link this signup to an existing family
+                </h2>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  If <span className="font-medium text-foreground">{contact.name ?? 'this parent'}</span> already has a family on Sunrise (e.g.
+                  the migration cohort), connect their signup to that
+                  family instead of approving it as new. This re-points
+                  their account, drops this signup family + its
+                  players, and emails them a log-in link.
+                </p>
+              </div>
+            </div>
+            <LinkSignupForm
+              signupFamilyId={familyId}
+              parentName={contact.name ?? null}
+              families={(familiesForLink ?? []).map(f => ({
+                id: f.id,
+                display_id: f.display_id,
+                family_name: f.family_name,
+              }))}
+            />
+          </CardContent>
+        </Card>
+      )}
 
       {/* Action panel */}
       {isPending && (
@@ -334,6 +399,38 @@ export default async function ApprovalDetailPage({ params, searchParams }: PageP
             <Link href={`/admin/families/${familyId}`} className="font-medium text-primary hover:text-primary/80">
               their family page
             </Link>.
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Plan 21 — Danger zone: hard-delete this signup family. Only
+          surfaces once the players list is empty (the RPC blocks
+          delete otherwise). Use the per-player Delete buttons above
+          to clear duplicates first. */}
+      {canDeleteFamily && (
+        <Card className="border-destructive/20">
+          <CardContent className="pt-6 space-y-3">
+            <details>
+              <summary className="cursor-pointer text-xs font-medium text-destructive hover:text-destructive/80">
+                Delete this signup family entirely
+              </summary>
+              <div className="mt-3 space-y-2">
+                <p className="text-xs text-muted-foreground">
+                  Permanently removes the family row, the parent&apos;s
+                  user_role, and any pending invitations. The
+                  parent&apos;s auth login (email + password) stays
+                  put — they can be re-invited later. This is the
+                  right action for spam / typo signups that don&apos;t
+                  belong on the platform.
+                </p>
+                <form action={deleteFamilyBound}>
+                  <Button type="submit" variant="destructive" size="sm">
+                    <Trash2 className="mr-1.5 size-4" />
+                    Delete signup family
+                  </Button>
+                </form>
+              </div>
+            </details>
           </CardContent>
         </Card>
       )}

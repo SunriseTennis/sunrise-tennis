@@ -2700,6 +2700,18 @@ export type Database = {
         }
         Returns: number
       }
+      admin_delete_family: {
+        Args: { p_family_id: string }
+        Returns: Json
+      }
+      admin_delete_player: {
+        Args: { p_player_id: string }
+        Returns: Json
+      }
+      admin_link_signup_to_family: {
+        Args: { p_signup_family_id: string; p_target_family_id: string }
+        Returns: Json
+      }
       admin_void_private_series: {
         Args: { p_include_completed?: boolean; p_parent_booking_id: string }
         Returns: Json

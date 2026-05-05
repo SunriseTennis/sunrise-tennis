@@ -1805,3 +1805,176 @@ export async function adminAddWalkInAttendance(formData: FormData) {
   revalidatePath(`/admin/families/${player.family_id}`)
   redirect(`/admin/programs/${programId}/sessions/${sessionId}?success=${encodeURIComponent(`Added ${player.first_name} as walk-in`)}`)
 }
+
+// ── Plan 21 — admin family / player cleanup ────────────────────────────
+
+/**
+ * Format a blockers jsonb (`{attendances: 3, charges: 1}`) as a human
+ * sentence: "3 attendances, 1 charge". Used to render the redirect
+ * error when admin_delete_player / admin_delete_family returns
+ * `blocked: true`.
+ */
+function formatBlockers(blockers: Record<string, number>): string {
+  const LABELS: Record<string, [string, string]> = {
+    attendances:    ['attendance',     'attendances'],
+    charges:        ['charge',         'charges'],
+    payments:       ['payment',        'payments'],
+    invoices:       ['invoice',        'invoices'],
+    bookings:       ['booking',        'bookings'],
+    lesson_notes:   ['lesson note',    'lesson notes'],
+    media:          ['media item',     'media items'],
+    program_roster: ['program roster', 'program rosters'],
+    team_members:   ['team membership', 'team memberships'],
+    team_captain:   ['team captaincy', 'team captaincies'],
+    competitions:   ['competition',    'competitions'],
+    vouchers:       ['voucher',        'vouchers'],
+    referrals:      ['referral',       'referrals'],
+    messages:       ['message',        'messages'],
+    players:        ['player',         'players'],
+    family_pricing: ['pricing override', 'pricing overrides'],
+    claimed_invites: ['claimed invitation', 'claimed invitations'],
+  }
+  const parts: string[] = []
+  for (const [key, n] of Object.entries(blockers)) {
+    const [singular, plural] = LABELS[key] ?? [key, key]
+    parts.push(`${n} ${n === 1 ? singular : plural}`)
+  }
+  return parts.join(', ')
+}
+
+/**
+ * Hard-delete a player. Goes through `admin_delete_player` RPC which
+ * counts FK dependents and only deletes when the row is operational-
+ * data-clean. If blocked, redirect with a human-readable error.
+ *
+ * Targets the approvals detail / family detail / player detail pages
+ * — the redirect target is determined by the caller via `returnTo`.
+ */
+export async function deletePlayer(
+  playerId: string,
+  familyId: string,
+  returnTo: 'approvals' | 'family' | 'player' = 'family',
+) {
+  await requireAdmin()
+  const supabase = await createClient()
+
+  // Validate UUID-shape before hitting the RPC.
+  if (!/^[0-9a-f-]{36}$/i.test(playerId)) {
+    redirect('/admin?error=Invalid+player+id')
+  }
+
+  const { data, error } = await supabase.rpc('admin_delete_player', {
+    p_player_id: playerId,
+  })
+
+  const successPath =
+    returnTo === 'approvals' ? `/admin/approvals/${familyId}` :
+    returnTo === 'player'    ? `/admin/families/${familyId}` :
+                               `/admin/families/${familyId}`
+  const errorPath =
+    returnTo === 'approvals' ? `/admin/approvals/${familyId}` :
+    returnTo === 'player'    ? `/admin/families/${familyId}/players/${playerId}` :
+                               `/admin/families/${familyId}`
+
+  if (error) {
+    console.error('[admin/deletePlayer] rpc:', error.message)
+    redirect(`${errorPath}?error=${encodeURIComponent('Delete failed')}`)
+  }
+
+  const result = data as
+    | { success: boolean; blocked: boolean; deleted: boolean; blockers?: Record<string, number>; error?: string }
+    | null
+
+  if (!result || result.success === false) {
+    if (result?.blocked && result.blockers) {
+      const reason = formatBlockers(result.blockers)
+      redirect(`${errorPath}?error=${encodeURIComponent(`Cannot delete — player has ${reason}. Archive instead.`)}`)
+    }
+    redirect(`${errorPath}?error=${encodeURIComponent(result?.error ?? 'Delete failed')}`)
+  }
+
+  revalidatePath('/admin/approvals')
+  revalidatePath(`/admin/approvals/${familyId}`)
+  revalidatePath(`/admin/families/${familyId}`)
+  revalidatePath('/admin/players')
+  redirect(`${successPath}?success=Player+deleted`)
+}
+
+/**
+ * Hard-delete a family. Goes through `admin_delete_family` RPC. Only
+ * succeeds when the family has zero players + zero operational rows.
+ * For families with history, archive (status='archived') is the right
+ * pattern — see setFamilyStatus below.
+ */
+export async function deleteFamily(
+  familyId: string,
+  returnTo: 'approvals' | 'family' = 'family',
+) {
+  await requireAdmin()
+  const supabase = await createClient()
+
+  if (!/^[0-9a-f-]{36}$/i.test(familyId)) {
+    redirect('/admin?error=Invalid+family+id')
+  }
+
+  const { data, error } = await supabase.rpc('admin_delete_family', {
+    p_family_id: familyId,
+  })
+
+  const errorPath =
+    returnTo === 'approvals' ? `/admin/approvals/${familyId}` :
+                               `/admin/families/${familyId}`
+
+  if (error) {
+    console.error('[admin/deleteFamily] rpc:', error.message)
+    redirect(`${errorPath}?error=${encodeURIComponent('Delete failed')}`)
+  }
+
+  const result = data as
+    | { success: boolean; blocked: boolean; deleted: boolean; blockers?: Record<string, number>; error?: string }
+    | null
+
+  if (!result || result.success === false) {
+    if (result?.blocked && result.blockers) {
+      const reason = formatBlockers(result.blockers)
+      redirect(`${errorPath}?error=${encodeURIComponent(`Cannot delete — family has ${reason}. Archive instead.`)}`)
+    }
+    redirect(`${errorPath}?error=${encodeURIComponent(result?.error ?? 'Delete failed')}`)
+  }
+
+  revalidatePath('/admin/approvals')
+  revalidatePath('/admin/families')
+  redirect('/admin/families?success=Family+deleted')
+}
+
+/**
+ * Set a family's status (active / inactive / archived). Archive is
+ * the right pattern for families with operational history (charges,
+ * sessions, lesson notes) — keeps the record but hides them from
+ * default lists. Reverse with status='active'.
+ */
+export async function setFamilyStatus(
+  familyId: string,
+  status: 'active' | 'inactive' | 'archived',
+) {
+  await requireAdmin()
+  const supabase = await createClient()
+
+  if (!['active', 'inactive', 'archived'].includes(status)) {
+    redirect(`/admin/families/${familyId}?error=${encodeURIComponent('Invalid status')}`)
+  }
+
+  const { error } = await supabase
+    .from('families')
+    .update({ status })
+    .eq('id', familyId)
+
+  if (error) {
+    console.error('[admin/setFamilyStatus]:', error.message)
+    redirect(`/admin/families/${familyId}?error=${encodeURIComponent('Update failed')}`)
+  }
+
+  revalidatePath('/admin/families')
+  revalidatePath(`/admin/families/${familyId}`)
+  redirect(`/admin/families/${familyId}?success=${encodeURIComponent(`Family ${status === 'archived' ? 'archived' : status === 'inactive' ? 'set to inactive' : 'reactivated'}`)}`)
+}

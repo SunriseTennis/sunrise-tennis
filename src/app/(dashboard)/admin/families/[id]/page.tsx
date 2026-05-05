@@ -9,13 +9,21 @@ import { InviteParentForm } from './invite-parent-form'
 import { PricingForm } from './pricing-form'
 import { PlayerCoachesForm } from './player-coaches-form'
 import { WaiveChargeSection } from './waive-charge-section'
+import { FamilyDangerZone } from './family-danger-zone'
+import { DeletePlayerButton } from '../../approvals/[familyId]/delete-player-button'
 import { Suspense } from 'react'
 import { PageHeader } from '@/components/page-header'
 import { StatusBadge } from '@/components/status-badge'
 import { Card, CardContent } from '@/components/ui/card'
 
-export default async function FamilyDetailPage({ params }: { params: Promise<{ id: string }> }) {
+interface PageProps {
+  params: Promise<{ id: string }>
+  searchParams: Promise<{ success?: string; error?: string }>
+}
+
+export default async function FamilyDetailPage({ params, searchParams }: PageProps) {
   const { id } = await params
+  const { success, error } = await searchParams
   const supabase = await createClient()
 
   const [{ data: family }, { data: players }, { data: balance }, { data: pricingOverrides }, { data: allPrograms }, { data: coaches }, { data: allowedCoaches }, { data: outstandingCharges }, { data: pendingInvites }] = await Promise.all([
@@ -43,6 +51,17 @@ export default async function FamilyDetailPage({ params }: { params: Promise<{ i
         breadcrumbs={[{ label: 'Families', href: '/admin/families' }]}
         action={<StatusBadge status={family.status ?? 'active'} />}
       />
+
+      {success && (
+        <div className="mt-4 rounded-lg border border-success/20 bg-success-light px-4 py-3 text-sm text-success">
+          {success}
+        </div>
+      )}
+      {error && (
+        <div className="mt-4 rounded-lg border border-destructive/20 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+          {error}
+        </div>
+      )}
 
       {balance && (
         <div className="mt-2 flex flex-wrap items-center gap-4">
@@ -169,23 +188,29 @@ export default async function FamilyDetailPage({ params }: { params: Promise<{ i
             {players && players.length > 0 ? (
               <div className="mt-4 space-y-3">
                 {players.map((p) => (
-                  <Link
+                  <div
                     key={p.id}
-                    href={`/admin/families/${id}/players/${p.id}`}
-                    className="block rounded-lg border border-border p-4 transition-colors hover:border-primary/30 hover:bg-primary/5"
+                    className="flex items-center gap-3 rounded-lg border border-border p-4 transition-colors hover:border-primary/30 hover:bg-primary/5"
                   >
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="font-medium text-foreground">{p.first_name} {p.last_name}</p>
-                        <p className="mt-0.5 text-sm text-muted-foreground">
-                          {p.ball_color && <span className="capitalize">{p.ball_color} ball</span>}
-                          {p.ball_color && p.dob && ' - '}
-                          {p.dob && <span>DOB: {formatDate(p.dob)}</span>}
-                        </p>
-                      </div>
-                      <StatusBadge status={p.status ?? 'active'} />
-                    </div>
-                  </Link>
+                    <Link
+                      href={`/admin/families/${id}/players/${p.id}`}
+                      className="min-w-0 flex-1"
+                    >
+                      <p className="font-medium text-foreground">{p.first_name} {p.last_name}</p>
+                      <p className="mt-0.5 text-sm text-muted-foreground">
+                        {p.ball_color && <span className="capitalize">{p.ball_color} ball</span>}
+                        {p.ball_color && p.dob && ' - '}
+                        {p.dob && <span>DOB: {formatDate(p.dob)}</span>}
+                      </p>
+                    </Link>
+                    <StatusBadge status={p.status ?? 'active'} />
+                    <DeletePlayerButton
+                      playerId={p.id}
+                      familyId={id}
+                      playerName={`${p.first_name} ${p.last_name}`}
+                      returnTo="family"
+                    />
+                  </div>
                 ))}
               </div>
             ) : (
@@ -235,6 +260,32 @@ export default async function FamilyDetailPage({ params }: { params: Promise<{ i
 
         {/* Edit family */}
         <FamilyEditForm family={family} />
+
+        {/* Plan 21 — Danger zone: archive (soft, reversible) + delete
+            (hard, only when no operational rows). Compute hasBlockers
+            client-side from data already on the page so the Delete
+            button is disabled before the click. The RPC is the
+            authoritative gate. */}
+        <FamilyDangerZone
+          familyId={id}
+          status={(family.status ?? 'active') as 'active' | 'inactive' | 'archived'}
+          hasBlockers={(() => {
+            const playerCount = players?.length ?? 0
+            const chargeCount = outstandingCharges?.length ?? 0
+            const balanceConfirmed = balance?.confirmed_balance_cents ?? 0
+            return playerCount > 0 || chargeCount > 0 || balanceConfirmed !== 0
+          })()}
+          blockerLabel={(() => {
+            const parts: string[] = []
+            const playerCount = players?.length ?? 0
+            const chargeCount = outstandingCharges?.length ?? 0
+            const balanceConfirmed = balance?.confirmed_balance_cents ?? 0
+            if (playerCount > 0) parts.push(`${playerCount} player${playerCount === 1 ? '' : 's'}`)
+            if (chargeCount > 0) parts.push(`${chargeCount} outstanding charge${chargeCount === 1 ? '' : 's'}`)
+            if (balanceConfirmed !== 0) parts.push('non-zero balance')
+            return parts.length > 0 ? parts.join(', ') : null
+          })()}
+        />
       </div>
     </div>
   )

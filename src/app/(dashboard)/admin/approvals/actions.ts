@@ -121,6 +121,76 @@ export async function resendApprovalNotification(familyId: string) {
   redirect(`/admin/approvals/${familyId}?success=Welcome+notification+resent`)
 }
 
+/**
+ * Plan 21 — Link a self-signup parent to an existing pre-created
+ * family (legacy_import / admin_invite). Re-points their user_roles
+ * row, drops the transient self-signup family + players, forces
+ * re-onboarding on the target. Fires `family.account_linked` so the
+ * parent gets a "log in to continue" email.
+ */
+const linkSchema = z.object({
+  target_family_id: z.string().uuid({ message: 'Pick an existing family' }),
+})
+
+export async function linkSignupToExistingFamily(
+  signupFamilyId: string,
+  formData: FormData,
+) {
+  await requireAdmin()
+  const supabase = await createClient()
+
+  const parsed = validateFormData(formData, linkSchema)
+  if (!parsed.success) {
+    redirect(`/admin/approvals/${signupFamilyId}?error=${encodeURIComponent(parsed.error)}`)
+  }
+
+  const targetFamilyId = parsed.data.target_family_id
+  if (targetFamilyId === signupFamilyId) {
+    redirect(`/admin/approvals/${signupFamilyId}?error=Pick+a+different+family`)
+  }
+
+  const { data, error } = await supabase.rpc('admin_link_signup_to_family', {
+    p_signup_family_id: signupFamilyId,
+    p_target_family_id: targetFamilyId,
+  })
+
+  if (error) {
+    console.error('[admin/approvals] link rpc:', error.message)
+    redirect(`/admin/approvals/${signupFamilyId}?error=${encodeURIComponent('Link failed — see logs')}`)
+  }
+
+  const result = data as
+    | { success: boolean; target_family_id?: string; parent_email?: string; error?: string }
+    | null
+
+  if (!result || result.success === false) {
+    redirect(`/admin/approvals/${signupFamilyId}?error=${encodeURIComponent(result?.error ?? 'Link failed')}`)
+  }
+
+  // Fire `family.account_linked` so the parent gets a push + in-app +
+  // email pointing them at /login. The dispatcher reads
+  // notification_rules and fans out per channel; familyName is
+  // resolved from the target family.
+  try {
+    const { data: target } = await supabase
+      .from('families')
+      .select('family_name')
+      .eq('id', targetFamilyId)
+      .single()
+    await dispatchNotification('family.account_linked', {
+      familyId: targetFamilyId,
+      familyName: target?.family_name ?? 'Sunrise Tennis',
+    })
+  } catch (e) {
+    console.error('[admin/approvals] link dispatch:', e)
+  }
+
+  revalidatePath('/admin/approvals')
+  revalidatePath('/admin/families')
+  revalidatePath(`/admin/families/${targetFamilyId}`)
+  redirect(`/admin/families/${targetFamilyId}?success=${encodeURIComponent('Account linked — parent emailed log-in instructions')}`)
+}
+
 export async function rejectFamilyAction(familyId: string, formData: FormData) {
   await requireAdmin()
   const supabase = await createClient()

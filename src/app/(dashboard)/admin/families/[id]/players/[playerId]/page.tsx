@@ -3,8 +3,14 @@ import Link from 'next/link'
 import { createClient, decryptMedicalNotes } from '@/lib/supabase/server'
 import { formatDate } from '@/lib/utils/dates'
 import { PlayerEditForm } from './player-edit-form'
+import { PlayerDangerZone } from './player-danger-zone'
 import { Card, CardContent } from '@/components/ui/card'
 import { StatusBadge } from '@/components/status-badge'
+
+interface PageProps {
+  params: Promise<{ id: string; playerId: string }>
+  searchParams: Promise<{ success?: string; error?: string }>
+}
 
 function ConsentLine({ label, on }: { label: string; on: boolean }) {
   return (
@@ -16,12 +22,9 @@ function ConsentLine({ label, on }: { label: string; on: boolean }) {
   )
 }
 
-export default async function PlayerDetailPage({
-  params,
-}: {
-  params: Promise<{ id: string; playerId: string }>
-}) {
+export default async function PlayerDetailPage({ params, searchParams }: PageProps) {
   const { id: familyId, playerId } = await params
+  const { success, error } = await searchParams
   const supabase = await createClient()
 
   const [{ data: player }, { data: family }, { data: roster }, { data: compPlayers }, { data: coaches }] = await Promise.all([
@@ -54,6 +57,17 @@ export default async function PlayerDetailPage({
       </div>
 
       <h1 className="mt-4 text-2xl font-bold text-foreground">{player.first_name} {player.last_name}</h1>
+
+      {success && (
+        <div className="mt-4 rounded-lg border border-success/20 bg-success-light px-4 py-3 text-sm text-success">
+          {success}
+        </div>
+      )}
+      {error && (
+        <div className="mt-4 rounded-lg border border-destructive/20 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+          {error}
+        </div>
+      )}
 
       <div className="mt-6 space-y-6">
         {/* Current state */}
@@ -220,6 +234,13 @@ export default async function PlayerDetailPage({
 
         {/* Edit form */}
         <PlayerEditForm player={player} familyId={familyId} />
+
+        {/* Plan 21 — Danger zone */}
+        <PlayerDangerZone
+          playerId={playerId}
+          familyId={familyId}
+          playerName={`${player.first_name} ${player.last_name}`}
+        />
       </div>
     </div>
   )
