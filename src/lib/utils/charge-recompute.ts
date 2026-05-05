@@ -1,6 +1,6 @@
 import { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/lib/supabase/types'
-import { createCharge, recalculateBalance, type PricingBreakdown } from './billing'
+import { createCharge, getSessionPrice, recalculateBalance, type PricingBreakdown } from './billing'
 import {
   getPlayerSessionPriceBreakdown,
   getPlayerEligibleEnrolmentsWithPrices,
@@ -69,13 +69,24 @@ export async function generateMultiGroupAdjustments(
   if (!candidates || candidates.length === 0) return { adjustmentsCreated: 0 }
 
   // For each candidate, check (a) it had multi-group applied and (b) it's
-  // actually paid (allocations cover the full charge). We do this in two
-  // batched queries to avoid an N+1 fetch loop.
+  // actually paid (allocations cover the full charge). We do this in batched
+  // queries to avoid an N+1 fetch loop. Idempotency: skip charges that
+  // already have a matching adjustment (e.g. parent unenrol → re-enrol →
+  // unenrol → don't double-charge).
   const candidateIds = candidates.map(c => c.id)
-  const { data: allocations } = await supabase
-    .from('payment_allocations')
-    .select('charge_id, amount_cents')
-    .in('charge_id', candidateIds)
+  const [{ data: allocations }, { data: existingAdjustments }] = await Promise.all([
+    supabase
+      .from('payment_allocations')
+      .select('charge_id, amount_cents')
+      .in('charge_id', candidateIds),
+    supabase
+      .from('charges')
+      .select('source_id')
+      .eq('family_id', familyId)
+      .eq('type', 'multi_group_adjustment')
+      .neq('status', 'voided')
+      .in('source_id', candidateIds),
+  ])
 
   const paidByCharge = new Map<string, number>()
   for (const a of allocations ?? []) {
@@ -84,12 +95,16 @@ export async function generateMultiGroupAdjustments(
       (paidByCharge.get(a.charge_id) ?? 0) + (a.amount_cents ?? 0),
     )
   }
+  const alreadyAdjusted = new Set(
+    (existingAdjustments ?? []).map(a => a.source_id as string),
+  )
 
   const affected: PaidChargeRow[] = []
   for (const c of candidates as unknown as PaidChargeRow[]) {
     const b = c.pricing_breakdown
     if (!b || !b.multi_group_pct || b.multi_group_pct <= 0) continue
-    if (b.morning_squad_partner_applied) continue // separate rule path — not in v1
+    if (b.morning_squad_partner_applied) continue // handled by `generateMorningSquadPartnerAdjustments`
+    if (alreadyAdjusted.has(c.id)) continue // idempotent — already clawed back
     const paid = paidByCharge.get(c.id) ?? 0
     if (paid < c.amount_cents) continue // unpaid → no adjustment, recompute on commit handles it
     affected.push(c)
@@ -149,6 +164,159 @@ export async function generateMultiGroupAdjustments(
       description: adjustmentDescription,
       amountCents: delta,
       status: 'confirmed', // immediately owed; not session-bound so confirmed_balance picks it up
+      createdBy,
+      pricingBreakdown: adjustmentBreakdown,
+    })
+    adjustmentsCreated++
+  }
+
+  return { adjustmentsCreated }
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Morning-squad-partner-lost adjustment (Plan "Atomic Gathering Octopus" v2).
+//
+// When a parent unenrols a player from one of the morning squads (Tue/Wed),
+// the partner squad's paid per-session charges that priced at the $15 cross-
+// day partner rate must claw back to the regular base price (still net of
+// any early-bird percent that was earned at the original payment).
+//
+// Math: shouldHaveBeen = currentBase × (100 − frozen_early_bird_pct)/100;
+// adjustment = shouldHaveBeen − total_cents.
+// ──────────────────────────────────────────────────────────────────────────
+
+const MORNING_SQUAD_SLUGS = ['tue-morning-squad', 'wed-morning-squad'] as const
+
+export async function generateMorningSquadPartnerAdjustments(
+  supabase: Supabase,
+  familyId: string,
+  playerId: string,
+  withdrawnProgramId: string,
+  withdrawnProgramName: string | null,
+  createdBy: string,
+): Promise<{ adjustmentsCreated: number }> {
+  // Only fires when the withdrawn program is one of the morning squads.
+  const { data: withdrawn } = await supabase
+    .from('programs')
+    .select('slug')
+    .eq('id', withdrawnProgramId)
+    .maybeSingle()
+
+  const wSlug = (withdrawn?.slug as string | null) ?? null
+  if (!wSlug || !(MORNING_SQUAD_SLUGS as readonly string[]).includes(wSlug)) {
+    return { adjustmentsCreated: 0 }
+  }
+
+  const partnerSlug = wSlug === 'tue-morning-squad' ? 'wed-morning-squad' : 'tue-morning-squad'
+
+  const { data: partner } = await supabase
+    .from('programs')
+    .select('id, name, type')
+    .eq('slug', partnerSlug)
+    .maybeSingle()
+  if (!partner) return { adjustmentsCreated: 0 }
+
+  // Find paid (or partially paid) charges on the partner program that priced
+  // at the $15 partner rate. Pay-later charges with status='pending' that
+  // happen to be allocated count too — we only adjust if fully paid.
+  const { data: candidates } = await supabase
+    .from('charges')
+    .select('id, program_id, amount_cents, status, description, pricing_breakdown')
+    .eq('family_id', familyId)
+    .eq('player_id', playerId)
+    .eq('program_id', partner.id)
+    .eq('type', 'session')
+    .in('status', ['pending', 'confirmed'])
+
+  if (!candidates || candidates.length === 0) return { adjustmentsCreated: 0 }
+
+  const candidateIds = candidates.map(c => c.id)
+  const [{ data: allocations }, { data: existingAdjustments }] = await Promise.all([
+    supabase
+      .from('payment_allocations')
+      .select('charge_id, amount_cents')
+      .in('charge_id', candidateIds),
+    supabase
+      .from('charges')
+      .select('source_id')
+      .eq('family_id', familyId)
+      .eq('type', 'morning_squad_partner_adjustment')
+      .neq('status', 'voided')
+      .in('source_id', candidateIds),
+  ])
+
+  const paidByCharge = new Map<string, number>()
+  for (const a of allocations ?? []) {
+    paidByCharge.set(
+      a.charge_id,
+      (paidByCharge.get(a.charge_id) ?? 0) + (a.amount_cents ?? 0),
+    )
+  }
+  const alreadyAdjusted = new Set(
+    (existingAdjustments ?? []).map(a => a.source_id as string),
+  )
+
+  interface PartnerCandidate {
+    id: string
+    program_id: string | null
+    amount_cents: number
+    status: string
+    description: string
+    pricing_breakdown: PricingBreakdown | null
+  }
+
+  const affected: PartnerCandidate[] = []
+  for (const c of candidates as unknown as PartnerCandidate[]) {
+    const b = c.pricing_breakdown
+    if (!b || !b.morning_squad_partner_applied) continue
+    if (alreadyAdjusted.has(c.id)) continue
+    const paid = paidByCharge.get(c.id) ?? 0
+    if (paid < c.amount_cents) continue
+    affected.push(c)
+  }
+
+  if (affected.length === 0) return { adjustmentsCreated: 0 }
+
+  // Resolve the partner program's CURRENT base price (post-family-override).
+  // This is the per-session amount the partner squad would cost without the
+  // $15 partner discount. If it's unchanged from the program default since
+  // the original charge, the math is exact; if admin changed the price in
+  // between, the adjustment uses today's value (acceptable edge).
+  const baseCents = await getSessionPrice(supabase, familyId, partner.id, partner.type ?? null)
+  if (!baseCents || baseCents <= 0) return { adjustmentsCreated: 0 }
+
+  let adjustmentsCreated = 0
+  for (const c of affected) {
+    if (!c.program_id) continue
+    const b = c.pricing_breakdown!
+    const earlyBirdPct = b.early_bird_pct ?? 0
+    const sessions = b.sessions ?? 1
+    const shouldHaveBeen = Math.round(baseCents * sessions * (100 - earlyBirdPct) / 100)
+    const delta = shouldHaveBeen - c.amount_cents
+    if (delta <= 0) continue
+
+    const adjustmentDescription =
+      `Morning-squad partner rate lost — ${partner.name} returns to full price` +
+      (withdrawnProgramName ? ` (${withdrawnProgramName} withdrawn)` : '')
+
+    const adjustmentBreakdown: PricingBreakdown = {
+      total_cents: delta,
+      adjustment_for_charge_id: c.id,
+      adjustment_reason: 'morning_squad_partner_lost',
+      original_charge_description: c.description,
+      residual_early_bird_pct: earlyBirdPct,
+    }
+
+    await createCharge(supabase, {
+      familyId,
+      playerId,
+      type: 'morning_squad_partner_adjustment',
+      sourceType: 'adjustment',
+      sourceId: c.id,
+      programId: c.program_id,
+      description: adjustmentDescription,
+      amountCents: delta,
+      status: 'confirmed',
       createdBy,
       pricingBreakdown: adjustmentBreakdown,
     })

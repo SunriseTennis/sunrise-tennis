@@ -56,6 +56,73 @@ interface AllocationBundle {
   savingsCents: number
   /** Allocation rows in this bundle, sorted by session date ascending. */
   allocations: Allocation[]
+  /** Aggregated breakdown summed across the bundle's allocations — drives the
+   *  bundle-level PricingBreakdownPanel so the parent sees the named discount
+   *  (e.g. "Early Bird Special — 15%, saved $X") inline with the bundle math. */
+  aggregatedBreakdown: PricingBreakdownData | null
+}
+
+function aggregateBundleBreakdown(allocations: Allocation[]): PricingBreakdownData | null {
+  // Synthesize a "bundle breakdown" by summing the per-row breakdowns.
+  // Invariant fields (per_session_cents, multi_group_pct, early_bird_pct,
+  // labels, deadlines) come from the first row that has them; cents fields
+  // sum across the bundle.
+  let perSession: number | undefined
+  let morningSquadPartner: boolean | undefined
+  let multiGroupPct: number | undefined
+  let multiGroupLabel: string | undefined
+  let earlyBirdPct: number | undefined
+  let earlyBirdLabel: string | undefined
+  let earlyBirdTier: 1 | 2 | undefined
+  let earlyBirdDeadline: string | undefined
+  let tier2Pct: number | undefined
+  let tier2Deadline: string | undefined
+  let subtotal = 0
+  let multiGroupOff = 0
+  let earlyBirdOff = 0
+  let total = 0
+  let sessions = 0
+  let any = false
+
+  for (const a of allocations) {
+    const b = a.pricingBreakdown
+    if (!b) continue
+    any = true
+    sessions += b.sessions ?? 1
+    subtotal += b.subtotal_cents ?? 0
+    multiGroupOff += b.multi_group_cents_off ?? 0
+    earlyBirdOff += b.early_bird_cents_off ?? 0
+    total += b.total_cents ?? a.amountCents
+    if (perSession === undefined && b.per_session_cents != null) perSession = b.per_session_cents
+    if (morningSquadPartner === undefined && b.morning_squad_partner_applied != null) morningSquadPartner = b.morning_squad_partner_applied
+    if (multiGroupPct === undefined && b.multi_group_pct != null) multiGroupPct = b.multi_group_pct
+    if (multiGroupLabel === undefined && b.multi_group_label) multiGroupLabel = b.multi_group_label
+    if (earlyBirdPct === undefined && b.early_bird_pct != null) earlyBirdPct = b.early_bird_pct
+    if (earlyBirdLabel === undefined && b.early_bird_label) earlyBirdLabel = b.early_bird_label
+    if (earlyBirdTier === undefined && b.early_bird_tier != null) earlyBirdTier = b.early_bird_tier
+    if (earlyBirdDeadline === undefined && b.early_bird_deadline) earlyBirdDeadline = b.early_bird_deadline
+    if (tier2Pct === undefined && b.tier2_pct != null) tier2Pct = b.tier2_pct
+    if (tier2Deadline === undefined && b.tier2_deadline) tier2Deadline = b.tier2_deadline
+  }
+
+  if (!any) return null
+  return {
+    sessions,
+    per_session_cents: perSession,
+    subtotal_cents: subtotal,
+    morning_squad_partner_applied: morningSquadPartner,
+    multi_group_pct: multiGroupPct,
+    multi_group_cents_off: multiGroupOff > 0 ? multiGroupOff : undefined,
+    multi_group_label: multiGroupLabel,
+    early_bird_pct: earlyBirdPct,
+    early_bird_cents_off: earlyBirdOff > 0 ? earlyBirdOff : undefined,
+    early_bird_label: earlyBirdLabel,
+    early_bird_tier: earlyBirdTier,
+    early_bird_deadline: earlyBirdDeadline,
+    tier2_pct: tier2Pct,
+    tier2_deadline: tier2Deadline,
+    total_cents: total,
+  }
 }
 
 function groupAllocations(allocations: Allocation[]): AllocationBundle[] {
@@ -84,6 +151,7 @@ function groupAllocations(allocations: Allocation[]): AllocationBundle[] {
         totalCents: a.amountCents,
         savingsCents: rowSavings,
         allocations: [a],
+        aggregatedBreakdown: null,
       })
     }
   })
@@ -93,6 +161,7 @@ function groupAllocations(allocations: Allocation[]): AllocationBundle[] {
       const b = y.sessionDate ?? ''
       return a.localeCompare(b)
     })
+    g.aggregatedBreakdown = aggregateBundleBreakdown(g.allocations)
   }
   return [...groups.values()]
 }
@@ -215,7 +284,9 @@ function PaymentCard({ payment }: { payment: Payment }) {
                   </div>
                 )
               }
-              // Bundle of >1 allocations — render header + itemised rows
+              // Bundle of >1 allocations — render header + aggregated discount
+              // breakdown panel (so the parent sees "Early Bird Special — 15%,
+              // saved $X" inline) + itemised per-session rows.
               return (
                 <div key={bundle.key} className="rounded-lg border border-border/40 bg-card/40 overflow-hidden">
                   <div className="flex items-center justify-between gap-2 border-b border-border/30 bg-muted/20 px-3 py-2">
@@ -234,6 +305,16 @@ function PaymentCard({ payment }: { payment: Payment }) {
                       {formatCurrency(bundle.totalCents)}
                     </span>
                   </div>
+                  {/* Aggregated discount math — only when there's actually
+                      something to break down. Skipped when the bundle is just
+                      a flat per-session × N with no discounts. */}
+                  {bundle.aggregatedBreakdown && (bundle.savingsCents > 0 || (bundle.aggregatedBreakdown.sessions ?? 0) > 1) && (
+                    <PricingBreakdownPanel
+                      breakdown={bundle.aggregatedBreakdown}
+                      heading={null}
+                      className="border-b border-border/30 bg-muted/5 px-3 py-2"
+                    />
+                  )}
                   <div className="divide-y divide-border/20">
                     {bundle.allocations.map((alloc, i) => {
                       const breakdown = alloc.pricingBreakdown

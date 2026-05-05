@@ -12,67 +12,58 @@ interface Props {
   projectedBalanceCents: number
   /** Sum of allocations attached to scheduled future per-session charges. Positive number. */
   prepaidUpcomingCents: number
+  /** Sum of OUTSTANDING (still owed) cents on future-scheduled charges. Positive number. */
+  upcomingOutstandingCents: number
 }
 
 /**
- * Shows the parent the right number for *this moment*. Four states:
+ * Hero displays the parent's overall account state in a single primary
+ * number, plus a secondary line showing what's still upcoming. Designed so
+ * the parent can see "current credit" and "what's owed" at a glance without
+ * the confusing double-up of an "All paid up" label sitting above an "All
+ * paid up" headline.
  *
- *  1. Currently owed (confirmed < 0)
- *      "Currently owed $X — completed sessions awaiting payment"
- *  2. Usable credit (confirmed >= 0, projected > 0)
- *      "All paid up — $X usable credit"
- *  3. Pre-paid upcoming (confirmed >= 0, projected <= 0, prepaid > 0)
- *      "All paid up · $X applied to upcoming sessions"
- *      Important — this is the case the user flagged where it previously read
- *      "Credit on account" misleadingly. The amount is *prepaid commitment*,
- *      not money the parent can spend on something else.
- *  4. Otherwise → "All paid up"
+ * Primary number: `projected_balance_cents` — the true net position
+ *   (payments minus all active charges). This avoids the misleading
+ *   "Credit on account" label that `confirmed_balance` produces when a
+ *   parent has just prepaid for upcoming sessions.
+ *
+ * Secondary line: "Upcoming: $X scheduled" with an inline note when some
+ *   of that upcoming has already been paid for ("$Y already paid").
  */
 export function BalanceHero({
   confirmedBalanceCents,
   projectedBalanceCents,
   prepaidUpcomingCents,
+  upcomingOutstandingCents,
 }: Props) {
   const [showInfo, setShowInfo] = useState(false)
 
-  let state: 'owed' | 'credit' | 'prepaid' | 'clear'
-  if (confirmedBalanceCents < 0) state = 'owed'
-  else if (projectedBalanceCents > 0) state = 'credit'
-  else if (prepaidUpcomingCents > 0) state = 'prepaid'
-  else state = 'clear'
+  const owedNow = confirmedBalanceCents < 0
+  const realCredit = projectedBalanceCents > 0
+  const allClear = !owedNow && !realCredit
 
-  const headlineLabel = (
-    state === 'owed' ? 'Currently owed' :
-    state === 'credit' ? 'Usable credit' :
-    state === 'prepaid' ? 'All paid up' :
-    'All paid up'
-  )
+  const headlineColor = owedNow ? 'text-red-200' : realCredit ? 'text-emerald-200' : 'text-white'
+  const headlineCents = owedNow
+    ? -confirmedBalanceCents // show as positive in the headline; subline reads "owed"
+    : realCredit
+      ? projectedBalanceCents
+      : 0
 
-  const headlineAmountCents = (
-    state === 'owed' ? confirmedBalanceCents :
-    state === 'credit' ? projectedBalanceCents :
-    state === 'prepaid' ? 0 :
-    0
-  )
+  const headlineSign = owedNow ? '−' : realCredit ? '+' : ''
+  const headlineSubline = owedNow
+    ? 'Owed for delivered sessions'
+    : realCredit
+      ? 'Usable credit on your account'
+      : 'Account up to date'
 
-  const subline = (
-    state === 'owed' ? 'Completed sessions awaiting payment' :
-    state === 'credit' ? 'Available for upcoming charges or refunds' :
-    state === 'prepaid' ? `${formatCurrency(prepaidUpcomingCents)} applied to upcoming sessions` :
-    'Future sessions are listed below as Scheduled'
-  )
-
-  const amountClass = (
-    state === 'owed' ? 'text-red-200' :
-    state === 'credit' ? 'text-emerald-200' :
-    'text-white'
-  )
+  const upcomingTotalCents = upcomingOutstandingCents + prepaidUpcomingCents
 
   return (
     <ImageHero>
       <div className="flex items-center gap-2">
         <CreditCard className="size-5 text-white/80" />
-        <p className="text-sm font-medium text-white/80">{headlineLabel}</p>
+        <p className="text-sm font-medium text-white/80">Current Balance</p>
         <button
           onClick={() => setShowInfo(!showInfo)}
           className="rounded-full p-0.5 text-white/50 transition-colors hover:text-white/80"
@@ -82,30 +73,45 @@ export function BalanceHero({
         </button>
       </div>
 
-      {state === 'prepaid' ? (
-        <p className="mt-2 text-3xl font-bold tabular-nums text-white">All paid up</p>
-      ) : (
-        <p className={`mt-2 text-3xl font-bold tabular-nums ${amountClass}`}>
-          {formatCurrency(state === 'owed' ? -headlineAmountCents : headlineAmountCents)}
-        </p>
+      <p className={`mt-2 text-3xl font-bold tabular-nums ${headlineColor}`}>
+        {headlineSign}{formatCurrency(headlineCents)}
+      </p>
+      <p className="mt-0.5 text-xs text-white/60">{headlineSubline}</p>
+
+      {/* Secondary line — what's still ahead */}
+      {upcomingTotalCents > 0 && (
+        <div className="mt-3 flex items-baseline justify-between gap-3 rounded-lg bg-white/10 px-3 py-2 text-xs text-white/85 backdrop-blur-sm">
+          <span className="font-medium">Upcoming</span>
+          <span className="text-right tabular-nums">
+            <span className="font-semibold">{formatCurrency(upcomingTotalCents)}</span>
+            {prepaidUpcomingCents > 0 && (
+              <>
+                {' '}
+                <span className="text-[11px] text-white/60">
+                  ({formatCurrency(prepaidUpcomingCents)} already paid)
+                </span>
+              </>
+            )}
+          </span>
+        </div>
       )}
-      <p className="mt-0.5 text-xs text-white/60">{subline}</p>
 
       {showInfo && (
         <div className="mt-3 rounded-lg bg-white/15 px-3 py-2.5 text-xs text-white/90 backdrop-blur-sm">
           <div className="flex items-start justify-between gap-2">
             <div className="space-y-1.5">
               <p>
-                <strong>Currently owed</strong> is what you owe for sessions that have already been delivered. It only goes up after a session runs — never before.
+                <strong>Current Balance</strong> is your overall account position right now.
+                Negative = owing, positive = usable credit, zero = settled.
               </p>
               <p>
-                <strong>Usable credit</strong> is money paid in excess of every charge on your account (past and scheduled). You can apply it to a future enrolment or request a refund.
-              </p>
-              <p>
-                <strong>Applied to upcoming</strong> means you&apos;ve paid for term sessions that haven&apos;t run yet. You don&apos;t owe anything; the amount will work itself off session-by-session as the term progresses.
+                <strong>Upcoming</strong> is the total of every future-scheduled session that&apos;s
+                been booked or enroled. The &quot;already paid&quot; portion is what you&apos;ve pre-paid
+                for term sessions that haven&apos;t run yet.
               </p>
               <p className="text-white/70">
-                Scheduled future sessions appear in the list below as <em>Scheduled</em> &mdash; tap a row to see when each one will be billed.
+                The current balance only goes up when a session actually runs. Cancellations
+                shrink the upcoming, never the current balance.
               </p>
             </div>
             <button
@@ -116,6 +122,11 @@ export function BalanceHero({
             </button>
           </div>
         </div>
+      )}
+
+      {/* Visually-quiet hint when nothing's owed and nothing's upcoming */}
+      {allClear && upcomingTotalCents === 0 && (
+        <p className="mt-2 text-xs text-white/55">No upcoming charges right now.</p>
       )}
     </ImageHero>
   )

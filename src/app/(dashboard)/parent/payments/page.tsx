@@ -170,6 +170,18 @@ export default async function ParentPaymentsPage({
     }, 0)
   }, 0)
 
+  // "Upcoming outstanding" = sum of OUTSTANDING (still owed) on charges with
+  // a future-scheduled session. Future-paid scheduled charges contribute 0.
+  const todayIso = new Date().toISOString().split('T')[0]
+  const upcomingOutstandingCents = (charges ?? []).reduce((sum, c) => {
+    if (c.status === 'voided' || c.amount_cents <= 0) return sum
+    const sess = c.sessions as unknown as { date: string; status: string } | null
+    if (!sess || sess.status !== 'scheduled' || sess.date < todayIso) return sum
+    const allocations = (c.payment_allocations ?? []) as unknown as { amount_cents: number }[]
+    const paid = allocations.reduce((s, a) => s + (a.amount_cents ?? 0), 0)
+    return sum + Math.max(0, c.amount_cents - paid)
+  }, 0)
+
   // Build payment data with allocations for the history component.
   // Filter voided allocations: when a charge is later voided (e.g. parent
   // unenrols a pay-now program → its charges are voided to credit the family),
@@ -204,7 +216,7 @@ export default async function ParentPaymentsPage({
         programId: a.charges?.program_id ?? null,
         bookingId: a.charges?.booking_id ?? null,
         programName: a.charges?.program_id ? programInfo[a.charges.program_id]?.name ?? null : null,
-        pricingBreakdown: (a.charges?.pricing_breakdown as { total_cents: number; subtotal_cents?: number; multi_group_cents_off?: number; early_bird_cents_off?: number } | null) ?? null,
+        pricingBreakdown: (a.charges?.pricing_breakdown as import('@/components/pricing-breakdown-panel').PricingBreakdownData | null) ?? null,
       })),
     }
   })
@@ -224,6 +236,7 @@ export default async function ParentPaymentsPage({
           confirmedBalanceCents={confirmedBalanceCents}
           projectedBalanceCents={projectedBalanceCents}
           prepaidUpcomingCents={prepaidUpcomingCents}
+          upcomingOutstandingCents={upcomingOutstandingCents}
         />
 
         {/* ── Make a Payment / Pay Ahead ── */}

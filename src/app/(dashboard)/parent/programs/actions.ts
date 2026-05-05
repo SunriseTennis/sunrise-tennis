@@ -637,7 +637,7 @@ export async function unenrolFromProgram(
   const { data: program } = await supabase.from('programs').select('name').eq('id', programId).single()
   const programName = program?.name ?? null
   try {
-    const { generateMultiGroupAdjustments } = await import('@/lib/utils/charge-recompute')
+    const { generateMultiGroupAdjustments, generateMorningSquadPartnerAdjustments } = await import('@/lib/utils/charge-recompute')
     await generateMultiGroupAdjustments(
       service,
       auth.familyId,
@@ -646,8 +646,19 @@ export async function unenrolFromProgram(
       programName,
       auth.userId,
     )
+    // Morning-squad-partner-lost adjustment — only fires if the withdrawn
+    // program is one of the two morning squads; otherwise the helper is a
+    // no-op so it's safe to call unconditionally.
+    await generateMorningSquadPartnerAdjustments(
+      service,
+      auth.familyId,
+      playerId,
+      programId,
+      programName,
+      auth.userId,
+    )
   } catch (e) {
-    console.error('Multi-group adjustment generation failed (unenrol):', e instanceof Error ? e.message : e)
+    console.error('Adjustment generation failed (unenrol):', e instanceof Error ? e.message : e)
     // Non-blocking — the unenrol still completes; admin can manually adjust
     // if the helper failed mid-run.
   }
