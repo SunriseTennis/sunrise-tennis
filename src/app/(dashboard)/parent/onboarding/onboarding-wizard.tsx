@@ -292,11 +292,9 @@ function EditPlayerForm({ player, onCancel }: { player: Player; onCancel: () => 
           to avoid round-tripping encrypted bytes. Parents edit medical
           notes via the dedicated player page. */}
 
-      {player.level && (
-        <p className="text-xs text-muted-foreground">
-          Ball level (<BallBadge level={player.level} />) is set by Maxim — change it later from the player&apos;s page if needed.
-        </p>
-      )}
+      <p className="text-xs text-muted-foreground">
+        Ball level is set by Maxim.
+      </p>
 
       <div className="flex gap-2">
         <Button type="submit" disabled={pending} className="flex-1">

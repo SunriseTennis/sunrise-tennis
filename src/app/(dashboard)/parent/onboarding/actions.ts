@@ -418,7 +418,7 @@ export async function removeOnboardingPlayer(playerId: string) {
 // ── Self-signup: Acknowledge T&C + per-player media consent (step 4) ────
 
 export async function acknowledgeOnboardingTerms(formData: FormData) {
-  const { userId, familyId } = await getOnboardingAuth()
+  const { userId, familyId, signupSource } = await getOnboardingAuth()
   const supabase = await createClient()
 
   if (!await checkRateLimitAsync(`onboarding-terms:${userId}`, 10, 60_000)) {
@@ -474,7 +474,11 @@ export async function acknowledgeOnboardingTerms(formData: FormData) {
   }
 
   revalidatePath('/parent/onboarding')
-  redirect('/parent/onboarding?step=5')
+  // Plan 20 follow-up — A2HS lives at step 4 in admin-invite (5 steps)
+  // and step 5 in self-signup (6 steps). Hard-coding step=5 worked for
+  // self-signup but skipped A2HS in admin-invite. Branch explicitly.
+  const next = signupSource === 'self_signup' ? 5 : 4
+  redirect(`/parent/onboarding?step=${next}`)
 }
 
 // ── A2HS advance — no DB write, just navigation ─────────────────────────
