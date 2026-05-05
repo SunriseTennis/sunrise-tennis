@@ -369,6 +369,22 @@ export const wizardAddPlayerSchema = z.object({
   school: optionalString(200),
 })
 
+// Plan 20 — wizard step 2 inline-edit form. Edits an existing player's
+// "info" fields only — name, preferred, DOB, gender, school. Ball-level
+// stays admin-owned (parent edits via /parent/players/[id] later if
+// needed). Medical notes are encrypted at-rest and edited via the
+// dedicated player page (the encryption RPC pattern doesn't fit a
+// hidden round-trip). first/last are required since we already have them.
+export const wizardEditPlayerSchema = z.object({
+  player_id: z.string().uuid('Invalid player ID'),
+  first_name: requiredString('First name is required'),
+  last_name: requiredString('Last name is required'),
+  preferred_name: optionalString(),
+  dob: optionalString(),
+  gender: z.enum(['male', 'female', 'non_binary']).optional().or(z.literal('')),
+  school: optionalString(200),
+})
+
 // Plan 15 Phase D — onboarding contact details for self-signup wizard step 1.
 // Adds address vs the existing admin-invite contact step which doesn't ask.
 // Plan 17 follow-up — split into first + last; surname → family_name.

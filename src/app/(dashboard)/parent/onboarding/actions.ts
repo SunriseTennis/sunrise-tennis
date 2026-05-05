@@ -9,6 +9,7 @@ import {
   validateFormData,
   wizardAddPlayerSchema,
   wizardContactSchema,
+  wizardEditPlayerSchema,
   wizardTermsAckSchema,
 } from '@/lib/utils/validation'
 
@@ -220,7 +221,7 @@ export async function updateOnboardingPlayers(formData: FormData) {
 // ── Self-signup: Add a player from wizard step 2 ─────────────────────────
 
 export async function addOnboardingPlayer(formData: FormData) {
-  const { userId, familyId } = await getOnboardingAuth()
+  const { userId, familyId, signupSource } = await getOnboardingAuth()
   const supabase = await createClient()
 
   if (!await checkRateLimitAsync(`onboarding-add-player:${userId}`, 10, 60_000)) {
@@ -306,7 +307,69 @@ export async function addOnboardingPlayer(formData: FormData) {
   }
 
   revalidatePath('/parent/onboarding')
-  redirect('/parent/onboarding?step=3')
+  // Plan 20 — admin-invite path stays on step 2 so the parent can add
+  // multiple players without ping-ponging through the wizard. Self-signup
+  // keeps the original step=3 (the dedicated summary page in that flow).
+  const next = signupSource === 'self_signup' ? 3 : 2
+  redirect(`/parent/onboarding?step=${next}`)
+}
+
+// ── Plan 20 — Wizard step 2 inline edit for pre-existing players ────────
+//
+// Lets admin-invite parents edit player info inline (name/dob/gender/
+// preferred/school/medical) without leaving the wizard. Ball-level is
+// admin's call for pre-existing players, so it's NOT in the form — the
+// parent edits it later via /parent/players/[id] if needed.
+//
+// Allowed for both admin-invite and self-signup paths so a typo at
+// add-time can be fixed before the rest of the flow.
+
+export async function editOnboardingPlayer(formData: FormData) {
+  const { userId, familyId } = await getOnboardingAuth()
+  const supabase = await createClient()
+
+  if (!await checkRateLimitAsync(`onboarding-edit-player:${userId}`, 20, 60_000)) {
+    redirect('/parent/onboarding?step=2&error=Too+many+requests.+Please+wait.')
+  }
+
+  const parsed = validateFormData(formData, wizardEditPlayerSchema)
+  if (!parsed.success) {
+    redirect(`/parent/onboarding?step=2&error=${encodeURIComponent(parsed.error)}`)
+  }
+
+  const { player_id, first_name, last_name, preferred_name, dob, gender, school } = parsed.data
+
+  // Ownership check — RLS would filter, but fail loud if the parent
+  // is poking at a player they don't own.
+  const { data: owned } = await supabase
+    .from('players')
+    .select('id')
+    .eq('id', player_id)
+    .eq('family_id', familyId)
+    .single()
+  if (!owned) {
+    redirect('/parent/onboarding?step=2&error=Player+not+found')
+  }
+
+  const { error } = await supabase
+    .from('players')
+    .update({
+      first_name,
+      last_name,
+      preferred_name: preferred_name || null,
+      dob: dob || null,
+      gender: gender || null,
+      school: school || null,
+    })
+    .eq('id', player_id)
+
+  if (error) {
+    console.error('[onboarding] editOnboardingPlayer:', error)
+    redirect('/parent/onboarding?step=2&error=Failed+to+save.+Please+try+again.')
+  }
+
+  revalidatePath('/parent/onboarding')
+  redirect('/parent/onboarding?step=2')
 }
 
 // ── Self-signup: Remove a player added during the wizard ────────────────

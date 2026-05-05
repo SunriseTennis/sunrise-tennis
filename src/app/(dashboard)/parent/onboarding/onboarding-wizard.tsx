@@ -1,13 +1,12 @@
 'use client'
 
 import { useState, useTransition } from 'react'
-import Link from 'next/link'
-import { AlertCircle } from 'lucide-react'
+import { AlertCircle, Pencil } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { splitFullName } from '@/lib/utils/name'
-import { updateOnboardingContact } from './actions'
+import { editOnboardingPlayer, updateOnboardingContact } from './actions'
 import { ADMIN_INVITE_TOTAL_STEPS } from './constants'
 import { A2HSStep, AddPlayerForm, PushStep, TermsAndConsentStep } from './_steps/shared-steps'
 
@@ -17,8 +16,11 @@ interface Player {
   id: string
   first_name: string
   last_name: string
+  preferred_name: string | null
   dob: string | null
+  gender: string | null
   level: string | null
+  school: string | null
   media_consent_coaching: boolean
   media_consent_social: boolean
 }
@@ -189,13 +191,129 @@ function StepContact({
   )
 }
 
-// ── Step 2: Players list + inline add ────────────────────────────────────
+// ── Step 2: Players list + inline add + inline edit ─────────────────────
 //
-// Plan 19 — admin-invite parents can now add players in the wizard
-// (matches self-signup). At least one player is required to advance.
-// In-line edit of pre-existing names/DOB is gone (parent edits later
-// via /parent/players/[id]); the migration cohort already passed
-// through the old flow, so removing it doesn't regress anyone.
+// Plan 20 — replaces "Edit later →" link (which navigated out of the
+// wizard) with inline EditPlayerForm. Ball-level NOT editable here —
+// admin owns it for pre-existing players; the parent can edit it later
+// via /parent/players/[id] if needed. addOnboardingPlayer now redirects
+// back to step=2 so parents can add multiple players in a row before
+// pressing "Continue to consent".
+
+function EditPlayerForm({ player, onCancel }: { player: Player; onCancel: () => void }) {
+  const [pending, startTransition] = useTransition()
+
+  function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault()
+    const formData = new FormData(e.currentTarget)
+    startTransition(async () => {
+      await editOnboardingPlayer(formData)
+    })
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-3.5">
+      <input type="hidden" name="player_id" value={player.id} />
+
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <Label htmlFor={`edit_first_name_${player.id}`}>First name *</Label>
+          <Input
+            id={`edit_first_name_${player.id}`}
+            name="first_name"
+            defaultValue={player.first_name}
+            required
+            className="mt-1.5"
+          />
+        </div>
+        <div>
+          <Label htmlFor={`edit_last_name_${player.id}`}>Last name *</Label>
+          <Input
+            id={`edit_last_name_${player.id}`}
+            name="last_name"
+            defaultValue={player.last_name}
+            required
+            className="mt-1.5"
+          />
+        </div>
+      </div>
+
+      <div>
+        <Label htmlFor={`edit_preferred_name_${player.id}`}>Preferred name</Label>
+        <Input
+          id={`edit_preferred_name_${player.id}`}
+          name="preferred_name"
+          defaultValue={player.preferred_name ?? ''}
+          placeholder="Optional"
+          className="mt-1.5"
+        />
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <Label htmlFor={`edit_dob_${player.id}`}>Date of birth</Label>
+          <Input
+            id={`edit_dob_${player.id}`}
+            name="dob"
+            type="date"
+            defaultValue={player.dob ?? ''}
+            className="mt-1.5"
+          />
+        </div>
+        <div>
+          <Label htmlFor={`edit_gender_${player.id}`}>Gender</Label>
+          <select
+            id={`edit_gender_${player.id}`}
+            name="gender"
+            defaultValue={player.gender ?? ''}
+            className="mt-1.5 block w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+          >
+            <option value="">—</option>
+            <option value="male">Male</option>
+            <option value="female">Female</option>
+            <option value="non_binary">Non-binary</option>
+          </select>
+        </div>
+      </div>
+
+      <div>
+        <Label htmlFor={`edit_school_${player.id}`}>School</Label>
+        <Input
+          id={`edit_school_${player.id}`}
+          name="school"
+          defaultValue={player.school ?? ''}
+          placeholder="Optional"
+          className="mt-1.5"
+        />
+      </div>
+
+      {/* Plan 20 — medical notes are encrypted at-rest (read via
+          get_player_medical_notes RPC). Excluded from the inline form
+          to avoid round-tripping encrypted bytes. Parents edit medical
+          notes via the dedicated player page. */}
+
+      {player.level && (
+        <p className="text-xs text-muted-foreground">
+          Ball level (<BallBadge level={player.level} />) is set by Maxim — change it later from the player&apos;s page if needed.
+        </p>
+      )}
+
+      <div className="flex gap-2">
+        <Button type="submit" disabled={pending} className="flex-1">
+          {pending ? 'Saving…' : 'Save changes'}
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          onClick={onCancel}
+          disabled={pending}
+        >
+          Cancel
+        </Button>
+      </div>
+    </form>
+  )
+}
 
 function StepPlayers({
   players,
@@ -205,6 +323,7 @@ function StepPlayers({
   error: string | null
 }) {
   const [showAddForm, setShowAddForm] = useState(players.length === 0)
+  const [editingPlayerId, setEditingPlayerId] = useState<string | null>(null)
 
   return (
     <div className="space-y-5">
@@ -214,8 +333,8 @@ function StepPlayers({
         </h2>
         <p className="mt-1.5 text-sm text-muted-foreground">
           {players.length === 0
-            ? 'You&apos;ll need at least one player before we can finish setup.'
-            : 'Add another, or continue once you&apos;re happy with the list.'}
+            ? "You'll need at least one player before we can finish setup."
+            : "Edit any details, add more, or continue once you're happy."}
         </p>
       </div>
 
@@ -231,27 +350,38 @@ function StepPlayers({
           {players.map((player) => (
             <div
               key={player.id}
-              className="flex items-start justify-between rounded-xl border border-border bg-card px-4 py-3 shadow-card"
+              className="rounded-xl border border-border bg-card px-4 py-3 shadow-card"
             >
-              <div>
-                <p className="font-semibold text-sm text-foreground">
-                  {player.first_name} {player.last_name}
-                </p>
-                {player.dob && (
-                  <p className="mt-0.5 text-xs text-muted-foreground">DOB: {player.dob}</p>
-                )}
-                {player.level && (
-                  <div className="mt-1.5">
-                    <BallBadge level={player.level} />
+              {editingPlayerId === player.id ? (
+                <EditPlayerForm
+                  player={player}
+                  onCancel={() => setEditingPlayerId(null)}
+                />
+              ) : (
+                <div className="flex items-start justify-between">
+                  <div>
+                    <p className="font-semibold text-sm text-foreground">
+                      {player.first_name} {player.last_name}
+                    </p>
+                    {player.dob && (
+                      <p className="mt-0.5 text-xs text-muted-foreground">DOB: {player.dob}</p>
+                    )}
+                    {player.level && (
+                      <div className="mt-1.5">
+                        <BallBadge level={player.level} />
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
-              <Link
-                href={`/parent/players/${player.id}`}
-                className="text-xs font-medium text-muted-foreground hover:text-foreground"
-              >
-                Edit later →
-              </Link>
+                  <button
+                    type="button"
+                    onClick={() => setEditingPlayerId(player.id)}
+                    className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:text-primary/80"
+                  >
+                    <Pencil className="size-3.5" />
+                    Edit
+                  </button>
+                </div>
+              )}
             </div>
           ))}
         </div>
@@ -261,7 +391,7 @@ function StepPlayers({
         <div className="rounded-xl border border-border bg-card p-4 shadow-card">
           <AddPlayerForm
             hideHeading={players.length === 0}
-            submitLabel={players.length === 0 ? 'Save & continue' : 'Save player'}
+            submitLabel="Save player"
           />
           {players.length > 0 && (
             <button
@@ -285,7 +415,7 @@ function StepPlayers({
 
       {players.length > 0 && (
         <Button asChild className="w-full">
-          <Link href="/parent/onboarding?step=3">Continue to consent</Link>
+          <a href="/parent/onboarding?step=3">Continue to consent</a>
         </Button>
       )}
     </div>
