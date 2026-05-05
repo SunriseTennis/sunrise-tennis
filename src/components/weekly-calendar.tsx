@@ -33,8 +33,19 @@ export interface CalendarEvent {
   sessionId?: string
   /** Program UUID */
   programId?: string
-  /** Per-session price in cents */
+  /** Per-session price in cents (program default — used for popup fallback). */
   priceCents?: number | null
+  /** Per-(family-player, this-program) effective per-session price for the popup.
+   *  Resolved server-side via `getPlayerSessionPriceBreakdown` so partner-rate
+   *  + multi-group + family-override are baked in. Null → popup falls back to priceCents. */
+  perPlayerPrices?: Array<{
+    playerId: string
+    playerName: string
+    effectivePerSessionCents: number
+    basePerSessionCents: number
+    morningSquadPartnerApplied: boolean
+    multiGroupApplied: boolean
+  }> | null
   /** Number of remaining scheduled sessions (for calculated term price) */
   remainingSessions?: number | null
   /** Early bird discount percentage */
@@ -471,7 +482,18 @@ function PopupActions({
               ) : (
                 <>
                   Book {selectedPlayerIds.size} player{selectedPlayerIds.size > 1 ? 's' : ''}
-                  {event.priceCents ? ` · ${formatCurrency(event.priceCents * selectedPlayerIds.size)}` : ''}
+                  {(() => {
+                    // Per-player effective price for the selected players when available;
+                    // fall back to flat priceCents × count for non-group/non-squad programs.
+                    if (event.perPlayerPrices && event.perPlayerPrices.length > 0) {
+                      const total = [...selectedPlayerIds].reduce((sum, pid) => {
+                        const row = event.perPlayerPrices?.find(r => r.playerId === pid)
+                        return sum + (row?.effectivePerSessionCents ?? event.priceCents ?? 0)
+                      }, 0)
+                      return total > 0 ? ` · ${formatCurrency(total)}` : ''
+                    }
+                    return event.priceCents ? ` · ${formatCurrency(event.priceCents * selectedPlayerIds.size)}` : ''
+                  })()}
                 </>
               )}
             </button>
@@ -1221,7 +1243,45 @@ export function WeeklyCalendar({
                   <span>with {popupEvent.partnerFirstName} {popupEvent.partnerLastName ?? ''}</span>
                 </div>
               )}
-              {popupEvent.priceCents != null && popupEvent.priceCents > 0 && (
+              {popupEvent.perPlayerPrices && popupEvent.perPlayerPrices.length > 0 ? (
+                // Per-player rows when family has eligible players for this program.
+                // Resolves partner-rate ($15) + 25% multi-group + family overrides
+                // on a per-player basis so the popup never lies about the price
+                // the parent will actually be charged at booking.
+                <div className="flex items-start gap-2 text-sm text-muted-foreground">
+                  <DollarSign className="size-3.5 shrink-0 mt-0.5" />
+                  <div className="min-w-0 flex-1 space-y-0.5">
+                    {popupEvent.perPlayerPrices.map((row) => {
+                      const showStrike = row.basePerSessionCents > row.effectivePerSessionCents
+                      const label = row.morningSquadPartnerApplied
+                        ? 'morning-squad pair'
+                        : row.multiGroupApplied
+                          ? '25% multi-group'
+                          : null
+                      return (
+                        <div key={row.playerId} className="flex items-baseline justify-between gap-2 text-xs">
+                          <span className="truncate text-foreground/80">
+                            <span className="font-medium">{row.playerName}</span>
+                            {label && <span className="ml-1.5 text-success">({label})</span>}
+                          </span>
+                          <span className="tabular-nums shrink-0">
+                            {showStrike && (
+                              <span className="line-through text-muted-foreground/60 mr-1">{formatCurrency(row.basePerSessionCents)}</span>
+                            )}
+                            <span className="font-medium text-foreground">{formatCurrency(row.effectivePerSessionCents)}</span>
+                            <span className="text-muted-foreground">/session</span>
+                          </span>
+                        </div>
+                      )
+                    })}
+                    {popupEvent.remainingSessions != null && popupEvent.remainingSessions > 0 && (
+                      <p className="text-[11px] text-muted-foreground/80 pt-0.5">
+                        × {popupEvent.remainingSessions} sessions remaining this term
+                      </p>
+                    )}
+                  </div>
+                </div>
+              ) : popupEvent.priceCents != null && popupEvent.priceCents > 0 && (
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
                   <DollarSign className="size-3.5 shrink-0" />
                   <span>{formatCurrency(popupEvent.priceCents)}/session</span>

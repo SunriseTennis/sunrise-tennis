@@ -5,7 +5,8 @@ import { EmptyState } from '@/components/empty-state'
 import { GraduationCap, Tag } from 'lucide-react'
 import { ParentProgramFilters } from './program-filters'
 import { EnrolledProgramsSection, type EnrolledByPlayer } from './enrolled-programs-section'
-import { MULTI_GROUP_DISCOUNT_PCT } from '@/lib/utils/player-pricing'
+import { MULTI_GROUP_DISCOUNT_PCT, getPlayerSessionPriceBreakdown, isMultiGroupEligibleType } from '@/lib/utils/player-pricing'
+import { isEligible } from '@/lib/utils/eligibility'
 
 const MULTI_GROUP_TYPES = ['group', 'squad']
 
@@ -124,6 +125,52 @@ export default async function ParentProgramsPage() {
     enrolledCount: multiGroupCountByPlayerId[p.id] ?? 0,
   }))
 
+  // Per-(player, program) effective price for the calendar popup. Only computed
+  // for ELIGIBLE pairs of group/squad programs (private/competition/school keep
+  // the program's per_session_cents in the popup). Batch in parallel — at
+  // ~50-100ms per RPC and N×M ≤ ~50 pairs for a typical family, total well
+  // under the perceived-fast threshold.
+  type PlayerPriceRow = {
+    playerId: string
+    playerName: string
+    effectivePerSessionCents: number
+    basePerSessionCents: number
+    morningSquadPartnerApplied: boolean
+    multiGroupApplied: boolean
+  }
+  const playerPricesByProgramId: Record<string, PlayerPriceRow[]> = {}
+  if (players && players.length > 0 && programs && programs.length > 0) {
+    const pairs: Array<{ playerId: string; playerName: string; programId: string; programType: string | null }> = []
+    for (const player of players) {
+      for (const prog of programs) {
+        if (!isMultiGroupEligibleType(prog.type)) continue // skip private/competition/school
+        const ok = isEligible(
+          { gender: (player.gender as 'male' | 'female' | 'non_binary' | null) ?? null, classifications: (player.classifications as string[] | null) ?? [], track: player.track ?? null },
+          { day_of_week: prog.day_of_week, allowed_classifications: prog.allowed_classifications, gender_restriction: prog.gender_restriction, track_required: prog.track_required },
+        ).ok
+        if (!ok) continue
+        pairs.push({ playerId: player.id, playerName: player.first_name, programId: prog.id, programType: prog.type ?? null })
+      }
+    }
+    if (pairs.length > 0) {
+      const breakdowns = await Promise.all(
+        pairs.map(p => getPlayerSessionPriceBreakdown(supabase, familyId, p.programId, p.programType, p.playerId)),
+      )
+      pairs.forEach((p, i) => {
+        const row: PlayerPriceRow = {
+          playerId: p.playerId,
+          playerName: p.playerName,
+          effectivePerSessionCents: breakdowns[i].priceCents,
+          basePerSessionCents: breakdowns[i].basePriceCents,
+          morningSquadPartnerApplied: breakdowns[i].morningSquadPartnerApplied,
+          multiGroupApplied: breakdowns[i].multiGroupApplied,
+        }
+        if (!playerPricesByProgramId[p.programId]) playerPricesByProgramId[p.programId] = []
+        playerPricesByProgramId[p.programId].push(row)
+      })
+    }
+  }
+
   // Build enrolled-programs-by-player groups for the new section
   const todayStr = new Date().toISOString().split('T')[0]
   const enrolledGroups: EnrolledByPlayer[] = []
@@ -177,6 +224,7 @@ export default async function ParentProgramsPage() {
               track: p.track ?? null,
             })) ?? []}
             attendances={(attendances ?? []) as { session_id: string; player_id: string; status: string }[]}
+            playerPricesByProgramId={playerPricesByProgramId}
           />
         </div>
       ) : (

@@ -218,6 +218,15 @@ type Attendance = {
   status: string
 }
 
+type PerPlayerPriceRow = {
+  playerId: string
+  playerName: string
+  effectivePerSessionCents: number
+  basePerSessionCents: number
+  morningSquadPartnerApplied: boolean
+  multiGroupApplied: boolean
+}
+
 export function ParentProgramFilters({
   programs,
   sessions,
@@ -225,6 +234,7 @@ export function ParentProgramFilters({
   familyPlayerIds,
   familyPlayers,
   attendances,
+  playerPricesByProgramId = {},
 }: {
   programs: Program[]
   sessions: Session[]
@@ -232,6 +242,11 @@ export function ParentProgramFilters({
   familyPlayerIds: string[]
   familyPlayers: FamilyPlayer[]
   attendances: Attendance[]
+  /** Per-(player, program) effective price for popup display. Group/squad only.
+   *  Server pre-computes via `getPlayerSessionPriceBreakdown` so partner-rate
+   *  + multi-group resolve correctly per player. Empty {} → popup falls back
+   *  to program.per_session_cents. */
+  playerPricesByProgramId?: Record<string, PerPlayerPriceRow[]>
 }) {
   const router = useRouter()
   const [tab, setTab] = useState<Tab>('calendar')
@@ -480,6 +495,7 @@ export function ParentProgramFilters({
           sessionId: s.id,
           programId: prog.id,
           priceCents: prog.per_session_cents,
+          perPlayerPrices: playerPricesByProgramId[prog.id] ?? null,
           remainingSessions: remainingSessionsMap.get(prog.id) ?? null,
           earlyBirdPct: prog.early_pay_discount_pct,
           earlyBirdDeadline: prog.early_bird_deadline,
@@ -488,7 +504,7 @@ export function ParentProgramFilters({
           playerAttendance: sessionAttendanceMap.get(s.id)?.playerStatus,
         }
       })
-  }, [sessions, programMap, calendarFilter, calendarTypes, enrolledProgramIds, eligibleProgramIds, strictHiddenProgramIds, sessionAttendanceMap, remainingSessionsMap])
+  }, [sessions, programMap, calendarFilter, calendarTypes, enrolledProgramIds, eligibleProgramIds, strictHiddenProgramIds, sessionAttendanceMap, remainingSessionsMap, playerPricesByProgramId])
 
   // Earliest future session date in the current calendar view. Drives both
   // the "Next available" jump button (label) AND the auto-jump on first
