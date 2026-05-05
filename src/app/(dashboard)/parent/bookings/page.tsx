@@ -98,7 +98,7 @@ export default async function ParentBookingsPage({
       .lte('date', rangeEndStr),
     supabase
       .from('family_balance')
-      .select('confirmed_balance_cents')
+      .select('projected_balance_cents')
       .eq('family_id', familyId)
       .single(),
     // Per-coach private-rate overrides for this family (RLS scopes to own family)
@@ -112,7 +112,10 @@ export default async function ParentBookingsPage({
       .not('per_session_cents', 'is', null),
   ])
 
-  const confirmedCreditCents = Math.max(0, balance?.confirmed_balance_cents ?? 0)
+  // CreditChip semantic (05-May-2026): use projected, not confirmed — only
+  // surface "$X credit" when payments exceed total active charges (real
+  // spendable), not when only delivered-completed charges are subtracted.
+  const confirmedCreditCents = Math.max(0, balance?.projected_balance_cents ?? 0)
 
   // Resolve partner-family info for shared bookings.
   type PartnerSummary = {

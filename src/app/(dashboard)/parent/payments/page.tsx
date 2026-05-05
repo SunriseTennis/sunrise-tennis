@@ -151,21 +151,35 @@ export default async function ParentPaymentsPage({
     }
   })
 
-  const confirmedBalanceCents = balance?.confirmed_balance_cents ?? 0
   const projectedBalanceCents = balance?.projected_balance_cents ?? 0
   const totalBalanceCents = balance?.balance_cents ?? 0
 
-  // "Upcoming outstanding" = sum of OUTSTANDING (still owed) on charges with
-  // a future-scheduled session. Future-paid scheduled charges contribute 0.
+  // ── Account-balance math (BalanceHero) ────────────────────────────────
+  // Drive both "due now" and "upcoming" from the LIVE-recomputed enriched
+  // charges so the hero's numbers always reconcile with what's visible in
+  // the ChargesList below. Reading raw `charges.amount_cents` here was the
+  // source of the $12.75 BalanceHero ↔ ChargesList drift on 2026-05-05 —
+  // ChargesList read live values, hero read frozen ones.
+  //
+  // Classification mirrors ChargesList::buildGroups:
+  //   - paid:     amount > 0 AND outstanding ≤ 0
+  //   - scheduled: future date AND session status='scheduled'
+  //   - due:      everything else (past date, missing date, completed/cancelled session)
   const todayIso = new Date().toISOString().split('T')[0]
-  const upcomingOutstandingCents = (charges ?? []).reduce((sum, c) => {
-    if (c.status === 'voided' || c.amount_cents <= 0) return sum
-    const sess = c.sessions as unknown as { date: string; status: string } | null
-    if (!sess || sess.status !== 'scheduled' || sess.date < todayIso) return sum
-    const allocations = (c.payment_allocations ?? []) as unknown as { amount_cents: number }[]
-    const paid = allocations.reduce((s, a) => s + (a.amount_cents ?? 0), 0)
-    return sum + Math.max(0, c.amount_cents - paid)
-  }, 0)
+  let dueOutstandingCents = 0
+  let upcomingOutstandingCents = 0
+  for (const c of enrichedCharges) {
+    if (c.amount_cents <= 0 || c.outstanding_cents <= 0) continue
+    const isFutureScheduled = !!c.session_date && c.session_date > todayIso && c.session_status === 'scheduled'
+    if (isFutureScheduled) upcomingOutstandingCents += c.outstanding_cents
+    else dueOutstandingCents += c.outstanding_cents
+  }
+  // Spendable credit = excess of payments over ALL active charges. With FIFO
+  // allocation this is rare unless the parent prepaid via targeted-first.
+  const availableCreditCents = Math.max(0, projectedBalanceCents)
+  // Headline number: credit minus due-now. Signed: negative = net owed,
+  // positive = real spendable, zero = perfectly settled (for delivered work).
+  const accountBalanceCents = availableCreditCents - dueOutstandingCents
 
   // Build payment data with allocations for the history component.
   // Filter voided allocations: when a charge is later voided (e.g. parent
@@ -218,8 +232,9 @@ export default async function ParentPaymentsPage({
 
         {/* ── Balance Hero ── */}
         <BalanceHero
-          confirmedBalanceCents={confirmedBalanceCents}
-          projectedBalanceCents={projectedBalanceCents}
+          accountBalanceCents={accountBalanceCents}
+          availableCreditCents={availableCreditCents}
+          dueOutstandingCents={dueOutstandingCents}
           upcomingOutstandingCents={upcomingOutstandingCents}
         />
 

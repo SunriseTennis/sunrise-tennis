@@ -65,7 +65,7 @@ export default async function ParentProgramDetailPage({
       .gte('date', adelaideTodayString())
       .eq('status', 'scheduled')
       .order('date'),
-    supabase.from('family_balance').select('confirmed_balance_cents').eq('family_id', familyId).single(),
+    supabase.from('family_balance').select('projected_balance_cents').eq('family_id', familyId).single(),
   ])
 
   if (!program) notFound()
@@ -76,7 +76,11 @@ export default async function ParentProgramDetailPage({
     (upcomingSessions ?? []) as { id: string; date: string; start_time: string | null; end_time: string | null; status: string }[],
   )
 
-  const confirmedCreditCents = Math.max(0, balance?.confirmed_balance_cents ?? 0)
+  // CreditChip semantic (05-May-2026): only show "Covered by your $X credit"
+  // when the parent's PROJECTED balance is positive — i.e. they've paid more
+  // than total active charges (real spendable surplus). Reading confirmed
+  // overstated credit when the family had upcoming commitments offsetting it.
+  const confirmedCreditCents = Math.max(0, balance?.projected_balance_cents ?? 0)
 
   const venue = program.venues as unknown as { name: string; address: string | null } | null
   const enrolledPlayerIds = new Set(

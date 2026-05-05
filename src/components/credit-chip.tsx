@@ -3,7 +3,11 @@ import { formatCurrency } from '@/lib/utils/currency'
 import { cn } from '@/lib/utils/cn'
 
 interface CreditChipProps {
-  /** Family's confirmed credit in cents (positive = credit available). Pass 0 or negative to render nothing. */
+  /** Family's REAL spendable credit in cents — positive only when total
+   *  payments exceed total active charges (i.e. `projected_balance_cents > 0`).
+   *  Pass 0 or negative to render nothing. Do NOT pass `confirmed_balance_cents`
+   *  here — that's "payments minus delivered-completed only" and overstates
+   *  spendability when the family has upcoming commitments. */
   creditCents: number
   /** Cost of the thing being booked / enrolled in cents. Pass 0 to show generic credit pill. */
   costCents?: number | null
@@ -19,6 +23,11 @@ interface CreditChipProps {
  *   - cost <= 0 or null: "$155 credit available"
  *   - credit >= cost:    "Covered by your $155 credit"
  *   - 0 < credit < cost: "Pay $50 after $40 credit"
+ *
+ * Semantic established 05-May-2026: callers MUST source credit from
+ * `projected_balance_cents`, not `confirmed_balance_cents`. The chip should
+ * only appear when the family has a real spendable surplus after netting
+ * all known future commitments.
  */
 export function CreditChip({ creditCents, costCents = null, className, size = 'sm' }: CreditChipProps) {
   if (!creditCents || creditCents <= 0) return null
