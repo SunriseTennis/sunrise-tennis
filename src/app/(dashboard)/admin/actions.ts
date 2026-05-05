@@ -546,6 +546,23 @@ export async function updateProgram(id: string, formData: FormData) {
     redirect(`/admin/programs/${id}?error=${encodeURIComponent(error.message)}`)
   }
 
+  // Cascade time changes to all future scheduled sessions for this program.
+  // Past, completed, and cancelled sessions are left untouched.
+  const today = new Date().toLocaleDateString('en-CA')
+  const { error: cascadeError } = await supabase
+    .from('sessions')
+    .update({
+      start_time: startTime || null,
+      end_time: endTime || null,
+    })
+    .eq('program_id', id)
+    .eq('status', 'scheduled')
+    .gte('date', today)
+
+  if (cascadeError) {
+    redirect(`/admin/programs/${id}?error=${encodeURIComponent(`Program updated, but failed to cascade to future sessions: ${cascadeError.message}`)}`)
+  }
+
   revalidatePath(`/admin/programs/${id}`)
   revalidatePath('/admin/programs')
   redirect(`/admin/programs/${id}`)
