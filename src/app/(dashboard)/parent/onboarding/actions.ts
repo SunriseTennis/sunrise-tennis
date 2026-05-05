@@ -254,9 +254,9 @@ export async function addOnboardingPlayer(formData: FormData) {
   const VALID_CLASSES = new Set(['blue', 'red', 'orange', 'green', 'yellow'])
   const parsedClassifications = ball_color && VALID_CLASSES.has(ball_color) ? [ball_color] : []
 
-  // Plan 17 Block A — three granular consent toggles default to false
-  // (opt-in). Wizard step 3 (admin-invite) / step 4 (self-signup) is where
-  // the parent grants per-player consent.
+  // Plan 20 — two granular consent toggles default to false (opt-in).
+  // Wizard step 3 (admin-invite) / step 4 (self-signup) is where the
+  // parent grants per-player consent.
   const { data: insertedPlayer, error } = await supabase
     .from('players')
     .insert({
@@ -273,7 +273,6 @@ export async function addOnboardingPlayer(formData: FormData) {
       medical_notes: medical_notes || null,
       school: school || null,
       media_consent_coaching: false,
-      media_consent_family: false,
       media_consent_social: false,
       status: 'active',
     })
@@ -368,16 +367,16 @@ export async function acknowledgeOnboardingTerms(formData: FormData) {
     redirect(`/parent/onboarding?step=4&error=${encodeURIComponent(parsed.error)}`)
   }
 
-  // Plan 17 Block A — per-player media consent with three granular toggles.
-  // Keys look like `media_consent_<kind>_<playerId>` where kind is one of
-  // coaching, family, social.
-  const consentByPlayerId = new Map<string, { coaching: boolean; family: boolean; social: boolean }>()
+  // Plan 20 — per-player media consent with two granular toggles
+  // (coaching + social). family was dropped 05-May-2026.
+  // Keys look like `media_consent_<kind>_<playerId>`.
+  const consentByPlayerId = new Map<string, { coaching: boolean; social: boolean }>()
   formData.forEach((value, key) => {
-    const match = key.match(/^media_consent_(coaching|family|social)_(.+)$/)
+    const match = key.match(/^media_consent_(coaching|social)_(.+)$/)
     if (match) {
       const [, kind, playerId] = match
-      const existing = consentByPlayerId.get(playerId) ?? { coaching: false, family: false, social: false }
-      existing[kind as 'coaching' | 'family' | 'social'] = value === 'on'
+      const existing = consentByPlayerId.get(playerId) ?? { coaching: false, social: false }
+      existing[kind as 'coaching' | 'social'] = value === 'on'
       consentByPlayerId.set(playerId, existing)
     }
   })
@@ -388,12 +387,11 @@ export async function acknowledgeOnboardingTerms(formData: FormData) {
     .eq('family_id', familyId)
 
   for (const player of players ?? []) {
-    const c = consentByPlayerId.get(player.id) ?? { coaching: false, family: false, social: false }
+    const c = consentByPlayerId.get(player.id) ?? { coaching: false, social: false }
     const { error } = await supabase
       .from('players')
       .update({
         media_consent_coaching: c.coaching,
-        media_consent_family: c.family,
         media_consent_social: c.social,
       })
       .eq('id', player.id)

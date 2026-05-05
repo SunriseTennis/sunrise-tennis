@@ -102,7 +102,6 @@ export default async function PlayerDetailPage({
                 <dt className="text-xs font-medium text-muted-foreground">Media Consent</dt>
                 <dd className="text-sm space-y-0.5">
                   <ConsentLine label="Coaching" on={!!player.media_consent_coaching} />
-                  <ConsentLine label="Family" on={!!player.media_consent_family} />
                   <ConsentLine label="Social media" on={!!player.media_consent_social} />
                 </dd>
               </div>

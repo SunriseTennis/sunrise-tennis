@@ -170,13 +170,6 @@ export function PlayerEditForm({ player, familyId }: { player: Player; familyId:
                 hint={CONSENT_LABELS.coaching.hint}
               />
               <ConsentToggle
-                id="admin_edit_media_consent_family"
-                name="media_consent_family"
-                defaultChecked={player.media_consent_family ?? false}
-                label={CONSENT_LABELS.family.label}
-                hint={CONSENT_LABELS.family.hint}
-              />
-              <ConsentToggle
                 id="admin_edit_media_consent_social"
                 name="media_consent_social"
                 defaultChecked={player.media_consent_social ?? false}

@@ -1,7 +1,11 @@
 /**
- * Plan 17 Block A — single granular media-consent checkbox row. Used by
- * the self-signup wizard step 4, /parent/settings, /parent/players/new,
- * and admin add/edit-player forms. Submits as `<name>` = 'on' / unset.
+ * Plan 20 — two granular media-consent toggles (coaching + social).
+ * The "family progress moments" toggle was dropped 05-May-2026; copy
+ * for both surviving toggles also rewritten.
+ *
+ * Used by the self-signup wizard, the admin-invite wizard, /parent/settings,
+ * /parent/players/new, and admin add/edit-player forms. Submits as
+ * `<name>` = 'on' / unset.
  */
 export function ConsentToggle({
   id,
@@ -36,14 +40,10 @@ export function ConsentToggle({
 export const CONSENT_LABELS = {
   coaching: {
     label: 'Coaching analysis (private)',
-    hint: 'Coach reviews technique with you and the player. Never shared.',
-  },
-  family: {
-    label: 'Family progress moments (private)',
-    hint: 'We share clips of your child with you. Never published.',
+    hint: 'Video footage for technical/tactical analysis. Only shared with you and coaches internally.',
   },
   social: {
-    label: 'Sunrise Tennis website and social media (public)',
-    hint: 'Selected highlights with your child recognisable. Posted only with this on.',
+    label: 'Social media (public)',
+    hint: 'Photos/videos posted publicly on Sunrise Tennis platforms for promotional purposes. If you’ve provided consent but see something you’d like removed, contact Maxim for removal.',
   },
 } as const

@@ -127,13 +127,6 @@ export function AddPlayerForm({ familyId }: { familyId: string }) {
               hint={CONSENT_LABELS.coaching.hint}
             />
             <ConsentToggle
-              id="add_media_consent_family"
-              name="media_consent_family"
-              defaultChecked={false}
-              label={CONSENT_LABELS.family.label}
-              hint={CONSENT_LABELS.family.hint}
-            />
-            <ConsentToggle
               id="add_media_consent_social"
               name="media_consent_social"
               defaultChecked={false}

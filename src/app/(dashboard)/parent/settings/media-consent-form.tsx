@@ -3,21 +3,19 @@
 import { updateMediaConsent } from '../actions'
 
 /**
- * Plan 17 Block A — three granular consent toggles per player.
- * Toggling any switch auto-submits the form so all three values land
- * together. Each toggle is an iOS-style switch with the label inline.
+ * Plan 20 — two granular consent toggles per player (coaching + social).
+ * Toggling any switch auto-submits the form so both values land together.
+ * Each toggle is an iOS-style switch with the label inline.
  */
 export function MediaConsentForm({
   playerId,
   playerName,
   consentCoaching,
-  consentFamily,
   consentSocial,
 }: {
   playerId: string
   playerName: string
   consentCoaching: boolean
-  consentFamily: boolean
   consentSocial: boolean
 }) {
   const updateWithId = updateMediaConsent.bind(null, playerId)
@@ -30,19 +28,13 @@ export function MediaConsentForm({
           name="media_consent_coaching"
           defaultChecked={consentCoaching}
           label="Coaching analysis (private)"
-          hint="Coach reviews technique with you and the player. Never shared."
-        />
-        <Toggle
-          name="media_consent_family"
-          defaultChecked={consentFamily}
-          label="Family progress moments (private)"
-          hint="We share clips of your child with you. Never published."
+          hint="Video footage for technical/tactical analysis. Only shared with you and coaches internally."
         />
         <Toggle
           name="media_consent_social"
           defaultChecked={consentSocial}
-          label="Sunrise Tennis website and social media (public)"
-          hint="Selected highlights with your child recognisable. Posted only with this on."
+          label="Social media (public)"
+          hint="Photos/videos posted publicly on Sunrise Tennis platforms for promotional purposes. If you’ve provided consent but see something you’d like removed, contact Maxim for removal."
         />
       </div>
     </form>

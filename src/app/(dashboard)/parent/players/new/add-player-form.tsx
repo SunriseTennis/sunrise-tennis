@@ -89,7 +89,7 @@ export function ParentAddPlayerForm() {
           <div className="text-sm">
             <p className="font-medium text-foreground">Media consent</p>
             <p className="mt-1 text-xs text-muted-foreground">
-              We take photos and short videos during sessions for three different reasons. Pick whichever you&apos;re OK with — leave the rest off. Change any time in Settings.
+              We take photos and short videos during sessions. Pick which uses you&apos;re OK with — leave the rest off. Change any time in Settings.
             </p>
           </div>
           <div className="space-y-2">
@@ -99,13 +99,6 @@ export function ParentAddPlayerForm() {
               defaultChecked={false}
               label={CONSENT_LABELS.coaching.label}
               hint={CONSENT_LABELS.coaching.hint}
-            />
-            <ConsentToggle
-              id="media_consent_family"
-              name="media_consent_family"
-              defaultChecked={false}
-              label={CONSENT_LABELS.family.label}
-              hint={CONSENT_LABELS.family.hint}
             />
             <ConsentToggle
               id="media_consent_social"

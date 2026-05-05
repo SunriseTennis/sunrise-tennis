@@ -205,9 +205,8 @@ export async function createPlayer(familyId: string, formData: FormData) {
     medical_notes: medicalNotes,
   } = parsed.data
 
-  // Plan 17 Block A — three granular consent toggles parsed from FormData.
+  // Plan 20 — two granular consent toggles parsed from FormData.
   const coaching = formData.get('media_consent_coaching') === 'on'
-  const familyConsent = formData.get('media_consent_family') === 'on'
   const social = formData.get('media_consent_social') === 'on'
 
   const VALID_CLASSES = new Set(['blue', 'red', 'orange', 'green', 'yellow', 'advanced', 'elite'])
@@ -229,7 +228,6 @@ export async function createPlayer(familyId: string, formData: FormData) {
       track: track || 'participation',
       medical_notes: medicalNotes || null,
       media_consent_coaching: coaching,
-      media_consent_family: familyConsent,
       media_consent_social: social,
       status: 'active',
     })
@@ -253,9 +251,8 @@ export async function updatePlayer(playerId: string, familyId: string, formData:
 
   const { first_name: firstName, last_name: lastName, preferred_name: preferredName, gender, dob, ball_color: ballColor, level, classifications, track, status, medical_notes: medicalNotes, current_focus: currentFocus, short_term_goal: shortTermGoal, long_term_goal: longTermGoal, comp_interest: compInterest, school } = parsed.data
 
-  // Plan 17 Block A — three granular consent toggles parsed from FormData.
+  // Plan 20 — two granular consent toggles parsed from FormData.
   const coaching = formData.get('media_consent_coaching') === 'on'
-  const familyConsent = formData.get('media_consent_family') === 'on'
   const social = formData.get('media_consent_social') === 'on'
 
   // Parse comma-separated classifications, filter to known values
@@ -284,7 +281,6 @@ export async function updatePlayer(playerId: string, familyId: string, formData:
       comp_interest: compInterest || null,
       school: school || null,
       media_consent_coaching: coaching,
-      media_consent_family: familyConsent,
       media_consent_social: social,
     })
     .eq('id', playerId)

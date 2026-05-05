@@ -475,7 +475,6 @@ async function importNewFamilies() {
         physical_notes: null,
         school: p.school || null,
         media_consent_coaching: false,
-        media_consent_family: false,
         media_consent_social: false,
         status: "active",
       };

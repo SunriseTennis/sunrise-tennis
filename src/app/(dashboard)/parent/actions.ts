@@ -113,16 +113,14 @@ export async function updateMediaConsent(playerId: string, formData: FormData) {
 
   if (!player) redirect('/parent/settings')
 
-  // Plan 17 Block A — three granular consent toggles, parsed directly.
+  // Plan 20 — two granular consent toggles, parsed directly.
   const coaching = formData.get('media_consent_coaching') === 'on'
-  const family = formData.get('media_consent_family') === 'on'
   const social = formData.get('media_consent_social') === 'on'
 
   const { error } = await supabase
     .from('players')
     .update({
       media_consent_coaching: coaching,
-      media_consent_family: family,
       media_consent_social: social,
     })
     .eq('id', playerId)
@@ -157,9 +155,8 @@ export async function updatePlayerDetails(playerId: string, formData: FormData) 
 
   const { first_name: firstName, last_name: lastName, dob, gender, medical_notes: medicalNotes, school } = parsed.data
 
-  // Plan 17 Block A — three granular consent toggles.
+  // Plan 20 — two granular consent toggles.
   const coaching = formData.get('media_consent_coaching') === 'on'
-  const familyConsent = formData.get('media_consent_family') === 'on'
   const social = formData.get('media_consent_social') === 'on'
 
   const { error } = await supabase
@@ -172,7 +169,6 @@ export async function updatePlayerDetails(playerId: string, formData: FormData) 
       medical_notes: medicalNotes || null,
       school: school || null,
       media_consent_coaching: coaching,
-      media_consent_family: familyConsent,
       media_consent_social: social,
     })
     .eq('id', playerId)
@@ -253,9 +249,8 @@ export async function createPlayerFromParent(formData: FormData) {
     school,
   } = parsed.data
 
-  // Plan 17 Block A — three granular consent toggles parsed from FormData.
+  // Plan 20 — two granular consent toggles parsed from FormData.
   const coaching = formData.get('media_consent_coaching') === 'on'
-  const familyConsent = formData.get('media_consent_family') === 'on'
   const social = formData.get('media_consent_social') === 'on'
 
   // Plan 19 — parent surface no longer asks for classifications/track.
@@ -281,7 +276,6 @@ export async function createPlayerFromParent(formData: FormData) {
       medical_notes: medicalNotes || null,
       school: school || null,
       media_consent_coaching: coaching,
-      media_consent_family: familyConsent,
       media_consent_social: social,
       status: 'active',
     })

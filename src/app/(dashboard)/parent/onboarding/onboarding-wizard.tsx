@@ -20,7 +20,6 @@ interface Player {
   dob: string | null
   level: string | null
   media_consent_coaching: boolean
-  media_consent_family: boolean
   media_consent_social: boolean
 }
 

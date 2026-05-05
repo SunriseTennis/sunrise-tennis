@@ -209,7 +209,6 @@ export default async function ParentPlayerDetailPage({ params }: { params: Promi
               medical_notes: player.medical_notes,
               school: (player as { school?: string | null }).school ?? null,
               media_consent_coaching: (player as { media_consent_coaching?: boolean }).media_consent_coaching ?? false,
-              media_consent_family: (player as { media_consent_family?: boolean }).media_consent_family ?? false,
               media_consent_social: (player as { media_consent_social?: boolean }).media_consent_social ?? false,
             }} />
           </div>
@@ -239,14 +238,13 @@ export default async function ParentPlayerDetailPage({ params }: { params: Promi
             <div className="flex items-center justify-between px-5 py-3">
               <span className="text-xs font-medium text-muted-foreground">Media Consent</span>
               <span className="text-sm text-foreground">{(() => {
-                const c = (player as { media_consent_coaching?: boolean; media_consent_family?: boolean; media_consent_social?: boolean })
-                const flags = [c.media_consent_coaching, c.media_consent_family, c.media_consent_social]
+                const c = (player as { media_consent_coaching?: boolean; media_consent_social?: boolean })
+                const flags = [c.media_consent_coaching, c.media_consent_social]
                 const on = flags.filter(Boolean).length
                 if (on === 0) return 'None'
-                if (on === 3) return 'All (coaching, family, social)'
+                if (on === 2) return 'All (coaching, social)'
                 const labels: string[] = []
                 if (c.media_consent_coaching) labels.push('coaching')
-                if (c.media_consent_family) labels.push('family')
                 if (c.media_consent_social) labels.push('social')
                 return labels.join(', ')
               })()}</span>

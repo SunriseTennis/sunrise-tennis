@@ -35,7 +35,7 @@ export default async function ParentSettingsPage({
 
   const [{ data: family }, { data: players }] = await Promise.all([
     supabase.from('families').select('*').eq('id', familyId).single(),
-    supabase.from('players').select('id, first_name, last_name, media_consent_coaching, media_consent_family, media_consent_social').eq('family_id', familyId).order('first_name'),
+    supabase.from('players').select('id, first_name, last_name, media_consent_coaching, media_consent_social').eq('family_id', familyId).order('first_name'),
   ])
 
   if (!family) redirect('/parent')
@@ -90,7 +90,6 @@ export default async function ParentSettingsPage({
               playerId={player.id}
               playerName={`${player.first_name} ${player.last_name}`}
               consentCoaching={player.media_consent_coaching ?? false}
-              consentFamily={player.media_consent_family ?? false}
               consentSocial={player.media_consent_social ?? false}
             />
           ))}

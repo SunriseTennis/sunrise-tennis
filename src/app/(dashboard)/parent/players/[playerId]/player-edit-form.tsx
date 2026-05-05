@@ -22,7 +22,6 @@ export function ParentPlayerEditForm({
     medical_notes: string | null
     school: string | null
     media_consent_coaching: boolean
-    media_consent_family: boolean
     media_consent_social: boolean
   }
 }) {
@@ -98,13 +97,6 @@ export function ParentPlayerEditForm({
                   defaultChecked={player.media_consent_coaching}
                   label={CONSENT_LABELS.coaching.label}
                   hint={CONSENT_LABELS.coaching.hint}
-                />
-                <ConsentToggle
-                  id="edit_media_consent_family"
-                  name="media_consent_family"
-                  defaultChecked={player.media_consent_family}
-                  label={CONSENT_LABELS.family.label}
-                  hint={CONSENT_LABELS.family.hint}
                 />
                 <ConsentToggle
                   id="edit_media_consent_social"
