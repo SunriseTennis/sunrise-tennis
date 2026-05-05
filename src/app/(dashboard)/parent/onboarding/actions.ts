@@ -416,11 +416,17 @@ export async function acknowledgeOnboardingTerms(formData: FormData) {
   redirect('/parent/onboarding?step=5')
 }
 
-// ── Step 5 (A2HS) advance — no DB write, just navigation ────────────────
+// ── A2HS advance — no DB write, just navigation ─────────────────────────
+//
+// Plan 20 — read signup_source and redirect explicitly so a future drift
+// in step counts (admin-invite=5, self-signup=6) can't silently re-render
+// the same A2HS step (the trap we hit when ADMIN_INVITE_TOTAL_STEPS lagged
+// behind the actual rendered count post-Plan-19).
 
 export async function advancePastA2HS() {
-  await getOnboardingAuth()
-  redirect('/parent/onboarding?step=6')
+  const { signupSource } = await getOnboardingAuth()
+  const next = signupSource === 'self_signup' ? 6 : 5
+  redirect(`/parent/onboarding?step=${next}`)
 }
 
 // ── Final step: Complete onboarding (both flows) ────────────────────────
