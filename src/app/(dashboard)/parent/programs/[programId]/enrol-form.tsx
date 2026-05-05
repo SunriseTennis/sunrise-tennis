@@ -20,8 +20,14 @@ type PlayerOption = {
   name: string
   firstName: string
   level: string | null
-  /** True when enrolling this player in this program will trigger the 25% multi-group discount. */
-  willGetMultiGroupDiscount: boolean
+  /** Effective per-session price after partner-rate replacement + multi-group. */
+  effectivePerSessionCents: number
+  /** Pre-multi-group base — equals effective when no multi-group; equals partner-rate $15 when partner-rate fires. */
+  basePerSessionCents: number
+  /** True when the morning-squad cross-day partner rate replaced the base price ($15 flat). */
+  morningSquadPartnerApplied: boolean
+  /** True when 25% multi-group is layered on top of basePerSessionCents. */
+  multiGroupApplied: boolean
 }
 
 export function EnrolForm({
@@ -29,7 +35,7 @@ export function EnrolForm({
   familyId,
   players,
   programLevel,
-  termFeeCents,
+  termFeeCents: _termFeeCents,
   perSessionCents,
   earlyPayDiscountPct,
   earlyBirdDeadline,
@@ -83,35 +89,38 @@ export function EnrolForm({
   const hasDiscount = eb.pct > 0
   const activeDiscountPct = eb.pct
 
-  // Calculate prices — per-player, accounting for multi-group discount per player
-  const playerCount = Math.max(selectedPlayerIds.length, 1)
   const sessions = remainingSessions ?? 0
   const playerById = new Map(players.map(p => [p.id, p]))
-  const discountFactor = 1 - MULTI_GROUP_DISCOUNT_PCT / 100
-
-  function effectivePerSession(player: PlayerOption | undefined, applyMultiGroup: boolean) {
-    if (!perSessionCents || !player) return perSessionCents ?? 0
-    return applyMultiGroup ? Math.round(perSessionCents * discountFactor) : perSessionCents
-  }
-
   const selectedPlayers = selectedPlayerIds.map(id => playerById.get(id)).filter((p): p is PlayerOption => !!p)
-  const anySelectedGetsMultiGroup = selectedPlayers.some(p => p.willGetMultiGroupDiscount)
-  const multiGroupPlayerNames = selectedPlayers.filter(p => p.willGetMultiGroupDiscount).map(p => p.firstName)
 
-  // Term price (gross, no early-pay) summed per-selected-player with their per-player rate
-  const termPricePerPlayerGross = perSessionCents && sessions ? perSessionCents * sessions : null
-  const termPriceGross = termPricePerPlayerGross ? termPricePerPlayerGross * playerCount : null
+  // Aggregate term price across selected players. Each player contributes
+  // their own effective per-session × sessions. Multi-group + partner-rate
+  // are baked into effectivePerSessionCents already.
+  const fallbackPerSession = perSessionCents ?? 0
+  const termSubtotalGross = sessions * selectedPlayers.reduce((sum, p) => sum + (p.basePerSessionCents || fallbackPerSession), 0)
+  const termSubtotalEffective = sessions * selectedPlayers.reduce((sum, p) => sum + p.effectivePerSessionCents, 0)
+  const subtotalSavings = termSubtotalGross - termSubtotalEffective
 
-  const termPriceWithMultiGroup = perSessionCents && sessions && selectedPlayers.length > 0
-    ? selectedPlayers.reduce((sum, p) => sum + effectivePerSession(p, p.willGetMultiGroupDiscount) * sessions, 0)
-    : termPriceGross
-  const multiGroupSavings = (termPriceGross ?? 0) - (termPriceWithMultiGroup ?? 0)
-
-  // Backwards-compat aliases used downstream in the JSX
-  const termPrice = termPriceWithMultiGroup
+  const termPrice = termSubtotalEffective > 0 ? termSubtotalEffective : null
   const discountedPrice = termPrice && hasDiscount
     ? Math.round(termPrice * (1 - activeDiscountPct / 100))
     : termPrice
+  const finalTotal = discountedPrice ?? termPrice ?? 0
+
+  // Buckets for the per-player line list inside the Pay Now card.
+  const partnerRatePlayers = selectedPlayers.filter(p => p.morningSquadPartnerApplied)
+  const multiGroupPlayers = selectedPlayers.filter(p => p.multiGroupApplied && !p.morningSquadPartnerApplied)
+  const fullPricePlayers = selectedPlayers.filter(p => !p.morningSquadPartnerApplied && !p.multiGroupApplied)
+
+  // For the multi-group chip + casual tile.
+  const anySelectedGetsMultiGroup = selectedPlayers.some(p => p.multiGroupApplied)
+  const multiGroupPlayerNames = multiGroupPlayers.map(p => p.firstName)
+  const multiGroupSavingsCents = sessions > 0
+    ? multiGroupPlayers.reduce((sum, p) => sum + sessions * (p.basePerSessionCents - p.effectivePerSessionCents), 0)
+    : multiGroupPlayers.reduce((sum, p) => sum + (p.basePerSessionCents - p.effectivePerSessionCents), 0)
+
+  // Casual session: per-player effective (already includes partner-rate / multi-group).
+  const casualSelectedPlayers = selectedPlayers // same selection list
 
   return (
     <>
@@ -176,8 +185,10 @@ export function EnrolForm({
             </select>
           </div>
 
-          {/* Pay Now / Pay Later for term enrollments */}
-          {showPaymentOptions && termPrice && (
+          {/* Pay Now / Pay Later for term enrollments — both show the EFFECTIVE
+              total (partner-rate + multi-group resolved per player). Pay Now
+              also breaks it down line-by-line and applies early-bird. */}
+          {showPaymentOptions && termPrice && sessions > 0 && (
             <div className="mt-5">
               <Label>Payment option</Label>
               <div className="mt-2 grid gap-3 sm:grid-cols-2">
@@ -198,37 +209,44 @@ export function EnrolForm({
                     </div>
                     <div className="min-w-0 flex-1">
                       <p className="font-medium text-foreground">Pay now</p>
-                      {/* Layered breakdown */}
-                      {(termPriceGross && termPriceGross > 0) ? (
-                        <div className="mt-1 space-y-0.5 text-xs">
-                          {remainingSessions && perSessionCents && playerCount > 0 && (
-                            <div className="flex justify-between text-muted-foreground">
-                              <span>{remainingSessions} sessions × {formatCurrency(perSessionCents)}{playerCount > 1 ? ` × ${playerCount} players` : ''}</span>
-                              <span className="tabular-nums">{formatCurrency(termPriceGross)}</span>
-                            </div>
-                          )}
-                          {anySelectedGetsMultiGroup && multiGroupSavings > 0 && (
-                            <div className="flex justify-between text-success">
-                              <span>– Multi-group ({MULTI_GROUP_DISCOUNT_PCT}%)</span>
-                              <span className="tabular-nums">−{formatCurrency(multiGroupSavings)}</span>
-                            </div>
-                          )}
-                          {hasDiscount && discountedPrice && termPrice && discountedPrice < termPrice && (
-                            <div className="flex justify-between text-success">
-                              <span>– Early-bird ({activeDiscountPct}%)</span>
-                              <span className="tabular-nums">−{formatCurrency(termPrice - discountedPrice)}</span>
-                            </div>
-                          )}
-                          <div className="flex justify-between border-t border-border/50 pt-0.5 text-sm font-bold text-primary">
-                            <span>Total</span>
-                            <span className="tabular-nums">{formatCurrency(discountedPrice ?? termPrice ?? 0)}</span>
+                      <div className="mt-1 space-y-0.5 text-xs">
+                        {/* Per-bucket lines so partner-rate vs full-price players each render correctly. */}
+                        {partnerRatePlayers.map(p => (
+                          <div key={p.id} className="flex justify-between text-muted-foreground">
+                            <span className="truncate">{p.firstName}: {sessions} × {formatCurrency(p.effectivePerSessionCents)} <span className="text-success font-medium">(morning-squad pair)</span></span>
+                            <span className="tabular-nums shrink-0 ml-2">{formatCurrency(p.effectivePerSessionCents * sessions)}</span>
                           </div>
+                        ))}
+                        {multiGroupPlayers.map(p => (
+                          <div key={p.id} className="flex justify-between text-muted-foreground">
+                            <span className="truncate">{p.firstName}: {sessions} × {formatCurrency(p.basePerSessionCents)}</span>
+                            <span className="tabular-nums shrink-0 ml-2">{formatCurrency(p.basePerSessionCents * sessions)}</span>
+                          </div>
+                        ))}
+                        {fullPricePlayers.map(p => (
+                          <div key={p.id} className="flex justify-between text-muted-foreground">
+                            <span className="truncate">{p.firstName}: {sessions} × {formatCurrency(p.basePerSessionCents)}</span>
+                            <span className="tabular-nums shrink-0 ml-2">{formatCurrency(p.basePerSessionCents * sessions)}</span>
+                          </div>
+                        ))}
+                        {/* Multi-group savings: line-item the discount that the partner-rate players already had baked in is NOT re-listed (they don't get an extra 25% on top). */}
+                        {multiGroupPlayers.length > 0 && multiGroupSavingsCents > 0 && (
+                          <div className="flex justify-between text-success">
+                            <span>– Multi-group ({MULTI_GROUP_DISCOUNT_PCT}%)</span>
+                            <span className="tabular-nums">−{formatCurrency(multiGroupSavingsCents)}</span>
+                          </div>
+                        )}
+                        {hasDiscount && discountedPrice !== null && termPrice && discountedPrice < termPrice && (
+                          <div className="flex justify-between text-success">
+                            <span>– Early-bird ({activeDiscountPct}%)</span>
+                            <span className="tabular-nums">−{formatCurrency(termPrice - discountedPrice)}</span>
+                          </div>
+                        )}
+                        <div className="flex justify-between border-t border-border/50 pt-0.5 text-sm font-bold text-primary">
+                          <span>Total</span>
+                          <span className="tabular-nums">{formatCurrency(finalTotal)}</span>
                         </div>
-                      ) : (
-                        <p className="mt-0.5 text-sm font-bold text-primary tabular-nums">
-                          {formatCurrency(termPrice ?? 0)}
-                        </p>
-                      )}
+                      </div>
                     </div>
                   </div>
                 </button>
@@ -248,14 +266,26 @@ export function EnrolForm({
                     }`}>
                       <Clock className={`size-4 ${paymentOption === 'pay_later' ? 'text-primary' : 'text-muted-foreground'}`} />
                     </div>
-                    <div>
+                    <div className="min-w-0">
                       <p className="font-medium text-foreground">Pay later</p>
-                      <p className="mt-0.5 text-sm tabular-nums text-muted-foreground">
-                        {formatCurrency(termPrice)} full price
+                      <p className="mt-0.5 text-sm tabular-nums text-foreground">
+                        {formatCurrency(termSubtotalEffective)}
                       </p>
-                      {perSessionCents && (
+                      {/* Show the gross strikethrough only when there's a real discount baked in. */}
+                      {subtotalSavings > 0 && (
                         <p className="text-xs text-muted-foreground">
-                          {formatCurrency(perSessionCents)}/session - charged as you attend
+                          <span className="line-through">{formatCurrency(termSubtotalGross)}</span>{' '}
+                          <span className="text-success font-medium">save {formatCurrency(subtotalSavings)}</span>
+                        </p>
+                      )}
+                      {selectedPlayers.length === 1 && (
+                        <p className="text-xs text-muted-foreground">
+                          {formatCurrency(selectedPlayers[0].effectivePerSessionCents)}/session — charged as you attend
+                        </p>
+                      )}
+                      {selectedPlayers.length > 1 && (
+                        <p className="text-xs text-muted-foreground">
+                          per-session, charged as each player attends
                         </p>
                       )}
                     </div>
@@ -266,18 +296,21 @@ export function EnrolForm({
             </div>
           )}
 
-          {/* Casual/trial pricing */}
-          {bookingType === 'casual' && perSessionCents && (
+          {/* Casual/trial pricing — per-player when partner-rate / multi-group differ. */}
+          {bookingType === 'casual' && casualSelectedPlayers.length > 0 && (
             <div className="mt-3 rounded-lg bg-muted/50 px-4 py-2.5 text-sm">
-              <span className="text-muted-foreground">Session fee: </span>
-              {anySelectedGetsMultiGroup ? (
-                <>
-                  <span className="font-medium text-foreground tabular-nums">{formatCurrency(Math.round(perSessionCents * discountFactor))}</span>
-                  <span className="ml-1.5 text-xs text-muted-foreground line-through tabular-nums">{formatCurrency(perSessionCents)}</span>
-                  <span className="ml-1.5 text-xs font-medium text-success">{MULTI_GROUP_DISCOUNT_PCT}% off</span>
-                </>
+              {casualSelectedPlayers.length === 1 ? (
+                <CasualPlayerLine player={casualSelectedPlayers[0]} fallbackPerSession={fallbackPerSession} />
               ) : (
-                <span className="font-medium text-foreground tabular-nums">{formatCurrency(perSessionCents)}</span>
+                <div className="space-y-1">
+                  <p className="text-xs font-medium text-muted-foreground">Session fee</p>
+                  {casualSelectedPlayers.map(p => (
+                    <div key={p.id} className="flex justify-between text-sm">
+                      <span className="text-foreground">{p.firstName}</span>
+                      <CasualPlayerLine player={p} fallbackPerSession={fallbackPerSession} compact />
+                    </div>
+                  ))}
+                </div>
               )}
             </div>
           )}
@@ -298,32 +331,30 @@ export function EnrolForm({
             />
           </div>
 
-          {anySelectedGetsMultiGroup && bookingType !== 'trial' && (
+          {anySelectedGetsMultiGroup && bookingType !== 'trial' && multiGroupSavingsCents > 0 && (
             <div className="mt-3">
               <MultiGroupChip
                 state="applied"
                 playerName={multiGroupPlayerNames.length === 1 ? multiGroupPlayerNames[0] : null}
-                savingsCents={bookingType === 'casual'
-                  ? selectedPlayers.filter(p => p.willGetMultiGroupDiscount).length * Math.round((perSessionCents ?? 0) * (MULTI_GROUP_DISCOUNT_PCT / 100))
-                  : multiGroupSavings}
+                savingsCents={multiGroupSavingsCents}
                 size="md"
               />
             </div>
           )}
 
-          {confirmedCreditCents > 0 && bookingType === 'term' && (discountedPrice ?? termPrice) && (
+          {confirmedCreditCents > 0 && bookingType === 'term' && finalTotal > 0 && (
             <div className="mt-3">
               <CreditChip
                 creditCents={confirmedCreditCents}
-                costCents={(discountedPrice ?? termPrice ?? 0) * Math.max(selectedPlayerIds.length, 1)}
+                costCents={finalTotal}
               />
             </div>
           )}
-          {confirmedCreditCents > 0 && bookingType === 'casual' && perSessionCents && (
+          {confirmedCreditCents > 0 && bookingType === 'casual' && casualSelectedPlayers.length > 0 && (
             <div className="mt-3">
               <CreditChip
                 creditCents={confirmedCreditCents}
-                costCents={perSessionCents}
+                costCents={casualSelectedPlayers.reduce((sum, p) => sum + p.effectivePerSessionCents, 0)}
               />
             </div>
           )}
@@ -339,7 +370,7 @@ export function EnrolForm({
           <div className="mt-4">
             <Button type="submit" disabled={selectedPlayerIds.length === 0}>
               {bookingType === 'term' && paymentOption === 'pay_now'
-                ? `Enrol & Pay ${formatCurrency((discountedPrice ?? termPrice ?? 0) * selectedPlayerIds.length)}`
+                ? `Enrol & Pay ${formatCurrency(finalTotal)}`
                 : selectedPlayerIds.length > 1
                   ? `Enrol ${selectedPlayerIds.length} Players`
                   : 'Confirm Enrolment'}
@@ -360,5 +391,50 @@ export function EnrolForm({
       formData={payModalFormData}
     />
     </>
+  )
+}
+
+function CasualPlayerLine({
+  player,
+  fallbackPerSession,
+  compact = false,
+}: {
+  player: PlayerOption
+  fallbackPerSession: number
+  compact?: boolean
+}) {
+  const baseCents = player.basePerSessionCents || fallbackPerSession
+  const effectiveCents = player.effectivePerSessionCents
+
+  if (player.morningSquadPartnerApplied) {
+    return (
+      <span className={compact ? 'tabular-nums' : ''}>
+        {!compact && <span className="text-muted-foreground">Session fee: </span>}
+        <span className="font-medium text-foreground tabular-nums">{formatCurrency(effectiveCents)}</span>
+        {!compact && (
+          <span className="ml-1.5 text-xs font-medium text-success">morning-squad pair rate</span>
+        )}
+      </span>
+    )
+  }
+
+  if (player.multiGroupApplied) {
+    return (
+      <span className={compact ? 'tabular-nums' : ''}>
+        {!compact && <span className="text-muted-foreground">Session fee: </span>}
+        <span className="font-medium text-foreground tabular-nums">{formatCurrency(effectiveCents)}</span>
+        <span className="ml-1.5 text-xs text-muted-foreground line-through tabular-nums">{formatCurrency(baseCents)}</span>
+        {!compact && (
+          <span className="ml-1.5 text-xs font-medium text-success">{MULTI_GROUP_DISCOUNT_PCT}% off</span>
+        )}
+      </span>
+    )
+  }
+
+  return (
+    <span className={compact ? 'tabular-nums' : ''}>
+      {!compact && <span className="text-muted-foreground">Session fee: </span>}
+      <span className="font-medium text-foreground tabular-nums">{formatCurrency(effectiveCents)}</span>
+    </span>
   )
 }

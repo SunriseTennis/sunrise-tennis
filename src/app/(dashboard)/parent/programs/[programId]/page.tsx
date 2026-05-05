@@ -9,11 +9,9 @@ import { WarmToast } from '@/components/warm-toast'
 import { Calendar, MapPin, DollarSign, Users, CheckCircle } from 'lucide-react'
 import { UnenrolButton } from './unenrol-button'
 import { isEligible } from '@/lib/utils/eligibility'
-import { isMultiGroupEligibleType, getPlayerSessionPriceBreakdown } from '@/lib/utils/player-pricing'
+import { getPlayerSessionPriceBreakdown } from '@/lib/utils/player-pricing'
 import { stripDayPrefix } from '@/lib/utils/program-display'
 import { adelaideTodayString, filterFutureSessions } from '@/lib/utils/sessions-filter'
-
-const MORNING_SQUAD_SLUGS = ['tue-morning-squad', 'wed-morning-squad']
 
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
@@ -96,38 +94,34 @@ export default async function ParentProgramDetailPage({
     ).ok
   })
 
-  // For each eligible player, decide whether enrolling in THIS program would
-  // trigger the 25% multi-group discount. Triggers when: this program type is
-  // group/squad, the player already has ≥1 enrolment of an eligible type in a
-  // DIFFERENT program, and the morning-squad partner rule does NOT supersede.
-  const multiGroupEligibleHere = isMultiGroupEligibleType(program.type)
-  const isMorningSquadProgram = !!program.slug && MORNING_SQUAD_SLUGS.includes(program.slug)
-  const multiGroupHintByPlayerId: Record<string, boolean> = {}
-  if (multiGroupEligibleHere && eligiblePlayers.length > 0) {
-    const { data: otherEnrolments } = await supabase
-      .from('program_roster')
-      .select('player_id, programs!inner(slug, type)')
-      .in('player_id', eligiblePlayers.map(p => p.id))
-      .eq('status', 'enrolled')
-      .neq('program_id', programId)
-      .in('programs.type', ['group', 'squad'])
-
-    const partnerSlug = program.slug === 'tue-morning-squad'
-      ? 'wed-morning-squad'
-      : program.slug === 'wed-morning-squad'
-        ? 'tue-morning-squad'
-        : null
-
-    for (const player of eligiblePlayers) {
-      const playerOthers = (otherEnrolments ?? []).filter(r => r.player_id === player.id)
-      const hasPartner = !!partnerSlug && playerOthers.some(r => {
-        const slug = (r.programs as unknown as { slug: string } | null)?.slug
-        return slug === partnerSlug
-      })
-      // Morning-squad partner gives the deeper $15 rate — don't double-promote
-      // the multi-group chip in that case.
-      multiGroupHintByPlayerId[player.id] = playerOthers.length > 0 && !(isMorningSquadProgram && hasPartner)
-    }
+  // Per-player effective pricing breakdown — same helper the server actions
+  // use, so the form, calendar popup, and Stripe modal all agree on the
+  // number. This replaces the old multiGroupHintByPlayerId boolean which only
+  // signalled the 25% multi-group case and silently fell back to full price
+  // when the morning-squad partner rule fired (showing parents $25 × sessions
+  // when they'd actually be charged $15 × 0.85). Eligibility-gated above so
+  // we only hit the helper for players who can actually enrol here.
+  type PlayerBreakdown = {
+    effectivePerSessionCents: number
+    basePerSessionCents: number
+    morningSquadPartnerApplied: boolean
+    multiGroupApplied: boolean
+  }
+  const breakdownByPlayerId: Record<string, PlayerBreakdown> = {}
+  if (eligiblePlayers.length > 0) {
+    const breakdowns = await Promise.all(
+      eligiblePlayers.map(p =>
+        getPlayerSessionPriceBreakdown(supabase, familyId, programId, program.type, p.id),
+      ),
+    )
+    eligiblePlayers.forEach((p, i) => {
+      breakdownByPlayerId[p.id] = {
+        effectivePerSessionCents: breakdowns[i].priceCents,
+        basePerSessionCents: breakdowns[i].basePriceCents,
+        morningSquadPartnerApplied: breakdowns[i].morningSquadPartnerApplied,
+        multiGroupApplied: breakdowns[i].multiGroupApplied,
+      }
+    })
   }
 
   const displayName = stripDayPrefix(program.name, program.type)
@@ -265,13 +259,24 @@ export default async function ParentProgramDetailPage({
           <EnrolForm
             programId={programId}
             familyId={familyId}
-            players={eligiblePlayers.map(p => ({
-              id: p.id,
-              name: `${p.first_name} ${p.last_name}`,
-              firstName: p.first_name,
-              level: p.ball_color,
-              willGetMultiGroupDiscount: multiGroupHintByPlayerId[p.id] ?? false,
-            }))}
+            players={eligiblePlayers.map(p => {
+              const b = breakdownByPlayerId[p.id] ?? {
+                effectivePerSessionCents: program.per_session_cents ?? 0,
+                basePerSessionCents: program.per_session_cents ?? 0,
+                morningSquadPartnerApplied: false,
+                multiGroupApplied: false,
+              }
+              return {
+                id: p.id,
+                name: `${p.first_name} ${p.last_name}`,
+                firstName: p.first_name,
+                level: p.ball_color,
+                effectivePerSessionCents: b.effectivePerSessionCents,
+                basePerSessionCents: b.basePerSessionCents,
+                morningSquadPartnerApplied: b.morningSquadPartnerApplied,
+                multiGroupApplied: b.multiGroupApplied,
+              }
+            })}
             programLevel={program.level}
             termFeeCents={program.term_fee_cents}
             perSessionCents={program.per_session_cents}
