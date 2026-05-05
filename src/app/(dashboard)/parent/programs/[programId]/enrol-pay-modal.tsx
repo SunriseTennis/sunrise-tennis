@@ -9,9 +9,10 @@ import {
   useStripe,
   useElements,
 } from '@stripe/react-stripe-js'
-import { prepareEnrolPayment, finalizeEnrolPayment } from '../actions'
+import { prepareEnrolPayment, finalizeEnrolPayment, applyCreditOnlyEnrol } from '../actions'
 import { Button } from '@/components/ui/button'
-import { AlertCircle, X } from 'lucide-react'
+import { AlertCircle, X, Sparkles } from 'lucide-react'
+import { formatCurrency } from '@/lib/utils/currency'
 import { PricingBreakdownPanel, type PricingBreakdownData } from '@/components/pricing-breakdown-panel'
 
 const publishableKey = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
@@ -47,13 +48,21 @@ export function EnrolPayModal({
   const [clientSecret, setClientSecret] = useState<string | null>(null)
   const [intentId, setIntentId] = useState<string | null>(null)
   const [amountCents, setAmountCents] = useState<number>(0)
+  const [stripeAmountCents, setStripeAmountCents] = useState<number>(0)
+  const [creditAppliedCents, setCreditAppliedCents] = useState<number>(0)
   const [breakdown, setBreakdown] = useState<Breakdown | null>(null)
+  // Credit-only flow has no clientSecret. Track separately so the modal
+  // knows to render the "Apply credit" confirm button instead of Stripe.
+  const [creditOnly, setCreditOnly] = useState(false)
+  const [applyingCredit, setApplyingCredit] = useState(false)
+  const router = useRouter()
 
   const stripeJsPromise = useMemo(() => getStripeJs(), [])
 
   // Kick off prepare on open
   useEffect(() => {
-    if (!open || !formData || clientSecret || preparing) return
+    if (!open || !formData || preparing) return
+    if (clientSecret || creditOnly) return
     setPreparing(true)
     setError(null)
     prepareEnrolPayment(programId, formData)
@@ -61,15 +70,22 @@ export function EnrolPayModal({
         if (!result.ok) {
           setError(result.error)
         } else {
-          setClientSecret(result.clientSecret)
-          setIntentId(result.intentId)
           setAmountCents(result.amountCents)
+          setStripeAmountCents(result.stripeAmountCents)
+          setCreditAppliedCents(result.creditAppliedCents)
           setBreakdown((result.breakdown as Breakdown | null) ?? null)
+          if (result.clientSecret && result.intentId) {
+            setClientSecret(result.clientSecret)
+            setIntentId(result.intentId)
+          } else {
+            // Credit covers the whole price — no Stripe needed.
+            setCreditOnly(true)
+          }
         }
       })
       .catch((e: unknown) => setError(e instanceof Error ? e.message : 'Failed to start payment'))
       .finally(() => setPreparing(false))
-  }, [open, formData, programId, clientSecret, preparing])
+  }, [open, formData, programId, clientSecret, creditOnly, preparing])
 
   // Reset on close
   useEffect(() => {
@@ -78,14 +94,18 @@ export function EnrolPayModal({
       setClientSecret(null)
       setIntentId(null)
       setAmountCents(0)
+      setStripeAmountCents(0)
+      setCreditAppliedCents(0)
       setBreakdown(null)
+      setCreditOnly(false)
       setPreparing(false)
+      setApplyingCredit(false)
     }
   }, [open])
 
   if (!open) return null
 
-  if (!publishableKey) {
+  if (!publishableKey && !creditOnly) {
     return (
       <Backdrop onClose={onClose}>
         <p className="text-sm text-warning">
@@ -93,6 +113,20 @@ export function EnrolPayModal({
         </p>
       </Backdrop>
     )
+  }
+
+  async function handleApplyCredit() {
+    if (!formData) return
+    setApplyingCredit(true)
+    setError(null)
+    const result = await applyCreditOnlyEnrol(programId, formData)
+    if (!result.ok) {
+      setError(result.error)
+      setApplyingCredit(false)
+      return
+    }
+    window.location.assign(`/parent/programs/${result.programId}?success=Enrolled+using+account+credit`)
+    router.refresh()
   }
 
   return (
@@ -117,6 +151,26 @@ export function EnrolPayModal({
         />
       )}
 
+      {/* Credit-applied banner — surfaces auto-application transparently. */}
+      {creditAppliedCents > 0 && (
+        <div className="mb-3 flex items-start gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2.5 text-sm text-emerald-900">
+          <Sparkles className="mt-0.5 size-4 shrink-0 text-emerald-600" />
+          <div className="min-w-0 flex-1">
+            {creditOnly ? (
+              <p>
+                <span className="font-semibold tabular-nums">{formatCurrency(creditAppliedCents)} credit</span> covers your{' '}
+                <span className="font-semibold tabular-nums">{formatCurrency(amountCents)}</span> term enrolment — no card needed.
+              </p>
+            ) : (
+              <p>
+                Applying <span className="font-semibold tabular-nums">{formatCurrency(creditAppliedCents)}</span> from your account credit.
+                Card pays <span className="font-semibold tabular-nums">{formatCurrency(stripeAmountCents)}</span>.
+              </p>
+            )}
+          </div>
+        </div>
+      )}
+
       {error && (
         <div className="mb-3 flex items-center gap-2 rounded-lg border border-danger/20 bg-danger-light px-4 py-3 text-sm text-danger">
           <AlertCircle className="size-4 shrink-0" />
@@ -124,10 +178,20 @@ export function EnrolPayModal({
         </div>
       )}
 
-      {preparing && !clientSecret && (
+      {preparing && !clientSecret && !creditOnly && (
         <div className="rounded-lg border border-border bg-muted/30 px-4 py-6 text-center text-sm text-muted-foreground">
           Preparing payment…
         </div>
+      )}
+
+      {creditOnly && (
+        <Button
+          onClick={handleApplyCredit}
+          disabled={applyingCredit || !!error}
+          className="mt-2 w-full"
+        >
+          {applyingCredit ? 'Enrolling…' : `Apply ${formatCurrency(creditAppliedCents)} credit`}
+        </Button>
       )}
 
       {clientSecret && intentId && stripeJsPromise && (
@@ -139,7 +203,8 @@ export function EnrolPayModal({
           }}
         >
           <ConfirmStep
-            amountCents={amountCents}
+            stripeAmountCents={stripeAmountCents}
+            creditAppliedCents={creditAppliedCents}
             intentId={intentId}
             programId={programId}
             onError={setError}
@@ -162,12 +227,14 @@ function Backdrop({ onClose, children }: { onClose: () => void; children: React.
 }
 
 function ConfirmStep({
-  amountCents,
+  stripeAmountCents,
+  creditAppliedCents,
   intentId,
   programId,
   onError,
 }: {
-  amountCents: number
+  stripeAmountCents: number
+  creditAppliedCents: number
   intentId: string
   programId: string
   onError: (msg: string) => void
@@ -221,7 +288,11 @@ function ConfirmStep({
     <form onSubmit={handleSubmit}>
       <PaymentElement options={{ layout: 'tabs', wallets: { link: 'never' } }} />
       <Button type="submit" disabled={!stripe || submitting} className="mt-4 w-full">
-        {submitting ? 'Processing…' : `Pay ${(amountCents / 100).toLocaleString('en-AU', { style: 'currency', currency: 'AUD' })}`}
+        {submitting
+          ? 'Processing…'
+          : creditAppliedCents > 0
+            ? `Pay ${formatCurrency(stripeAmountCents)} + apply ${formatCurrency(creditAppliedCents)} credit`
+            : `Pay ${formatCurrency(stripeAmountCents)}`}
       </Button>
     </form>
   )

@@ -12,6 +12,7 @@ import { getPlayerSessionPriceBreakdown, formatDiscountSuffix, buildPricingBreak
 import { createTermSessionCharges } from '@/lib/utils/term-charges'
 import { dispatchNotification } from '@/lib/notifications/dispatch'
 import { adelaideTodayString, filterFutureSessions } from '@/lib/utils/sessions-filter'
+import { allocateChargesWithCredit, getAvailableCreditCents } from '@/lib/utils/credit-allocation'
 
 async function getParentFamilyId(): Promise<{ userId: string; familyId: string } | null> {
   const supabase = await createClient()
@@ -703,9 +704,16 @@ export async function unenrolFromProgram(
 type PreparedPayment =
   | {
       ok: true
-      clientSecret: string
-      intentId: string
+      /** Stripe client secret. Null when credit covers the full price (no card needed). */
+      clientSecret: string | null
+      /** Stripe intent id. Null when credit covers the full price. */
+      intentId: string | null
+      /** Total term price in cents (what the parent owes overall, before credit). */
       amountCents: number
+      /** Cents being applied from family credit (auto-applied per Decision #1, 05-May-2026). */
+      creditAppliedCents: number
+      /** Cents to charge via Stripe = amountCents − creditAppliedCents. Zero on credit-only path. */
+      stripeAmountCents: number
       breakdown: ReturnType<typeof buildPricingBreakdown> | null
     }
   | { ok: false; error: string }
@@ -817,6 +825,16 @@ export async function prepareEnrolPayment(
     return { ok: false, error: 'Total is below the minimum payable amount ($1)' }
   }
 
+  // ── Auto credit application (Decision #1, 05-May-2026) ────────────────
+  // Pull current spendable credit (== projected_balance when positive, the
+  // same number BalanceHero shows as "Credit on your account"). Apply up to
+  // priceCents automatically. Stripe gets charged for the remainder; if
+  // credit fully covers, skip Stripe entirely and return the credit-only
+  // path so the modal can confirm without a card.
+  const creditAvailable = await getAvailableCreditCents(supabase, auth.familyId)
+  const creditApplied = Math.min(creditAvailable, priceCents)
+  const stripeAmount = priceCents - creditApplied
+
   const pricingBreakdown = (termPrice <= 0 && sessionsTotal > 0)
     ? buildPricingBreakdown({
         basePriceCents: breakdown.basePriceCents,
@@ -829,7 +847,42 @@ export async function prepareEnrolPayment(
       })
     : null
 
-  // Create Stripe PaymentIntent
+  // Credit-only path — no Stripe round trip needed. The modal renders an
+  // "Apply $X credit" confirm button which calls applyCreditOnlyEnrol.
+  if (stripeAmount <= 0) {
+    return {
+      ok: true,
+      clientSecret: null,
+      intentId: null,
+      amountCents: priceCents,
+      creditAppliedCents: creditApplied,
+      stripeAmountCents: 0,
+      breakdown: pricingBreakdown,
+    }
+  }
+
+  // Stripe must charge at least $1.00 (AUD minimum). If applying credit
+  // would leave a residual under $1, fall back to credit-only and absorb
+  // the < $1 sliver into the credit application.
+  if (stripeAmount < 100 && creditApplied > 0) {
+    const fullCreditApplied = priceCents
+    if (creditAvailable >= fullCreditApplied) {
+      return {
+        ok: true,
+        clientSecret: null,
+        intentId: null,
+        amountCents: priceCents,
+        creditAppliedCents: fullCreditApplied,
+        stripeAmountCents: 0,
+        breakdown: pricingBreakdown,
+      }
+    }
+    // Otherwise fall through and let Stripe see the small residual; this
+    // path is rare (would need credit ≈ priceCents − $0.99) and the error
+    // surfaces clearly to admin via the standard pay-now error.
+  }
+
+  // Create Stripe PaymentIntent for the residual amount only.
   const { getStripe } = await import('@/lib/stripe/client')
   const { getOrCreateStripeCustomerForFamily } = await import('@/lib/stripe/customer')
   const stripe = getStripe()
@@ -845,7 +898,7 @@ export async function prepareEnrolPayment(
   let intent
   try {
     intent = await stripe.paymentIntents.create({
-      amount: priceCents,
+      amount: stripeAmount,
       currency: 'aud',
       customer: customerId,
       automatic_payment_methods: { enabled: true },
@@ -856,6 +909,8 @@ export async function prepareEnrolPayment(
         user_id: auth.userId,
         program_id: programId,
         player_id: playerId,
+        credit_applied_cents: String(creditApplied),
+        full_price_cents: String(priceCents),
       },
     })
   } catch (e) {
@@ -871,7 +926,7 @@ export async function prepareEnrolPayment(
     .from('payments')
     .insert({
       family_id: auth.familyId,
-      amount_cents: priceCents,
+      amount_cents: stripeAmount,
       payment_method: 'stripe',
       status: 'pending',
       stripe_payment_intent_id: intent.id,
@@ -888,6 +943,8 @@ export async function prepareEnrolPayment(
     clientSecret: intent.client_secret,
     intentId: intent.id,
     amountCents: priceCents,
+    creditAppliedCents: creditApplied,
+    stripeAmountCents: stripeAmount,
     breakdown: pricingBreakdown,
   }
 }
@@ -925,6 +982,10 @@ export async function finalizeEnrolPayment(intentId: string): Promise<FinalizeRe
 
   const programId = md.program_id as string
   const playerId = md.player_id as string
+  // Credit applied at prepare time (cents). Charges should sum to
+  // intent.amount + creditAppliedCents — the FULL term price, not just Stripe.
+  const creditAppliedCents = parseInt(md.credit_applied_cents ?? '0', 10) || 0
+  const fullPriceCents = (intent.amount ?? 0) + creditAppliedCents
 
   // Find the pending payment row for this intent
   const { data: payment } = await supabase
@@ -1030,7 +1091,7 @@ export async function finalizeEnrolPayment(intentId: string): Promise<FinalizeRe
       booked_by: auth.userId,
       notes: `Pay-now via Stripe [stripe_intent:${intentId}]`,
       payment_option: 'pay_now',
-      price_cents: intent.amount,
+      price_cents: fullPriceCents,
       discount_cents: 0,
       sessions_total: sessionsTotal,
       sessions_charged: 0,
@@ -1038,8 +1099,8 @@ export async function finalizeEnrolPayment(intentId: string): Promise<FinalizeRe
     .select('id')
     .single()
 
-  // Per-session charges — N rows summing to intent.amount exactly. Last row
-  // absorbs any rounding so Σ matches the Stripe-paid amount.
+  // Per-session charges — N rows summing to fullPriceCents (intent.amount +
+  // creditAppliedCents). Last row absorbs any rounding so Σ == fullPrice.
   let newCharges: { chargeId: string; sessionId: string; amountCents: number }[] = []
   if (booking && sessionsTotal > 0) {
     try {
@@ -1056,7 +1117,7 @@ export async function finalizeEnrolPayment(intentId: string): Promise<FinalizeRe
         sessions: sessionsList,
         playerName: player.first_name,
         programName: program.name,
-        forceTotalCents: intent.amount,
+        forceTotalCents: fullPriceCents,
       })
     } catch (e) {
       console.error('finalize per-session charge creation failed:', e instanceof Error ? e.message : e, 'PI:', intentId)
@@ -1072,23 +1133,22 @@ export async function finalizeEnrolPayment(intentId: string): Promise<FinalizeRe
       .eq('status', 'pending')
   }
 
-  // Targeted-first allocation: pin the payment to the new per-session charges
-  // (one allocation per charge, summing to intent.amount). This avoids older
-  // per-session charges (e.g. attendance under a prior pay_later enrolment)
-  // eating the payment via FIFO.
+  // Allocate: Stripe payment fills first (Plan 14 targeted-first), then any
+  // applied credit pulls from existing-payment surplus FIFO. When no credit
+  // applied, behaves identically to the prior targeted-only allocation.
   if (newCharges.length > 0) {
     // Clear any prior allocations for this payment (idempotent on re-fire).
     await supabase.from('payment_allocations').delete().eq('payment_id', payment.id)
-    const allocations = newCharges.map(c => ({
-      payment_id: payment.id,
-      charge_id: c.chargeId,
-      amount_cents: c.amountCents,
-    }))
-    const { error: allocErr } = await supabase
-      .from('payment_allocations')
-      .insert(allocations)
-    if (allocErr) {
-      console.error('targeted allocation insert failed:', allocErr.message, 'PI:', intentId)
+    try {
+      await allocateChargesWithCredit({
+        supabase,
+        familyId: auth.familyId,
+        newCharges: newCharges.map(c => ({ chargeId: c.chargeId, amountCents: c.amountCents })),
+        newPayment: { id: payment.id, amountCents: intent.amount ?? 0 },
+        creditAppliedCents,
+      })
+    } catch (e) {
+      console.error('mixed allocation insert failed:', e instanceof Error ? e.message : e, 'PI:', intentId)
       // Fallback to FIFO so the payment isn't unallocated entirely.
       await supabase.rpc('allocate_payment_to_charges', { target_payment_id: payment.id })
     }
@@ -1104,6 +1164,218 @@ export async function finalizeEnrolPayment(intentId: string): Promise<FinalizeRe
       title: 'Enrolled and Paid',
       body: `Successfully enrolled in ${program.name}. Payment received.`,
       url: `/parent/programs/${programId}`,
+    })
+  } catch { /* non-fatal */ }
+
+  revalidatePath(`/parent/programs/${programId}`)
+  revalidatePath('/parent/programs')
+  revalidatePath('/parent')
+  revalidatePath('/parent/payments')
+
+  return { ok: true, programId }
+}
+
+// ── Credit-only enrol (no Stripe round-trip) ────────────────────────────
+//
+// Called by the EnrolPayModal when prepareEnrolPayment returns clientSecret=null
+// (i.e. the family's spendable credit ≥ term price). Re-validates everything
+// `prepareEnrolPayment` checks, then creates roster + per-session charges +
+// allocations from existing-payment surplus. No PaymentIntent, no card.
+//
+// Idempotency: a duplicate-press from the modal is rare (button disables on
+// click) but possible on slow connections. If a roster row already exists for
+// this player+program, return ok without re-charging (parent gets re-routed
+// to the program detail page).
+
+type CreditOnlyResult = { ok: true; programId: string } | { ok: false; error: string }
+
+export async function applyCreditOnlyEnrol(
+  programId: string,
+  formData: FormData,
+): Promise<CreditOnlyResult> {
+  const supabase = await createClient()
+  const auth = await getParentFamilyId()
+  if (!auth) return { ok: false, error: 'Not signed in' }
+
+  const { checkRateLimitAsync } = await import('@/lib/utils/rate-limit')
+  if (!await checkRateLimitAsync(`credit-enrol:${auth.userId}`, 5, 60_000)) {
+    return { ok: false, error: 'Too many requests. Please wait a moment.' }
+  }
+
+  const parsed = validateFormData(formData, enrolFormSchema)
+  if (!parsed.success) return { ok: false, error: parsed.error }
+  const { player_id: playerId, booking_type: bookingType } = parsed.data
+  if (bookingType !== 'term' && bookingType !== 'term_enrollment') {
+    return { ok: false, error: 'Credit application is only for term enrolments' }
+  }
+
+  // Player ownership + eligibility
+  const { data: player } = await supabase
+    .from('players')
+    .select('id, first_name, gender, classifications, track')
+    .eq('id', playerId)
+    .eq('family_id', auth.familyId)
+    .single()
+  if (!player) return { ok: false, error: 'Player not found' }
+
+  const { data: program } = await supabase
+    .from('programs')
+    .select('id, name, type, day_of_week, term_fee_cents, per_session_cents, max_capacity, early_pay_discount_pct, early_bird_deadline, early_pay_discount_pct_tier2, early_bird_deadline_tier2, allowed_classifications, gender_restriction, track_required')
+    .eq('id', programId)
+    .single()
+  if (!program) return { ok: false, error: 'Program not found' }
+
+  const eligibility = isEligible(
+    { gender: player.gender as 'male' | 'female' | 'non_binary' | null, classifications: player.classifications, track: player.track },
+    { day_of_week: program.day_of_week, allowed_classifications: program.allowed_classifications, gender_restriction: program.gender_restriction, track_required: program.track_required },
+  )
+  if (!eligibility.ok) return { ok: false, error: eligibility.message ?? 'Not eligible' }
+
+  // Already enrolled? (idempotency)
+  const { data: existing } = await supabase
+    .from('program_roster')
+    .select('id')
+    .eq('program_id', programId)
+    .eq('player_id', playerId)
+    .eq('status', 'enrolled')
+    .maybeSingle()
+  if (existing) return { ok: true, programId }
+
+  // Capacity check
+  const { count: enrolledCount } = await supabase
+    .from('program_roster')
+    .select('*', { count: 'exact', head: true })
+    .eq('program_id', programId)
+    .eq('status', 'enrolled')
+  if (program.max_capacity && (enrolledCount ?? 0) >= program.max_capacity) {
+    return { ok: false, error: 'This program is full' }
+  }
+
+  // Recompute price from scratch (don't trust the modal's stale numbers)
+  const { data: futureRows } = await supabase
+    .from('sessions')
+    .select('id, date, start_time')
+    .eq('program_id', programId)
+    .gte('date', adelaideTodayString())
+    .eq('status', 'scheduled')
+    .order('date', { ascending: true })
+  const sessionsList = filterFutureSessions(
+    (futureRows ?? []) as { id: string; date: string; start_time: string | null }[],
+  )
+  const sessionsTotal = sessionsList.length
+
+  const termPrice = await getTermPrice(supabase, auth.familyId, programId, program.type)
+  const breakdown = await getPlayerSessionPriceBreakdown(
+    supabase, auth.familyId, programId, program.type, playerId,
+  )
+
+  let priceCents = termPrice > 0 ? termPrice : breakdown.priceCents * sessionsTotal
+  let activeDiscountPct = 0
+  const eb = getActiveEarlyBird({
+    early_pay_discount_pct: program.early_pay_discount_pct ?? null,
+    early_bird_deadline: program.early_bird_deadline ?? null,
+    early_pay_discount_pct_tier2: program.early_pay_discount_pct_tier2 ?? null,
+    early_bird_deadline_tier2: program.early_bird_deadline_tier2 ?? null,
+  })
+  if (eb.pct > 0 && priceCents > 0) {
+    priceCents = priceCents - Math.round(priceCents * (eb.pct / 100))
+    activeDiscountPct = eb.pct
+  }
+  const earlyBirdMeta = {
+    tier: eb.tier,
+    deadline: eb.deadline,
+    tier2Pct: program.early_pay_discount_pct_tier2 ?? null,
+    tier2Deadline: program.early_bird_deadline_tier2 ?? null,
+  }
+
+  if (priceCents <= 0 || sessionsTotal === 0) {
+    return { ok: false, error: 'Nothing to charge for this program right now.' }
+  }
+
+  // Re-check credit (race-safety — another tab may have spent it)
+  const creditAvailable = await getAvailableCreditCents(supabase, auth.familyId)
+  if (creditAvailable < priceCents) {
+    return { ok: false, error: `Credit dropped below the term price. Refresh and try again — you'd need to pay $${((priceCents - creditAvailable) / 100).toFixed(2)} by card now.` }
+  }
+
+  // Create roster + booking + per-session charges, then allocate from credit.
+  await supabase.from('program_roster').insert({
+    program_id: programId,
+    player_id: playerId,
+    status: 'enrolled',
+  })
+
+  const { data: booking } = await supabase
+    .from('bookings')
+    .insert({
+      family_id: auth.familyId,
+      player_id: playerId,
+      program_id: programId,
+      booking_type: 'term',
+      status: 'confirmed',
+      booked_by: auth.userId,
+      notes: 'Pay-now via account credit (no Stripe)',
+      payment_option: 'pay_now',
+      price_cents: priceCents,
+      discount_cents: 0,
+      sessions_total: sessionsTotal,
+      sessions_charged: 0,
+    })
+    .select('id')
+    .single()
+
+  let newCharges: { chargeId: string; sessionId: string; amountCents: number }[] = []
+  if (booking) {
+    try {
+      newCharges = await createTermSessionCharges(supabase, {
+        familyId: auth.familyId,
+        playerId,
+        programId,
+        bookingId: booking.id,
+        programType: program.type,
+        earlyBirdPct: activeDiscountPct,
+        earlyBirdMeta,
+        chargeStatus: 'confirmed',
+        createdBy: auth.userId,
+        sessions: sessionsList,
+        playerName: player.first_name,
+        programName: program.name,
+        forceTotalCents: priceCents,
+      })
+    } catch (e) {
+      console.error('credit-only per-session charge creation failed:', e instanceof Error ? e.message : e)
+      return { ok: false, error: 'Failed to record enrolment charges. Contact admin.' }
+    }
+  }
+
+  // Allocate the entire price from existing credit (no new payment row).
+  if (newCharges.length > 0) {
+    try {
+      await allocateChargesWithCredit({
+        supabase,
+        familyId: auth.familyId,
+        newCharges: newCharges.map(c => ({ chargeId: c.chargeId, amountCents: c.amountCents })),
+        newPayment: null,
+        creditAppliedCents: priceCents,
+      })
+    } catch (e) {
+      console.error('credit allocation insert failed:', e instanceof Error ? e.message : e)
+      // Charges exist but unallocated — admin can repair via the discount centre.
+    }
+  }
+  await supabase.rpc('recalculate_family_balance', { target_family_id: auth.familyId })
+
+  // Notify
+  try {
+    await sendPushToUser(auth.userId, {
+      title: 'Enrolled — paid from credit',
+      body: `Successfully enrolled in ${program.name}. Paid from your account credit.`,
+      url: `/parent/programs/${programId}`,
+    })
+    await dispatchNotification('parent.program.enrolled', {
+      playerName: player.first_name,
+      programName: program.name,
+      excludeUserId: auth.userId,
     })
   } catch { /* non-fatal */ }
 
