@@ -9,9 +9,12 @@ import { createCharge, getTermPrice, voidCharge, getExistingSessionCharge, forma
 import { getTermLabel } from '@/lib/utils/school-terms'
 import { isEligible, getActiveEarlyBird } from '@/lib/utils/eligibility'
 import { getPlayerSessionPriceBreakdown, formatDiscountSuffix, buildPricingBreakdown } from '@/lib/utils/player-pricing'
-import { createTermSessionCharges } from '@/lib/utils/term-charges'
+import { createTermSessionCharges, gatherTermEnrolSessions, voidAbsorbableCharges } from '@/lib/utils/term-charges'
 import { dispatchNotification } from '@/lib/notifications/dispatch'
-import { adelaideTodayString, filterFutureSessions } from '@/lib/utils/sessions-filter'
+// Note: sessions-filter helpers (adelaideTodayString, filterFutureSessions,
+// isSessionFuture) are now centralised in `gatherTermEnrolSessions` for the
+// term-enrol paths. `unenrolFromProgram` still imports `isSessionFuture`
+// dynamically inline below.
 import { allocateChargesWithCredit, getAvailableCreditCents } from '@/lib/utils/credit-allocation'
 
 async function getParentFamilyId(): Promise<{ userId: string; familyId: string } | null> {
@@ -173,19 +176,19 @@ export async function enrolInProgram(programId: string, familyId: string, formDa
   const isTermEnrollment = bookingType === 'term_enrollment' || bookingType === 'term'
   const effectivePaymentOption = isTermEnrollment ? (paymentOption || 'pay_later') : null
 
-  // Get all upcoming scheduled sessions for this program (used for term enrol).
-  // Adelaide-aware: drop today's-already-started sessions via filterFutureSessions.
-  const { data: upcomingSessions } = await supabase
-    .from('sessions')
-    .select('id, date, start_time')
-    .eq('program_id', programId)
-    .gte('date', adelaideTodayString())
-    .eq('status', 'scheduled')
-    .order('date', { ascending: true })
-
-  const sessionsList = filterFutureSessions(
-    (upcomingSessions ?? []) as { id: string; date: string; start_time: string | null }[],
-  )
+  // Mid-term enrol absorption: combined list = past-attended-present sessions
+  // + future-scheduled sessions, with any pre-existing per-session charges
+  // (walk-ins, partial-enrol leftovers) flagged for voiding before the new
+  // term charges are written. Ensures Seb-style mid-week enrolments fold
+  // today's already-attended session into the term math at the discounted
+  // rate, instead of double-billing a walk-in + a term-future fan-out.
+  let sessionsList: { id: string; date: string; start_time: string | null }[] = []
+  let absorbableChargeIds: string[] = []
+  if (isTermEnrollment) {
+    const gathered = await gatherTermEnrolSessions(supabase, programId, playerId)
+    sessionsList = gathered.combinedSessions
+    absorbableChargeIds = gathered.absorbableChargeIds
+  }
   const sessionsTotal = sessionsList.length
 
   // Active early-bird percent (term path only).
@@ -267,6 +270,13 @@ export async function enrolInProgram(programId: string, familyId: string, formDa
   // pay-later (commitment but not yet payment-driven).
   // The new inline-Stripe path lives in finalizeEnrolPayment instead.
   if (isTermEnrollment && booking && sessionsTotal > 0) {
+    // Void any absorbable per-session charges (walk-in + partial-enrol
+    // leftovers for sessions in the combined list) before re-fanning the
+    // term. Service client because parents have no UPDATE policy on
+    // `charges` (same shape as unenrolFromProgram).
+    if (absorbableChargeIds.length > 0) {
+      await voidAbsorbableCharges(createServiceClient(), absorbableChargeIds, familyId)
+    }
     const chargeStatus = effectivePaymentOption === 'pay_now' ? 'confirmed' : 'pending'
     try {
       await createTermSessionCharges(supabase, {
@@ -843,17 +853,14 @@ export async function prepareEnrolPayment(
   if (existing) return { ok: false, error: 'Player already enrolled' }
 
   // Compute price + breakdown.
-  // Adelaide-aware future filter: today's-already-started sessions are excluded.
-  const { data: futureSessions } = await supabase
-    .from('sessions')
-    .select('id, date, start_time')
-    .eq('program_id', programId)
-    .gte('date', adelaideTodayString())
-    .eq('status', 'scheduled')
-
-  const sessionsList = filterFutureSessions(
-    (futureSessions ?? []) as { id: string; date: string; start_time: string | null }[],
-  )
+  // Mid-term absorption (06-May-2026): combined list folds in any
+  // past-attended sessions for this player+program so the term math covers
+  // them at the discounted rate. `pendingVoidCreditCents` is the surplus
+  // we'll free at finalize time when we void the absorbable walk-in /
+  // leftover charges — added to today's projected credit so a paid walk-in
+  // reduces the Stripe charge by exactly the prior payment.
+  const gathered = await gatherTermEnrolSessions(supabase, programId, playerId)
+  const sessionsList = gathered.combinedSessions
   const sessionsTotal = sessionsList.length
   const termPrice = await getTermPrice(supabase, auth.familyId, programId, program.type)
   const breakdown = await getPlayerSessionPriceBreakdown(
@@ -885,11 +892,14 @@ export async function prepareEnrolPayment(
 
   // ── Auto credit application (Decision #1, 05-May-2026) ────────────────
   // Pull current spendable credit (== projected_balance when positive, the
-  // same number BalanceHero shows as "Credit on your account"). Apply up to
+  // same number BalanceHero shows as "Credit on your account"). Add the
+  // "pending void" credit — payments currently allocated to absorbable
+  // charges that finalize will void, freeing that surplus. Apply up to
   // priceCents automatically. Stripe gets charged for the remainder; if
   // credit fully covers, skip Stripe entirely and return the credit-only
   // path so the modal can confirm without a card.
-  const creditAvailable = await getAvailableCreditCents(supabase, auth.familyId)
+  const projectedCredit = await getAvailableCreditCents(supabase, auth.familyId)
+  const creditAvailable = projectedCredit + gathered.pendingVoidCreditCents
   const creditApplied = Math.min(creditAvailable, priceCents)
   const stripeAmount = priceCents - creditApplied
 
@@ -1119,20 +1129,16 @@ export async function finalizeEnrolPayment(intentId: string): Promise<FinalizeRe
     console.error('Adjustment reversal failed (finalize):', e instanceof Error ? e.message : e, 'PI:', intentId)
   }
 
-  // Pull the actual upcoming sessions so per-session charges are bound by id+date.
-  // Adelaide-aware: drop today's-already-started sessions via filterFutureSessions.
-  const { data: upcomingSessions } = await supabase
-    .from('sessions')
-    .select('id, date, start_time')
-    .eq('program_id', programId)
-    .gte('date', adelaideTodayString())
-    .eq('status', 'scheduled')
-    .order('date', { ascending: true })
-
-  const sessionsList = filterFutureSessions(
-    (upcomingSessions ?? []) as { id: string; date: string; start_time: string | null }[],
-  )
+  // Re-gather sessions + absorbable charges at finalize time (don't trust
+  // prepare-time state — between prepare and finalize, parent may have
+  // marked attendance, admin may have voided a walk-in, etc). The combined
+  // list is the authoritative fan-out target; absorbable charges get
+  // voided BEFORE the new term charges are written so allocation surplus
+  // is correctly available.
+  const gathered = await gatherTermEnrolSessions(supabase, programId, playerId)
+  const sessionsList = gathered.combinedSessions
   const sessionsTotal = sessionsList.length
+  const absorbableChargeIds = gathered.absorbableChargeIds
 
   const eb = getActiveEarlyBird({
     early_pay_discount_pct: program.early_pay_discount_pct ?? null,
@@ -1167,6 +1173,14 @@ export async function finalizeEnrolPayment(intentId: string): Promise<FinalizeRe
     })
     .select('id')
     .single()
+
+  // Void absorbable charges (walk-ins + partial-enrol leftovers) BEFORE
+  // creating new term charges. Service client because parents have no
+  // UPDATE policy on `charges`. Idempotent on re-fire (status check inside
+  // voidCharge skips already-voided rows).
+  if (absorbableChargeIds.length > 0) {
+    await voidAbsorbableCharges(createServiceClient(), absorbableChargeIds, auth.familyId)
+  }
 
   // Per-session charges — N rows summing to fullPriceCents (intent.amount +
   // creditAppliedCents). Last row absorbs any rounding so Σ == fullPrice.
@@ -1320,18 +1334,13 @@ export async function applyCreditOnlyEnrol(
     return { ok: false, error: 'This program is full' }
   }
 
-  // Recompute price from scratch (don't trust the modal's stale numbers)
-  const { data: futureRows } = await supabase
-    .from('sessions')
-    .select('id, date, start_time')
-    .eq('program_id', programId)
-    .gte('date', adelaideTodayString())
-    .eq('status', 'scheduled')
-    .order('date', { ascending: true })
-  const sessionsList = filterFutureSessions(
-    (futureRows ?? []) as { id: string; date: string; start_time: string | null }[],
-  )
+  // Recompute price from scratch (don't trust the modal's stale numbers).
+  // Mid-term absorption: combined sessions + absorbable charge ids drive the
+  // fan-out; the absorbable allocations contribute to today's effective credit.
+  const gathered = await gatherTermEnrolSessions(supabase, programId, playerId)
+  const sessionsList = gathered.combinedSessions
   const sessionsTotal = sessionsList.length
+  const absorbableChargeIds = gathered.absorbableChargeIds
 
   const termPrice = await getTermPrice(supabase, auth.familyId, programId, program.type)
   const breakdown = await getPlayerSessionPriceBreakdown(
@@ -1361,8 +1370,9 @@ export async function applyCreditOnlyEnrol(
     return { ok: false, error: 'Nothing to charge for this program right now.' }
   }
 
-  // Re-check credit (race-safety — another tab may have spent it)
-  const creditAvailable = await getAvailableCreditCents(supabase, auth.familyId)
+  // Re-check credit (race-safety — another tab may have spent it). Include
+  // pending-void surplus so a paid walk-in counts toward today's credit pool.
+  const creditAvailable = (await getAvailableCreditCents(supabase, auth.familyId)) + gathered.pendingVoidCreditCents
   if (creditAvailable < priceCents) {
     return { ok: false, error: `Credit dropped below the term price. Refresh and try again — you'd need to pay $${((priceCents - creditAvailable) / 100).toFixed(2)} by card now.` }
   }
@@ -1403,6 +1413,13 @@ export async function applyCreditOnlyEnrol(
     })
     .select('id')
     .single()
+
+  // Void absorbable charges BEFORE creating new term charges so the
+  // surplus is freed for allocation. Service client because parents have
+  // no UPDATE policy on `charges`.
+  if (absorbableChargeIds.length > 0) {
+    await voidAbsorbableCharges(createServiceClient(), absorbableChargeIds, auth.familyId)
+  }
 
   let newCharges: { chargeId: string; sessionId: string; amountCents: number }[] = []
   if (booking) {
