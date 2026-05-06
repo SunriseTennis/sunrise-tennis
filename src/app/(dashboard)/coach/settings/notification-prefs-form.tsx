@@ -19,14 +19,11 @@ interface Props {
 }
 
 export function CoachNotificationPrefsForm({ initialPrefs }: Props) {
+  // Account & security category is intentionally NOT rendered — the dispatcher
+  // forces those rules through (MANDATORY_CATEGORIES) regardless of prefs, and
+  // showing a locked "Always on" row added noise without giving coaches
+  // anything to do.
   const categories: MatrixCategory[] = [
-    {
-      key: 'account',
-      label: 'Account & security',
-      description: 'Account-state changes, password resets, login alerts.',
-      mandatory: true,
-      defaults: { email: true, push: true, in_app: true },
-    },
     {
       key: 'booking',
       label: 'New booking requests',

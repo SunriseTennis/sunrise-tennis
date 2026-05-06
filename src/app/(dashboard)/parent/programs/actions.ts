@@ -7,6 +7,7 @@ import { sendPushToUser } from '@/lib/push/send'
 import { validateFormData, enrolFormSchema } from '@/lib/utils/validation'
 import { createCharge, getTermPrice, voidCharge, getExistingSessionCharge, formatChargeDescription } from '@/lib/utils/billing'
 import { getTermLabel } from '@/lib/utils/school-terms'
+import { formatDate } from '@/lib/utils/dates'
 import { isEligible, getActiveEarlyBird } from '@/lib/utils/eligibility'
 import { getPlayerSessionPriceBreakdown, formatDiscountSuffix, buildPricingBreakdown } from '@/lib/utils/player-pricing'
 import { createTermSessionCharges, gatherTermEnrolSessions, voidAbsorbableCharges } from '@/lib/utils/term-charges'
@@ -341,10 +342,14 @@ export async function enrolInProgram(programId: string, familyId: string, formDa
       url: `/parent/programs/${programId}`,
     })
 
-    // Also notify admin via the rules-driven dispatcher.
+    // Also notify admin via the rules-driven dispatcher. The `parent.session.booked`
+    // rule body uses {dateSuffix} so we leave it empty here — casual enrol has
+    // no session date (date TBD until the parent picks one via the calendar
+    // quick-book path, which fires the same rule with dateSuffix populated).
     await dispatchNotification(isTermEnrollment ? 'parent.program.enrolled' : 'parent.session.booked', {
       playerName: player.first_name,
       programName: program?.name ?? 'program',
+      dateSuffix: '',
       excludeUserId: auth.userId,
     })
   } catch (e) {
@@ -499,6 +504,49 @@ export async function bookSession(
         createdBy: auth.userId,
         pricingBreakdown: sessionBreakdown as never,
       })
+    }
+  }
+
+  // ── Notification (Plan 22 follow-up) ────────────────────────────────────
+  // Calendar quick-book had zero notification firing — neither family-side
+  // confirmation nor admin-side alert. Mirror the parent enrolInProgram
+  // shape: an in-platform `booking_confirmation` row + push for the parent,
+  // and a rules-driven `parent.session.booked` dispatch for admins. Date is
+  // known here (session.date), so dateSuffix is populated.
+  if (program) {
+    const formattedDate = formatDate(session.date)
+    const playerLabel = playerIds.length === 1
+      ? (playerNameById.get(playerIds[0]) ?? 'your child')
+      : `${playerIds.length} players`
+    const sessionMsg = `Booked ${playerLabel} into ${program.name ?? 'session'} on ${formattedDate}.`
+
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (supabase as any).rpc('create_booking_notification', {
+        p_type: 'booking_confirmation',
+        p_title: 'Session Booked',
+        p_body: sessionMsg,
+        p_url: `/parent/programs/${programId}`,
+        p_family_id: auth.familyId,
+      })
+
+      await sendPushToUser(auth.userId, {
+        title: 'Session Booked',
+        body: sessionMsg,
+        url: `/parent/programs/${programId}`,
+      })
+
+      // Admin-side rule fires once per booked player.
+      for (const pid of playerIds) {
+        await dispatchNotification('parent.session.booked', {
+          playerName: playerNameById.get(pid) ?? 'A player',
+          programName: program.name ?? 'session',
+          dateSuffix: ` on ${formattedDate}`,
+          excludeUserId: auth.userId,
+        })
+      }
+    } catch (e) {
+      console.error('bookSession notification failed:', e instanceof Error ? e.message : 'Unknown error')
     }
   }
 
