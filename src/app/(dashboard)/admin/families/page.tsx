@@ -14,10 +14,55 @@ export default async function FamiliesPage() {
     .select('id, display_id, family_name, primary_contact, status, family_balance(balance_cents, confirmed_balance_cents, projected_balance_cents), players(first_name, last_name)')
     .order('display_id')
 
-  const rows = (families ?? []).map((f) => {
+  const familyList = families ?? []
+  const familyIds = familyList.map((f) => f.id)
+
+  // Mirror the bulk-invite derivation so the connection column is the same
+  // signal admin sees on /admin/families/bulk-invite.
+  const { data: parentRoles } = familyIds.length
+    ? await supabase
+        .from('user_roles')
+        .select('family_id')
+        .in('family_id', familyIds)
+        .eq('role', 'parent')
+    : { data: [] as { family_id: string }[] }
+
+  const signedUpSet = new Set((parentRoles ?? []).map((r) => r.family_id as string))
+
+  const { data: pendingInvites } = familyIds.length
+    ? await supabase
+        .from('invitations')
+        .select('family_id, expires_at, created_at')
+        .in('family_id', familyIds)
+        .eq('status', 'pending')
+        .order('created_at', { ascending: false })
+    : { data: [] as { family_id: string; expires_at: string | null; created_at: string }[] }
+
+  const pendingByFamily = new Map<string, { expiresAt: string | null }>()
+  for (const inv of pendingInvites ?? []) {
+    const fid = inv.family_id as string
+    if (!pendingByFamily.has(fid)) {
+      pendingByFamily.set(fid, { expiresAt: (inv.expires_at as string | null) ?? null })
+    }
+  }
+
+  const rows = familyList.map((f) => {
     const contact = f.primary_contact as { name?: string; phone?: string; email?: string } | null
     const balanceRow = f.family_balance as unknown as { balance_cents: number; confirmed_balance_cents: number; projected_balance_cents: number } | null
     const players = (f.players ?? []) as { first_name: string; last_name: string }[]
+
+    const isSignedUp = signedUpSet.has(f.id)
+    const pending = pendingByFamily.get(f.id)
+    const isPendingExpired = pending?.expiresAt ? new Date(pending.expiresAt).getTime() < Date.now() : false
+    const hasEmail = Boolean(contact?.email?.trim())
+
+    let connectionState: 'connected' | 'invited' | 'invite_expired' | 'not_invited' | 'no_email'
+    if (isSignedUp) connectionState = 'connected'
+    else if (pending && !isPendingExpired) connectionState = 'invited'
+    else if (pending && isPendingExpired) connectionState = 'invite_expired'
+    else if (!hasEmail) connectionState = 'no_email'
+    else connectionState = 'not_invited'
+
     return {
       id: f.id,
       displayId: f.display_id,
@@ -29,6 +74,8 @@ export default async function FamiliesPage() {
       confirmedBalanceCents: balanceRow?.confirmed_balance_cents ?? 0,
       projectedBalanceCents: balanceRow?.projected_balance_cents ?? 0,
       playerNames: players.map(p => `${p.first_name} ${p.last_name}`),
+      connectionState,
+      pendingExpiresAt: pending?.expiresAt ?? null,
     }
   })
 
