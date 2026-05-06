@@ -33,12 +33,21 @@ export default async function ParentSettingsPage({
   const familyId = userRole?.family_id
   if (!familyId) redirect('/parent')
 
-  const [{ data: family }, { data: players }] = await Promise.all([
+  const [{ data: family }, { data: players }, { data: userPrefsRow }] = await Promise.all([
     supabase.from('families').select('*').eq('id', familyId).single(),
     supabase.from('players').select('id, first_name, last_name, media_consent_coaching, media_consent_social').eq('family_id', familyId).order('first_name'),
+    supabase.from('user_notification_preferences').select('prefs').eq('user_id', user.id).maybeSingle(),
   ])
 
   if (!family) redirect('/parent')
+
+  type ChannelPrefs = Partial<Record<'email' | 'push' | 'in_app', Partial<Record<string, boolean>>>>
+  const userPrefs: ChannelPrefs = (userPrefsRow?.prefs as ChannelPrefs | null) ?? {}
+  const familyTimingRaw = (family.notification_preferences as Record<string, string> | null)?.session_reminders
+  const familyTiming: 'all' | 'first_week_and_privates' | 'privates_only' | 'off' =
+    familyTimingRaw === 'all' || familyTimingRaw === 'privates_only' || familyTimingRaw === 'off'
+      ? familyTimingRaw
+      : 'first_week_and_privates'
 
   const primaryContact = family.primary_contact as { name?: string; phone?: string; email?: string } | null
   const secondaryContact = family.secondary_contact as { name?: string; phone?: string; email?: string } | null
@@ -60,11 +69,11 @@ export default async function ParentSettingsPage({
       id: 'notifications',
       iconName: 'Bell',
       label: 'Notifications',
-      description: 'Session reminders and charge alerts',
+      description: 'Email, push, and in-app',
       content: (
         <NotificationPrefsForm
-          currentPref={(family.notification_preferences as Record<string, string> | null)?.session_reminders ?? 'first_week_and_privates'}
-          preChargeHeadsUp={((family.notification_preferences as Record<string, unknown> | null)?.pre_charge_heads_up ?? true) !== false}
+          initialPrefs={userPrefs}
+          sessionReminderTiming={familyTiming}
         />
       ),
     },

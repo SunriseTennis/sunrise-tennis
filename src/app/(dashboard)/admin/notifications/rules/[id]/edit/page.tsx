@@ -21,7 +21,7 @@ export default async function AdminNotificationRuleEditPage({
   const supabase = await createClient()
   const { data: rule } = await supabase
     .from('notification_rules')
-    .select('id, event_type, audience, enabled, channels, title_template, body_template, url_template, description, updated_at')
+    .select('id, event_type, audience, enabled, channels, title_template, body_template, body_template_push, url_template, description, updated_at')
     .eq('id', id)
     .single()
 
@@ -64,6 +64,7 @@ export default async function AdminNotificationRuleEditPage({
         channels: Array.isArray(rule.channels) ? (rule.channels as string[]) : [],
         title_template: rule.title_template,
         body_template: rule.body_template ?? '',
+        body_template_push: rule.body_template_push ?? '',
         url_template: rule.url_template ?? '',
       }} />
     </div>

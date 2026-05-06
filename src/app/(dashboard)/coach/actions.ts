@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
-import { createClient, requireCoach } from '@/lib/supabase/server'
+import { createClient, getSessionUser, requireCoach } from '@/lib/supabase/server'
 import {
   validateFormData,
   lessonNoteFormSchema,
@@ -930,34 +930,83 @@ export async function addExceptionRange(formData: FormData) {
   redirect('/coach/availability?success=Exception+added')
 }
 
-// ── Coach Notification Preferences ─────────────────────────────────────
+// ── Coach Notification Preferences (Plan 22 Phase 4.2 — matrix) ─────────
 
+/**
+ * Coach matrix: same shape as parent (channel × category) but scoped to
+ * `booking | schedule | reminder | coach`. Account is mandatory and rendered
+ * locked. The dispatcher already gates per (channel, category) so the only
+ * thing we write here is `user_notification_preferences.prefs`.
+ *
+ * Audit log: one row per opt-out (true → false transition) with
+ * `source: 'settings_ui'`. Mirrors the parent path.
+ */
 export async function updateCoachNotificationPreferences(formData: FormData) {
+  const user = await getSessionUser()
+  if (!user) redirect('/login')
+
   const { coachId } = await requireCoach()
   if (!coachId) redirect('/coach?error=No+coach+profile+found')
   const supabase = await createClient()
 
-  const next = {
-    booking_requests: formData.get('booking_requests') === 'on',
-    daily_session_digest: formData.get('daily_session_digest') === 'on',
-    late_cancellations: formData.get('late_cancellations') === 'on',
+  const CHANNELS = ['email', 'push', 'in_app'] as const
+  const CATEGORIES = ['booking', 'schedule', 'reminder', 'coach'] as const
+
+  const newPrefs: Record<string, Record<string, boolean>> = {}
+  for (const channel of CHANNELS) {
+    newPrefs[channel] = {}
+    for (const category of CATEGORIES) {
+      newPrefs[channel][category] = formData.get(`pref.${channel}.${category}`) === 'on'
+    }
   }
 
-  // Preserve any other keys that might exist
-  const { data: existing } = await supabase
-    .from('coaches')
-    .select('notification_preferences')
-    .eq('id', coachId)
-    .single()
-  const current = (existing?.notification_preferences as Record<string, unknown> | null) ?? {}
+  // Read existing for diff (audit opt-outs).
+  const { data: existingRow } = await supabase
+    .from('user_notification_preferences')
+    .select('prefs')
+    .eq('user_id', user.id)
+    .maybeSingle()
 
-  const { error } = await supabase
-    .from('coaches')
-    .update({ notification_preferences: { ...current, ...next } })
-    .eq('id', coachId)
+  const previousPrefs =
+    (existingRow?.prefs as Record<string, Record<string, boolean>> | null) ?? {}
 
-  if (error) {
+  const optOuts: Array<{ channel: string; category: string }> = []
+  for (const channel of CHANNELS) {
+    for (const category of CATEGORIES) {
+      const wasOn = previousPrefs[channel]?.[category] !== false
+      const nowOff = newPrefs[channel][category] === false
+      if (wasOn && nowOff) optOuts.push({ channel, category })
+    }
+  }
+
+  const { error: prefsError } = await supabase
+    .from('user_notification_preferences')
+    .upsert({ user_id: user.id, prefs: newPrefs }, { onConflict: 'user_id' })
+
+  if (prefsError) {
+    console.error('[settings] coach prefs upsert failed:', prefsError.message)
     redirect(`/coach/settings?error=${encodeURIComponent('Failed to update preferences')}`)
+  }
+
+  if (optOuts.length > 0) {
+    try {
+      await supabase.from('audit_log').insert(
+        optOuts.map((o) => ({
+          user_id: user.id,
+          action: 'notification_opt_out',
+          entity_type: 'user_notification_preferences',
+          entity_id: user.id,
+          new_values: {
+            channel: o.channel,
+            category: o.category,
+            value: false,
+            source: 'settings_ui',
+          },
+        })),
+      )
+    } catch (e) {
+      console.error('[settings] coach audit_log insert failed:', e)
+    }
   }
 
   revalidatePath('/coach/settings')

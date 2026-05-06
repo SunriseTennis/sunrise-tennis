@@ -93,6 +93,13 @@ export function NotificationFeed({
 }) {
   const [notifications, setNotifications] = useState(initialNotifications)
   const [filter, setFilter] = useState<'unread' | 'read'>('unread')
+  // Plan 22 Phase 4.4 — tap once expands inline (full body + Open button); tap
+  // again or tap a different row collapses. Push notifications are
+  // truncated by iOS/Android, so the in-app feed is where parents read the
+  // full text. Auto-navigating on tap (the previous behaviour) hid that
+  // text; expansion lets parents see the full message before deciding to
+  // open the link.
+  const [expandedId, setExpandedId] = useState<string | null>(null)
   const router = useRouter()
 
   const supabase = createBrowserClient(
@@ -107,7 +114,7 @@ export function NotificationFeed({
     : notifications.filter((n) => n.readAt)
   const groups = groupByDate(filtered)
 
-  async function markAsRead(id: string, url?: string | null) {
+  async function markRowReadOnly(id: string) {
     await supabase
       .from('notification_recipients')
       .update({ read_at: new Date().toISOString() })
@@ -116,7 +123,21 @@ export function NotificationFeed({
     setNotifications((prev) =>
       prev.map((n) => (n.id === id ? { ...n, readAt: new Date().toISOString() } : n)),
     )
+  }
 
+  function toggleExpand(id: string, currentlyUnread: boolean) {
+    if (expandedId === id) {
+      setExpandedId(null)
+    } else {
+      setExpandedId(id)
+      if (currentlyUnread) {
+        // Mark read on first expansion. Fire-and-forget — UI already updated.
+        markRowReadOnly(id)
+      }
+    }
+  }
+
+  function openUrl(url: string | null | undefined) {
     if (url && url.startsWith('/') && !url.startsWith('//')) {
       router.push(url)
     }
@@ -194,68 +215,87 @@ export function NotificationFeed({
                   {group.items.map((n) => {
                     const config = getTypeConfig(n.type)
                     const Icon = config.icon
+                    const isExpanded = expandedId === n.id
+                    const hasUrl = !!(n.url && n.url.startsWith('/') && !n.url.startsWith('//'))
                     return (
-                      <button
-                        key={n.id}
-                        onClick={() => markAsRead(n.id, n.url)}
-                        className={cn(
-                          'flex w-full items-start gap-3 px-4 py-3.5 text-left transition-colors',
-                          !n.readAt ? 'bg-[#FFF6ED]' : 'hover:bg-[#FFF6ED]',
-                        )}
-                      >
-                        {/* Unread dot */}
-                        <div className="mt-2.5 w-2 shrink-0">
-                          {!n.readAt && (
-                            <div className="size-2 rounded-full bg-primary" />
-                          )}
-                        </div>
-
-                        {/* Icon */}
-                        <div
+                      <div key={n.id}>
+                        <button
+                          onClick={() => toggleExpand(n.id, !n.readAt)}
                           className={cn(
-                            'mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full',
-                            !n.readAt
-                              ? 'bg-primary/10 text-primary'
-                              : 'bg-[#F0B8B0]/20 text-slate-blue',
+                            'flex w-full items-start gap-3 px-4 py-3.5 text-left transition-colors',
+                            !n.readAt ? 'bg-[#FFF6ED]' : 'hover:bg-[#FFF6ED]',
+                            isExpanded && 'bg-[#FFE8D6]',
                           )}
+                          aria-expanded={isExpanded}
                         >
-                          <Icon className="size-4" />
-                        </div>
+                          {/* Unread dot */}
+                          <div className="mt-2.5 w-2 shrink-0">
+                            {!n.readAt && (
+                              <div className="size-2 rounded-full bg-primary" />
+                            )}
+                          </div>
 
-                        {/* Content */}
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-start justify-between gap-2">
-                            <p
-                              className={cn(
-                                'text-sm leading-snug',
-                                !n.readAt
-                                  ? 'font-semibold text-deep-navy'
-                                  : 'text-deep-navy/80',
-                              )}
-                            >
-                              {n.title}
-                            </p>
-                            <span className="shrink-0 text-[10px] text-slate-blue/60 tabular-nums">
-                              {n.createdAt ? formatRelativeTime(n.createdAt) : ''}
+                          {/* Icon */}
+                          <div
+                            className={cn(
+                              'mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full',
+                              !n.readAt
+                                ? 'bg-primary/10 text-primary'
+                                : 'bg-[#F0B8B0]/20 text-slate-blue',
+                            )}
+                          >
+                            <Icon className="size-4" />
+                          </div>
+
+                          {/* Content */}
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-start justify-between gap-2">
+                              <p
+                                className={cn(
+                                  'text-sm leading-snug',
+                                  !n.readAt
+                                    ? 'font-semibold text-deep-navy'
+                                    : 'text-deep-navy/80',
+                                )}
+                              >
+                                {n.title}
+                              </p>
+                              <span className="shrink-0 text-[10px] text-slate-blue/60 tabular-nums">
+                                {n.createdAt ? formatRelativeTime(n.createdAt) : ''}
+                              </span>
+                            </div>
+                            {n.body && (
+                              <p className={cn(
+                                'mt-0.5 text-xs leading-relaxed text-slate-blue',
+                                !isExpanded && 'line-clamp-2',
+                              )}>
+                                {n.body}
+                              </p>
+                            )}
+                            <span className="mt-1 inline-block text-[10px] font-medium text-slate-blue/60">
+                              {config.label}
                             </span>
                           </div>
-                          {n.body && (
-                            <p className="mt-0.5 text-xs leading-relaxed text-slate-blue line-clamp-2">
-                              {n.body}
-                            </p>
-                          )}
-                          <span className="mt-1 inline-block text-[10px] font-medium text-slate-blue/60">
-                            {config.label}
-                          </span>
-                        </div>
 
-                        {/* Read indicator */}
-                        {!n.readAt && (
-                          <div className="mt-1 shrink-0">
-                            <Check className="size-3.5 text-slate-blue/40" />
+                          {/* Read indicator */}
+                          {!n.readAt && !isExpanded && (
+                            <div className="mt-1 shrink-0">
+                              <Check className="size-3.5 text-slate-blue/40" />
+                            </div>
+                          )}
+                        </button>
+                        {isExpanded && hasUrl && (
+                          <div className="bg-[#FFE8D6]/60 px-4 pb-3 pt-0">
+                            <Button
+                              size="sm"
+                              onClick={() => openUrl(n.url)}
+                              className="ml-[3.25rem]"
+                            >
+                              Open
+                            </Button>
                           </div>
                         )}
-                      </button>
+                      </div>
                     )
                   })}
                 </div>

@@ -326,40 +326,125 @@ export async function dismissJustApprovedBanner(familyId: string) {
   revalidatePath('/parent')
 }
 
+/**
+ * Plan 22 Phase 4.1 — Parent settings notification matrix.
+ *
+ * Reads `pref.<channel>.<category>` checkboxes from the matrix form and
+ * writes them as `prefs[channel][category]: bool` into
+ * `user_notification_preferences` for the calling parent. Mandatory
+ * categories are silently dropped (the matrix renders them locked, but a
+ * crafted submission shouldn't be able to opt out of `account`).
+ *
+ * The legacy `session_reminders` 4-way timing radio remains per-family —
+ * the session-reminders cron reads it that way and Phase 4.1 explicitly
+ * keeps it as a sub-control under the Reminder row. `pre_charge_heads_up`
+ * (legacy boolean) is dropped from the form: the new Reminder × Push cell
+ * supersedes it; the cron's per-user gate already honours the new shape.
+ *
+ * Audit log: one row per opt-out change (channel/category transition true→false)
+ * with `source: 'settings_ui'`. We only audit opt-outs (not opt-ins) to match
+ * the email-link flow's audit shape — both record "user explicitly turned this
+ * off" events for Spam Act § 16(2) record-keeping.
+ */
 export async function updateNotificationPreferences(formData: FormData) {
+  const user = await getSessionUser()
+  if (!user) redirect('/login')
+
   const supabase = await createClient()
   const familyId = await getParentFamilyId()
   if (!familyId) redirect('/login')
 
-  const sessionReminders = formData.get('session_reminders') as string
-  const validOptions = ['all', 'first_week_and_privates', 'privates_only', 'off']
-  if (!validOptions.includes(sessionReminders)) {
-    redirect('/parent/settings?error=Invalid+preference')
+  // ── 1. Parse matrix → prefs blob ──────────────────────────────────────
+  const CHANNELS = ['email', 'push', 'in_app'] as const
+  const CATEGORIES = ['booking', 'schedule', 'reminder', 'availability', 'marketing'] as const
+  const MANDATORY = new Set(['security', 'account'])
+
+  const newPrefs: Record<string, Record<string, boolean>> = {}
+  for (const channel of CHANNELS) {
+    newPrefs[channel] = {}
+    for (const category of CATEGORIES) {
+      if (MANDATORY.has(category)) continue
+      newPrefs[channel][category] = formData.get(`pref.${channel}.${category}`) === 'on'
+    }
   }
 
-  const preChargeHeadsUp = formData.get('pre_charge_heads_up') === 'on'
+  // ── 2. Diff against existing → audit opt-outs ────────────────────────
+  const { data: existingRow } = await supabase
+    .from('user_notification_preferences')
+    .select('prefs')
+    .eq('user_id', user.id)
+    .maybeSingle()
 
-  // Preserve any other keys in notification_preferences
-  const { data: existing } = await supabase
-    .from('families')
-    .select('notification_preferences')
-    .eq('id', familyId)
-    .single()
-  const current = (existing?.notification_preferences as Record<string, unknown> | null) ?? {}
+  const previousPrefs =
+    (existingRow?.prefs as Record<string, Record<string, boolean>> | null) ?? {}
 
-  const { error } = await supabase
-    .from('families')
-    .update({
-      notification_preferences: {
-        ...current,
-        session_reminders: sessionReminders,
-        pre_charge_heads_up: preChargeHeadsUp,
-      },
-    })
-    .eq('id', familyId)
+  const optOuts: Array<{ channel: string; category: string }> = []
+  for (const channel of CHANNELS) {
+    for (const category of CATEGORIES) {
+      if (MANDATORY.has(category)) continue
+      const wasOn = previousPrefs[channel]?.[category] !== false  // missing = default true (or false for marketing)
+      const nowOff = newPrefs[channel][category] === false
+      if (wasOn && nowOff) {
+        optOuts.push({ channel, category })
+      }
+    }
+  }
 
-  if (error) {
-    redirect(`/parent/settings?error=${encodeURIComponent(error.message)}`)
+  // ── 3. Write per-user prefs ──────────────────────────────────────────
+  const { error: prefsError } = await supabase
+    .from('user_notification_preferences')
+    .upsert({ user_id: user.id, prefs: newPrefs }, { onConflict: 'user_id' })
+
+  if (prefsError) {
+    console.error('[settings] user prefs upsert failed:', prefsError.message)
+    redirect(`/parent/settings?error=${encodeURIComponent('Failed to save preferences')}`)
+  }
+
+  // ── 4. Update per-family session_reminders timing (sub-control) ──────
+  const sessionRemindersRaw = formData.get('session_reminders')
+  const sessionReminders = typeof sessionRemindersRaw === 'string' ? sessionRemindersRaw : ''
+  if (['all', 'first_week_and_privates', 'privates_only', 'off'].includes(sessionReminders)) {
+    const { data: family } = await supabase
+      .from('families')
+      .select('notification_preferences')
+      .eq('id', familyId)
+      .single()
+    const current =
+      (family?.notification_preferences as Record<string, unknown> | null) ?? {}
+
+    const { error: famErr } = await supabase
+      .from('families')
+      .update({
+        notification_preferences: {
+          ...current,
+          session_reminders: sessionReminders,
+        },
+      })
+      .eq('id', familyId)
+
+    if (famErr) console.error('[settings] family session_reminders update failed:', famErr.message)
+  }
+
+  // ── 5. Audit opt-outs (best-effort) ──────────────────────────────────
+  if (optOuts.length > 0) {
+    try {
+      await supabase.from('audit_log').insert(
+        optOuts.map((o) => ({
+          user_id: user.id,
+          action: 'notification_opt_out',
+          entity_type: 'user_notification_preferences',
+          entity_id: user.id,
+          new_values: {
+            channel: o.channel,
+            category: o.category,
+            value: false,
+            source: 'settings_ui',
+          },
+        })),
+      )
+    } catch (e) {
+      console.error('[settings] audit_log insert failed:', e)
+    }
   }
 
   revalidatePath('/parent/settings')

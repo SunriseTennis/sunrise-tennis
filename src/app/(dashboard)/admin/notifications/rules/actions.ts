@@ -11,6 +11,8 @@ const updateRuleSchema = z.object({
   channels: z.string().optional(), // comma-separated: 'push,in_app,email'
   title_template: z.string().min(1, 'Title required').max(200),
   body_template: z.string().max(500).optional(),
+  /** Plan 22 Phase 4.4 — optional push-only override (≤200 chars typical). */
+  body_template_push: z.string().max(500).optional(),
   url_template: z.string().max(500).optional(),
   audience: z.enum(['admins', 'family', 'coach', 'eligible_families']),
 })
@@ -38,6 +40,7 @@ export async function updateNotificationRule(id: string, formData: FormData) {
       audience: parsed.data.audience,
       title_template: parsed.data.title_template,
       body_template: parsed.data.body_template || null,
+      body_template_push: parsed.data.body_template_push || null,
       url_template: parsed.data.url_template || null,
     })
     .eq('id', id)

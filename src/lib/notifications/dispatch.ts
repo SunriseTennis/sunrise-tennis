@@ -62,6 +62,9 @@ interface RuleRow {
   channels: string[]
   title_template: string
   body_template: string | null
+  /** Plan 22 Phase 4.4 — optional push-only body for rules whose unified body
+   *  exceeds the ~80-char truncation budget. NULL means push reuses body_template. */
+  body_template_push: string | null
   url_template: string | null
   /** Plan 22 — opt-out gate keys. Default 'booking' / false at the column level. */
   category: string
@@ -250,7 +253,7 @@ export async function dispatchNotification(
 
   const { data: rules, error } = await service
     .from('notification_rules')
-    .select('id, event_type, audience, enabled, channels, title_template, body_template, url_template, category, is_mandatory')
+    .select('id, event_type, audience, enabled, channels, title_template, body_template, body_template_push, url_template, category, is_mandatory')
     .eq('event_type', eventType)
     .eq('enabled', true)
 
@@ -273,6 +276,10 @@ export async function dispatchNotification(
     const rendered = {
       title: renderTemplate(rule.title_template, context),
       body: renderTemplate(rule.body_template, context),
+      // Plan 22 Phase 4.4 — push uses body_template_push when set so the
+      // banner stays inside the iOS/Android truncation budget; email + in_app
+      // keep the longer body via `rendered.body` above.
+      bodyPush: renderTemplate(rule.body_template_push ?? rule.body_template, context),
       url: renderTemplate(rule.url_template, context),
     }
 
@@ -302,7 +309,7 @@ export async function dispatchNotification(
     if (channels.includes('push')) {
       const recipients = filterByChannel('push')
       if (recipients.length > 0) {
-        await sendPush(recipients, rendered)
+        await sendPush(recipients, { title: rendered.title, body: rendered.bodyPush, url: rendered.url })
       }
     }
     if (channels.includes('email')) {

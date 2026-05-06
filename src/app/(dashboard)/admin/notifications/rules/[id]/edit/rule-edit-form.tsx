@@ -17,6 +17,7 @@ interface Props {
     channels: string[]
     title_template: string
     body_template: string
+    body_template_push: string
     url_template: string
   }
 }
@@ -35,6 +36,7 @@ export function RuleEditForm({ rule }: Props) {
   const [audience, setAudience] = useState(rule.audience)
   const [title, setTitle] = useState(rule.title_template)
   const [body, setBody] = useState(rule.body_template)
+  const [bodyPush, setBodyPush] = useState(rule.body_template_push)
   const [url, setUrl] = useState(rule.url_template)
   const [pending, startTransition] = useTransition()
   const [testMessage, setTestMessage] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
@@ -135,7 +137,7 @@ export function RuleEditForm({ rule }: Props) {
             />
           </div>
           <div>
-            <Label htmlFor="body_template">Body</Label>
+            <Label htmlFor="body_template">Body (in-app + email)</Label>
             <Textarea
               id="body_template"
               name="body_template"
@@ -144,6 +146,24 @@ export function RuleEditForm({ rule }: Props) {
               rows={3}
               className="mt-1"
             />
+            <p className="mt-1 text-xs text-muted-foreground">
+              Used for in-app feed and email. Push falls back to this when the push override below is empty.
+            </p>
+          </div>
+          <div>
+            <Label htmlFor="body_template_push">Push body (optional override)</Label>
+            <Textarea
+              id="body_template_push"
+              name="body_template_push"
+              value={bodyPush}
+              onChange={(e) => setBodyPush(e.target.value)}
+              rows={2}
+              className="mt-1"
+              placeholder="Leave blank to reuse the body above"
+            />
+            <p className="mt-1 text-xs text-muted-foreground">
+              Push notifications truncate at ~80 chars on iOS/Android. Set a tighter version here when the body above carries email-only context.
+            </p>
           </div>
           <div>
             <Label htmlFor="url_template">Click-through URL</Label>

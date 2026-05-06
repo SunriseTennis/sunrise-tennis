@@ -22,13 +22,14 @@ export default async function CoachSettingsPage({
   if (!coachId) redirect('/coach?error=No+coach+profile+found')
 
   const supabase = await createClient()
-  const { data: coach } = await supabase
-    .from('coaches')
-    .select('notification_preferences')
-    .eq('id', coachId)
-    .single()
+  const { data: userPrefsRow } = await supabase
+    .from('user_notification_preferences')
+    .select('prefs')
+    .eq('user_id', user.id)
+    .maybeSingle()
 
-  const prefs = (coach?.notification_preferences as Record<string, boolean> | null) ?? {}
+  type ChannelPrefs = Partial<Record<'email' | 'push' | 'in_app', Partial<Record<string, boolean>>>>
+  const userPrefs: ChannelPrefs = (userPrefsRow?.prefs as ChannelPrefs | null) ?? {}
   const pendingEmail = (user.user_metadata as Record<string, unknown> | undefined)?.new_email as string | undefined
 
   const sections: AccordionSection[] = [
@@ -37,7 +38,7 @@ export default async function CoachSettingsPage({
       iconName: 'Bell',
       label: 'Notifications',
       description: 'Booking requests, session digest, late cancellations',
-      content: <CoachNotificationPrefsForm prefs={prefs} />,
+      content: <CoachNotificationPrefsForm initialPrefs={userPrefs} />,
     },
     {
       id: 'email',

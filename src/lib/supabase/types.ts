@@ -1486,12 +1486,15 @@ export type Database = {
         Row: {
           audience: string
           body_template: string | null
+          body_template_push: string | null
+          category: string
           channels: Json
           created_at: string
           description: string | null
           enabled: boolean
           event_type: string
           id: string
+          is_mandatory: boolean
           title_template: string
           updated_at: string
           url_template: string | null
@@ -1499,12 +1502,15 @@ export type Database = {
         Insert: {
           audience: string
           body_template?: string | null
+          body_template_push?: string | null
+          category?: string
           channels?: Json
           created_at?: string
           description?: string | null
           enabled?: boolean
           event_type: string
           id?: string
+          is_mandatory?: boolean
           title_template: string
           updated_at?: string
           url_template?: string | null
@@ -1512,15 +1518,39 @@ export type Database = {
         Update: {
           audience?: string
           body_template?: string | null
+          body_template_push?: string | null
+          category?: string
           channels?: Json
           created_at?: string
           description?: string | null
           enabled?: boolean
           event_type?: string
           id?: string
+          is_mandatory?: boolean
           title_template?: string
           updated_at?: string
           url_template?: string | null
+        }
+        Relationships: []
+      }
+      user_notification_preferences: {
+        Row: {
+          created_at: string
+          prefs: Json
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          prefs?: Json
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          prefs?: Json
+          updated_at?: string
+          user_id?: string
         }
         Relationships: []
       }
