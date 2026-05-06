@@ -9,7 +9,7 @@
 - `actions.ts` — Main admin actions (43K, largest file in codebase). Contains:
   createFamily, updateFamily, createPlayer, updatePlayer, createInvitation,
   createProgram, updateProgram, createSession, generateTermSessions,
-  cancelSession, rainOutToday, adminBookPlayer, adminCompleteSession,
+  cancelSession, rainOutToday, adminCompleteSession,
   bulkEnrolPlayers, updateCoach, updateAttendance
 - `layout.tsx` — Admin layout with navigation
 - `overview-calendar.tsx` — Admin calendar component

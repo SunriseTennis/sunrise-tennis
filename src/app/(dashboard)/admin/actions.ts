@@ -27,6 +27,11 @@ import {
 } from '@/lib/utils/billing'
 import { getPlayerSessionPriceBreakdown, formatDiscountSuffix, buildPricingBreakdown } from '@/lib/utils/player-pricing'
 import { getTermLabel } from '@/lib/utils/school-terms'
+import { getActiveEarlyBird } from '@/lib/utils/eligibility'
+import { adelaideTodayString, filterFutureSessions } from '@/lib/utils/sessions-filter'
+import { formatDate } from '@/lib/utils/dates'
+import { dispatchNotification } from '@/lib/notifications/dispatch'
+import { createTermSessionCharges } from '@/lib/utils/term-charges'
 
 // ── Families ────────────────────────────────────────────────────────────
 
@@ -1318,120 +1323,6 @@ export async function rainOutToday() {
 
 // ── Admin Booking on Behalf ────────────────────────────────────────────
 
-export async function adminBookPlayer(formData: FormData) {
-  const user = await requireAdmin()
-  const supabase = await createClient()
-
-  const { validateFormData, adminBookPlayerFormSchema } = await import('@/lib/utils/validation')
-  const parsed = validateFormData(formData, adminBookPlayerFormSchema)
-  if (!parsed.success) {
-    redirect(`/admin/programs?error=${encodeURIComponent(parsed.error)}`)
-  }
-
-  const { family_id: familyId, player_id: playerId, program_id: programId, booking_type: bookingType, notes } = parsed.data
-
-  // Add to roster if term/casual enrolment. program_roster has
-  // UNIQUE(program_id, player_id) and unenrol soft-deletes via
-  // status='withdrawn' — so re-enrol must reactivate the existing row, not
-  // INSERT (which would violate the unique constraint).
-  const { data: existing } = await supabase
-    .from('program_roster')
-    .select('id, status')
-    .eq('program_id', programId)
-    .eq('player_id', playerId)
-    .maybeSingle()
-
-  if (existing?.id && existing.status !== 'enrolled') {
-    await supabase
-      .from('program_roster')
-      .update({ status: 'enrolled', enrolled_at: new Date().toISOString() })
-      .eq('id', existing.id)
-  } else if (!existing) {
-    await supabase
-      .from('program_roster')
-      .insert({
-        program_id: programId,
-        player_id: playerId,
-        status: 'enrolled',
-      })
-  }
-
-  // Reverse any stale claw-back adjustments whose trigger condition no longer
-  // holds now that this program is back in the roster.
-  try {
-    const { reverseAdjustmentsAfterEnrol } = await import('@/lib/utils/charge-recompute')
-    await reverseAdjustmentsAfterEnrol(supabase, familyId, playerId)
-  } catch (e) {
-    console.error('Adjustment reversal failed (admin book):', e instanceof Error ? e.message : e)
-  }
-
-  // Create booking record
-  const { error } = await supabase
-    .from('bookings')
-    .insert({
-      family_id: familyId,
-      player_id: playerId,
-      program_id: programId,
-      booking_type: bookingType,
-      status: 'confirmed',
-      booked_by: user?.id,
-      notes,
-    })
-
-  if (error) {
-    console.error('Admin booking failed:', error.message)
-    redirect(`/admin/programs/${programId}?error=${encodeURIComponent('Failed to create booking')}`)
-  }
-
-  // Send booking confirmation notification to parent
-  try {
-    const { data: programInfo } = await supabase
-      .from('programs')
-      .select('name')
-      .eq('id', programId)
-      .single()
-
-    const serviceClient = createServiceClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    )
-
-    const { data: notification } = await serviceClient
-      .from('notifications')
-      .insert({
-        type: 'booking_confirmation',
-        title: 'Booking Confirmed',
-        body: `Your child has been enrolled in ${programInfo?.name ?? 'a program'} by the admin.`,
-        url: `/parent/programs/${programId}`,
-        target_type: 'family',
-        target_id: familyId,
-        created_by: user?.id,
-      })
-      .select('id')
-      .single()
-
-    const userIds = await sendNotificationToTarget({
-      title: 'Booking Confirmed',
-      body: `Your child has been enrolled in ${programInfo?.name ?? 'a program'} by the admin.`,
-      url: `/parent/programs/${programId}`,
-      targetType: 'family',
-      targetId: familyId,
-    })
-
-    if (notification && userIds.length > 0) {
-      await serviceClient
-        .from('notification_recipients')
-        .insert(userIds.map((uid) => ({ notification_id: notification.id, user_id: uid })))
-    }
-  } catch (e) {
-    console.error('Booking notification failed:', e instanceof Error ? e.message : 'Unknown error')
-  }
-
-  revalidatePath(`/admin/programs/${programId}`)
-  revalidatePath('/admin/sessions')
-  redirect(`/admin/programs/${programId}`)
-}
-
 // ── Mark Session Complete ─────────────────────────────────────────────
 
 export async function adminCompleteSession(sessionId: string) {
@@ -1487,6 +1378,7 @@ export async function bulkEnrolPlayers(formData: FormData) {
   const programId = formData.get('program_id') as string
   const playerIdsRaw = formData.get('player_ids') as string
   const bookingType = (formData.get('booking_type') as string) || 'term'
+  const notes = ((formData.get('notes') as string) || '').trim() || null
 
   if (!programId || !playerIdsRaw) {
     redirect(`/admin/programs/${programId || ''}?error=${encodeURIComponent('Missing required fields')}`)
@@ -1499,9 +1391,8 @@ export async function bulkEnrolPlayers(formData: FormData) {
     redirect(`/admin/programs/${programId}?error=${encodeURIComponent('No players selected')}`)
   }
 
-  // Get existing roster (any status) so we know who needs INSERT vs UPDATE.
-  // UNIQUE(program_id, player_id) — withdrawn rows must be reactivated, not
-  // re-INSERTed.
+  // Existing roster for these players (any status). UNIQUE(program_id,
+  // player_id) — withdrawn rows must be reactivated, not re-INSERTed.
   const { data: existingRoster } = await supabase
     .from('program_roster')
     .select('id, player_id, status')
@@ -1532,7 +1423,6 @@ export async function bulkEnrolPlayers(formData: FormData) {
     redirect(`/admin/programs/${programId}?error=${encodeURIComponent('All selected players are already enrolled')}`)
   }
 
-  // Bulk insert fresh rows
   if (insertPlayerIds.length > 0) {
     const rosterRows = insertPlayerIds.map(playerId => ({
       program_id: programId,
@@ -1549,7 +1439,6 @@ export async function bulkEnrolPlayers(formData: FormData) {
     }
   }
 
-  // Reactivate withdrawn rows
   if (reactivateRowIds.length > 0) {
     const { error: reactivateError } = await supabase
       .from('program_roster')
@@ -1561,60 +1450,192 @@ export async function bulkEnrolPlayers(formData: FormData) {
     }
   }
 
-  // Get player-family mapping for booking records
-  const { data: playerFamilies } = await supabase
-    .from('players')
-    .select('id, family_id')
-    .in('id', newPlayerIds)
+  // ── Financial setup (mirrors parent enrolInProgram shape) ──────────────
 
-  // Create booking records
-  if (playerFamilies && playerFamilies.length > 0) {
-    const bookingRows = playerFamilies.map(p => ({
-      family_id: p.family_id,
-      player_id: p.id,
-      program_id: programId,
-      booking_type: bookingType,
-      status: 'confirmed',
-      booked_by: user?.id,
-    }))
+  const isTermEnrollment = bookingType === 'term_enrollment' || bookingType === 'term'
+  const isCasual = bookingType === 'casual'
 
-    await supabase.from('bookings').insert(bookingRows)
+  const [{ data: program }, { data: enrolledPlayers }] = await Promise.all([
+    supabase
+      .from('programs')
+      .select('id, name, type, early_pay_discount_pct, early_bird_deadline, early_pay_discount_pct_tier2, early_bird_deadline_tier2')
+      .eq('id', programId)
+      .single(),
+    supabase
+      .from('players')
+      .select('id, family_id, first_name')
+      .in('id', newPlayerIds),
+  ])
+
+  // Adelaide-aware future sessions (term path uses these for per-session charges).
+  let sessionsList: { id: string; date: string; start_time: string | null }[] = []
+  if (isTermEnrollment) {
+    const { data: upcomingSessions } = await supabase
+      .from('sessions')
+      .select('id, date, start_time')
+      .eq('program_id', programId)
+      .gte('date', adelaideTodayString())
+      .eq('status', 'scheduled')
+      .order('date', { ascending: true })
+
+    sessionsList = filterFutureSessions(
+      (upcomingSessions ?? []) as { id: string; date: string; start_time: string | null }[],
+    )
+  }
+  const sessionsTotal = sessionsList.length
+
+  const earlyBirdInfo = isTermEnrollment
+    ? getActiveEarlyBird({
+        early_pay_discount_pct: program?.early_pay_discount_pct ?? null,
+        early_bird_deadline: program?.early_bird_deadline ?? null,
+        early_pay_discount_pct_tier2: program?.early_pay_discount_pct_tier2 ?? null,
+        early_bird_deadline_tier2: program?.early_bird_deadline_tier2 ?? null,
+      })
+    : { pct: 0, tier: null as 1 | 2 | null, deadline: null as string | null }
+
+  const earlyBirdMeta = isTermEnrollment
+    ? {
+        tier: earlyBirdInfo.tier,
+        deadline: earlyBirdInfo.deadline,
+        tier2Pct: program?.early_pay_discount_pct_tier2 ?? null,
+        tier2Deadline: program?.early_bird_deadline_tier2 ?? null,
+      }
+    : null
+
+  // Per-player: insert booking with financial fields, then per-session
+  // charges (term) or single charge (casual). Trial = free, no charges.
+  for (const p of enrolledPlayers ?? []) {
+    let priceCents = 0
+    let casualBreakdown: ReturnType<typeof buildPricingBreakdown> | null = null
+    let casualMultiGroupApplied = false
+
+    if (isTermEnrollment) {
+      const breakdown = await getPlayerSessionPriceBreakdown(
+        supabase, p.family_id, programId, program?.type, p.id,
+      )
+      const perSessionAfterEB = earlyBirdInfo.pct > 0
+        ? Math.round(breakdown.priceCents * (100 - earlyBirdInfo.pct) / 100)
+        : breakdown.priceCents
+      priceCents = perSessionAfterEB * sessionsTotal
+    } else if (isCasual) {
+      const breakdown = await getPlayerSessionPriceBreakdown(
+        supabase, p.family_id, programId, program?.type, p.id,
+      )
+      priceCents = breakdown.priceCents
+      casualMultiGroupApplied = breakdown.multiGroupApplied
+      casualBreakdown = buildPricingBreakdown({
+        basePriceCents: breakdown.basePriceCents,
+        perSessionPriceCents: breakdown.priceCents,
+        morningSquadPartnerApplied: breakdown.morningSquadPartnerApplied,
+        multiGroupApplied: breakdown.multiGroupApplied,
+        sessions: 1,
+      })
+    }
+
+    const { data: booking, error: bookingError } = await supabase
+      .from('bookings')
+      .insert({
+        family_id: p.family_id,
+        player_id: p.id,
+        program_id: programId,
+        booking_type: bookingType,
+        status: 'confirmed',
+        booked_by: user?.id,
+        notes,
+        payment_option: isTermEnrollment ? 'pay_later' : null,
+        price_cents: priceCents,
+        discount_cents: 0,
+        sessions_total: sessionsTotal,
+        sessions_charged: 0,
+      })
+      .select('id')
+      .single()
+
+    if (bookingError) {
+      console.error('Bulk enrol booking failed for player', p.id, bookingError.message)
+      continue
+    }
+
+    if (isTermEnrollment && booking && sessionsTotal > 0) {
+      try {
+        await createTermSessionCharges(supabase, {
+          familyId: p.family_id,
+          playerId: p.id,
+          programId,
+          bookingId: booking.id,
+          programType: program?.type,
+          earlyBirdPct: earlyBirdInfo.pct,
+          earlyBirdMeta,
+          chargeStatus: 'pending',
+          createdBy: user.id,
+          sessions: sessionsList,
+          playerName: p.first_name,
+          programName: program?.name,
+        })
+      } catch (e) {
+        console.error('Per-session charge creation failed (admin bulk enrol) for player', p.id, e instanceof Error ? e.message : e)
+      }
+    } else if (isCasual && priceCents > 0 && booking) {
+      try {
+        await createCharge(supabase, {
+          familyId: p.family_id,
+          playerId: p.id,
+          type: 'casual',
+          sourceType: 'enrollment',
+          sourceId: booking.id,
+          programId,
+          bookingId: booking.id,
+          description: formatChargeDescription({
+            playerName: p.first_name,
+            label: `${program?.name ?? 'Program'} - Casual session`,
+            suffix: formatDiscountSuffix({ multiGroupApplied: casualMultiGroupApplied, earlyPayPct: 0 }),
+            term: getTermLabel(new Date()),
+          }),
+          amountCents: priceCents,
+          status: 'pending',
+          createdBy: user.id,
+          pricingBreakdown: casualBreakdown ? (casualBreakdown as never) : null,
+        })
+      } catch (e) {
+        console.error('Casual charge creation failed (admin bulk enrol) for player', p.id, e instanceof Error ? e.message : e)
+      }
+    }
   }
 
-  // Reverse any stale claw-back adjustments for each (re-)enrolled player
-  // whose trigger condition no longer holds.
+  // Reverse stale claw-back adjustments per (re-)enrolled player.
   try {
     const { reverseAdjustmentsAfterEnrol } = await import('@/lib/utils/charge-recompute')
-    for (const p of playerFamilies ?? []) {
+    for (const p of enrolledPlayers ?? []) {
       await reverseAdjustmentsAfterEnrol(supabase, p.family_id, p.id)
     }
   } catch (e) {
     console.error('Adjustment reversal failed (bulk enrol):', e instanceof Error ? e.message : e)
   }
 
-  // Send notification to each unique family
-  try {
-    const { data: programInfo } = await supabase
-      .from('programs')
-      .select('name')
-      .eq('id', programId)
-      .single()
+  // Notification per player (rule-driven). One ding per child gives clean
+  // grammar even when sibs are bulk-enrolled together. The {earlyBirdReminder}
+  // placeholder is empty when the discount window is closed — keeps the body
+  // honest. Leading space matches {ballColorSuffix} convention.
+  const earlyBirdReminder = isTermEnrollment && earlyBirdInfo.pct > 0 && earlyBirdInfo.deadline
+    ? ` Pay by ${formatDate(earlyBirdInfo.deadline)} to get ${earlyBirdInfo.pct}% off this term.`
+    : ''
 
-    const familyIds = [...new Set((playerFamilies ?? []).map(p => p.family_id))]
-    for (const fid of familyIds) {
-      await sendNotificationToTarget({
-        title: 'Enrollment Confirmed',
-        body: `Your child has been enrolled in ${programInfo?.name ?? 'a program'}.`,
-        url: `/parent/programs/${programId}`,
-        targetType: 'family',
-        targetId: fid,
+  for (const p of enrolledPlayers ?? []) {
+    try {
+      await dispatchNotification('admin.program.enrolled', {
+        familyId: p.family_id,
+        playerName: p.first_name ?? 'your child',
+        programName: program?.name ?? 'a program',
+        programId,
+        earlyBirdReminder,
       })
+    } catch (e) {
+      console.error('Bulk enrol notification error for player', p.id, e instanceof Error ? e.message : 'Unknown error')
     }
-  } catch (e) {
-    console.error('Bulk enrol notification error:', e)
   }
 
   revalidatePath(`/admin/programs/${programId}`)
+  revalidatePath('/admin/sessions')
   redirect(`/admin/programs/${programId}?success=${encodeURIComponent(`Enrolled ${newPlayerIds.length} player(s)`)}`)
 }
 

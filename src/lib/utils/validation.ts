@@ -466,15 +466,6 @@ export const familyPricingFormSchema = z.object({
   valid_until: optionalString(),
 })
 
-// Admin - Book Player
-export const adminBookPlayerFormSchema = z.object({
-  family_id: uuidString('Invalid family'),
-  player_id: uuidString('Invalid player'),
-  program_id: uuidString('Invalid program'),
-  booking_type: bookingTypeSchema,
-  notes: optionalString(1000),
-})
-
 // Admin - Generate Term Sessions
 export const generateTermSessionsFormSchema = z.object({
   term: z.coerce.number().int().min(1).max(4),
