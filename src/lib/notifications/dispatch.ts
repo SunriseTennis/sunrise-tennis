@@ -16,10 +16,29 @@ import { sendBrandedEmail } from './send-email'
 import {
   fetchUserPrefs,
   isOptedIn,
+  MANDATORY_CATEGORIES,
   type NotificationCategory,
   type NotificationChannel,
   type UserPrefs,
 } from './preferences'
+import { generateUnsubscribeToken } from './unsubscribe-token'
+
+/**
+ * Human-readable category label for the email footer ("Unsubscribe from
+ * <CategoryLabel> emails"). Lower-case in the URL form and Title Case in
+ * the visible footer.
+ */
+const CATEGORY_LABELS: Record<NotificationCategory, string> = {
+  security: 'Account security',
+  account: 'Account',
+  booking: 'Booking',
+  schedule: 'Schedule',
+  reminder: 'Reminder',
+  availability: 'Slot availability',
+  admin: 'Admin',
+  coach: 'Coach',
+  marketing: 'News & promotions',
+}
 
 export interface DispatchContext {
   /** Family-level resolves to all parent userIds for this family. */
@@ -165,24 +184,49 @@ async function sendPush(
  * Resend REST API. Each user's auth.users.email is resolved through the
  * service-role client (auth.admin.getUserById). Failures per recipient
  * are swallowed so one bad lookup doesn't drop the whole rule.
+ *
+ * Plan 22 Phase 3 — non-mandatory categories carry a per-(user, category)
+ * unsubscribe token in the List-Unsubscribe header + footer link. Mandatory
+ * categories (security, account) get the "cannot be turned off" footer.
  */
 async function sendEmailChannel(
   service: SupabaseClient,
   userIds: string[],
   rendered: { title: string; body: string; url: string },
+  category: NotificationCategory,
+  isMandatory: boolean,
 ): Promise<void> {
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://sunrisetennis.com.au'
+  const isOptOutable = !isMandatory && !MANDATORY_CATEGORIES.has(category)
   for (const userId of userIds) {
     try {
       const { data: { user } } = await service.auth.admin.getUserById(userId)
       const email = user?.email
       if (!email) continue
+
+      let unsubscribeUrl: string | undefined
+      if (isOptOutable) {
+        try {
+          const token = generateUnsubscribeToken(userId, category)
+          unsubscribeUrl = `${siteUrl}/unsubscribe/${token}`
+        } catch (e) {
+          // NOTIFICATION_UNSUBSCRIBE_SECRET missing — log loudly but still
+          // ship the email without the token rather than silently drop.
+          // The footer falls through to the "can't be turned off" copy,
+          // which is wrong for an opt-outable category — but better than
+          // missing the email entirely.
+          console.error('[dispatch] unsubscribe token gen failed for', userId, e)
+        }
+      }
+
       await sendBrandedEmail({
         to: email,
         subject: rendered.title,
         bodyMarkdown: rendered.body || '',
         ctaLabel: rendered.url ? 'Open Sunrise' : undefined,
         ctaUrl: rendered.url ? `${siteUrl}${rendered.url}` : undefined,
+        unsubscribeUrl,
+        categoryLabel: unsubscribeUrl ? CATEGORY_LABELS[category] : undefined,
       })
     } catch (e) {
       console.error('[dispatch] email lookup/send failed for', userId, e)
@@ -264,7 +308,7 @@ export async function dispatchNotification(
     if (channels.includes('email')) {
       const recipients = filterByChannel('email')
       if (recipients.length > 0) {
-        await sendEmailChannel(service, recipients, rendered)
+        await sendEmailChannel(service, recipients, rendered, category, rule.is_mandatory)
       }
     }
   }

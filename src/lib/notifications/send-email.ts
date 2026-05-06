@@ -7,7 +7,22 @@
  * Resend SMTP is already wired for Supabase auth flows (Plan 15 Phase A).
  * This is the platform-side counterpart that uses the same domain
  * (`noreply@send.sunrisetennis.com.au`) for in-platform notifications.
+ *
+ * Plan 22 Phase 3 — Spam Act 2003 (Cth) compliance layer:
+ *  - Sender identification (Sunrise Tennis PTY LTD + ABN-bearing address)
+ *    in the footer of every email.
+ *  - Functional unsubscribe via RFC 8058 `List-Unsubscribe` headers when
+ *    an `unsubscribeUrl` is supplied (Gmail/Outlook surface a one-click
+ *    button at the top of the email).
+ *  - Footer link "Unsubscribe from <CategoryLabel> emails" matching the
+ *    header URL.
+ *  - When `unsubscribeUrl` is omitted (mandatory categories: security /
+ *    account, plus invitation emails), the footer says explicitly that
+ *    these emails are part of the account and can't be turned off.
  */
+
+const SUNRISE_POSTAL = 'Sunrise Tennis PTY LTD · 40 Wilton Ave, Somerton Park SA 5044, Australia'
+const MANAGE_PREFS_URL = 'https://www.sunrisetennis.com.au/parent/settings#notifications'
 
 export async function sendBrandedEmail({
   to,
@@ -16,6 +31,8 @@ export async function sendBrandedEmail({
   bodyMarkdown,
   ctaLabel,
   ctaUrl,
+  unsubscribeUrl,
+  categoryLabel,
 }: {
   to: string
   subject: string
@@ -23,6 +40,18 @@ export async function sendBrandedEmail({
   bodyMarkdown: string
   ctaLabel?: string
   ctaUrl?: string
+  /**
+   * One-click unsubscribe URL (per-(user, category) HMAC token). When set,
+   * the email is opt-out-able: List-Unsubscribe headers + footer link both
+   * appear. Omit for mandatory categories or pre-account messages
+   * (invitations, signup confirmation, password reset).
+   */
+  unsubscribeUrl?: string
+  /**
+   * Human-readable category name for the footer ("Reminder", "Schedule",
+   * etc.). Required when `unsubscribeUrl` is set.
+   */
+  categoryLabel?: string
 }): Promise<void> {
   const apiKey = process.env.RESEND_API_KEY
   if (!apiKey) {
@@ -30,7 +59,21 @@ export async function sendBrandedEmail({
     return
   }
 
-  const html = renderBrandedHtml({ subject, preheader, bodyMarkdown, ctaLabel, ctaUrl })
+  const html = renderBrandedHtml({
+    subject,
+    preheader,
+    bodyMarkdown,
+    ctaLabel,
+    ctaUrl,
+    unsubscribeUrl,
+    categoryLabel,
+  })
+
+  const headers: Record<string, string> = {}
+  if (unsubscribeUrl) {
+    headers['List-Unsubscribe'] = `<${unsubscribeUrl}>`
+    headers['List-Unsubscribe-Post'] = 'List-Unsubscribe=One-Click'
+  }
 
   try {
     const res = await fetch('https://api.resend.com/emails', {
@@ -44,6 +87,7 @@ export async function sendBrandedEmail({
         to: [to],
         subject,
         html,
+        ...(Object.keys(headers).length > 0 ? { headers } : {}),
       }),
     })
     if (!res.ok) {
@@ -54,12 +98,22 @@ export async function sendBrandedEmail({
   }
 }
 
-function renderBrandedHtml({ subject, preheader, bodyMarkdown, ctaLabel, ctaUrl }: {
+function renderBrandedHtml({
+  subject,
+  preheader,
+  bodyMarkdown,
+  ctaLabel,
+  ctaUrl,
+  unsubscribeUrl,
+  categoryLabel,
+}: {
   subject: string
   preheader?: string
   bodyMarkdown: string
   ctaLabel?: string
   ctaUrl?: string
+  unsubscribeUrl?: string
+  categoryLabel?: string
 }): string {
   const paragraphs = bodyMarkdown
     .split('\n\n')
@@ -85,13 +139,29 @@ ${ph}
         ${paragraphs}
         ${cta ? `<div style="margin:24px 0 8px 0;">${cta}</div>` : ''}
       </td></tr>
-      <tr><td style="background:#FFEAD8;padding:16px 24px;text-align:center;font-size:12px;color:#7a6a5e;">
-        <a href="https://sunrisetennis.com.au" style="color:#7a6a5e;text-decoration:none;">sunrisetennis.com.au</a>
+      <tr><td style="background:#FFEAD8;padding:18px 24px;text-align:center;font-size:12px;color:#7a6a5e;line-height:1.65;">
+        <div><a href="https://sunrisetennis.com.au" style="color:#7a6a5e;text-decoration:none;">sunrisetennis.com.au</a></div>
+        <div style="margin-top:6px;">${escapeHtml(SUNRISE_POSTAL)}</div>
+        ${renderFooterControls({ unsubscribeUrl, categoryLabel })}
       </td></tr>
     </table>
   </td></tr>
 </table>
 </body></html>`
+}
+
+function renderFooterControls({
+  unsubscribeUrl,
+  categoryLabel,
+}: { unsubscribeUrl?: string; categoryLabel?: string }): string {
+  if (unsubscribeUrl && categoryLabel) {
+    return `<div style="margin-top:10px;">
+      <a href="${escapeAttr(MANAGE_PREFS_URL)}" style="color:#7a6a5e;text-decoration:underline;">Manage notifications</a>
+      &nbsp;·&nbsp;
+      <a href="${escapeAttr(unsubscribeUrl)}" style="color:#7a6a5e;text-decoration:underline;">Unsubscribe from ${escapeHtml(categoryLabel)} emails</a>
+    </div>`
+  }
+  return `<div style="margin-top:10px;color:#9c8e83;">These emails are part of your account and can't be turned off.</div>`
 }
 
 function escapeHtml(s: string): string {
