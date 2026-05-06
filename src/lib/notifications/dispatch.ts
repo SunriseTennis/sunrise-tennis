@@ -13,6 +13,13 @@ import { createClient as createServiceClient, SupabaseClient } from '@supabase/s
 import { sendPushToUser, getAdminUserIds } from '@/lib/push/send'
 import { getEligibleParentUserIds } from '@/lib/utils/private-booking'
 import { sendBrandedEmail } from './send-email'
+import {
+  fetchUserPrefs,
+  isOptedIn,
+  type NotificationCategory,
+  type NotificationChannel,
+  type UserPrefs,
+} from './preferences'
 
 export interface DispatchContext {
   /** Family-level resolves to all parent userIds for this family. */
@@ -37,6 +44,9 @@ interface RuleRow {
   title_template: string
   body_template: string | null
   url_template: string | null
+  /** Plan 22 — opt-out gate keys. Default 'booking' / false at the column level. */
+  category: string
+  is_mandatory: boolean
 }
 
 function getServiceClient(): SupabaseClient {
@@ -196,7 +206,7 @@ export async function dispatchNotification(
 
   const { data: rules, error } = await service
     .from('notification_rules')
-    .select('id, event_type, audience, enabled, channels, title_template, body_template, url_template')
+    .select('id, event_type, audience, enabled, channels, title_template, body_template, url_template, category, is_mandatory')
     .eq('event_type', eventType)
     .eq('enabled', true)
 
@@ -223,14 +233,39 @@ export async function dispatchNotification(
     }
 
     const channels = Array.isArray(rule.channels) ? rule.channels : []
+
+    // Plan 22 — Per-user opt-out gate. Mandatory rules (security, account)
+    // bypass the gate entirely. For non-mandatory rules, fetch every
+    // recipient's prefs in one round-trip and filter the userId list per
+    // channel. A missing prefs row → category default (which is true for
+    // every category except marketing, so existing parents see no change).
+    const category = rule.category as NotificationCategory
+    const prefsByUser: Map<string, UserPrefs> = rule.is_mandatory
+      ? new Map()
+      : await fetchUserPrefs(service, userIds)
+
+    const filterByChannel = (channel: NotificationChannel): string[] => {
+      if (rule.is_mandatory) return userIds
+      return userIds.filter((uid) => isOptedIn(prefsByUser.get(uid), channel, category))
+    }
+
     if (channels.includes('in_app')) {
-      await writeInApp(service, rule.id, rule.audience, context, rendered, userIds)
+      const recipients = filterByChannel('in_app')
+      if (recipients.length > 0) {
+        await writeInApp(service, rule.id, rule.audience, context, rendered, recipients)
+      }
     }
     if (channels.includes('push')) {
-      await sendPush(userIds, rendered)
+      const recipients = filterByChannel('push')
+      if (recipients.length > 0) {
+        await sendPush(recipients, rendered)
+      }
     }
     if (channels.includes('email')) {
-      await sendEmailChannel(service, userIds, rendered)
+      const recipients = filterByChannel('email')
+      if (recipients.length > 0) {
+        await sendEmailChannel(service, recipients, rendered)
+      }
     }
   }
 }

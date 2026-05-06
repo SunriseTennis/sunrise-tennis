@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { sendPushToUser } from '@/lib/push/send'
+import { fetchUserPrefs } from '@/lib/notifications/preferences'
 
 /**
  * Cron: Pre-Charge Heads-Up
@@ -8,7 +9,13 @@ import { sendPushToUser } from '@/lib/push/send'
  * notification + in-platform notification row to each affected family, so a
  * charge never lands in family_balance without prior warning.
  *
- * Preference: families.notification_preferences.pre_charge_heads_up (bool, default true).
+ * Preferences (Plan 22):
+ *   1. Per-user: user_notification_preferences.prefs.push.reminder (per-parent).
+ *      Explicit `false` skips that parent. Explicit `true` or missing → fall through.
+ *   2. Family-legacy: families.notification_preferences.pre_charge_heads_up.
+ *      Honoured for parents with no per-user pref so legacy opt-outs are not lost.
+ *   3. Default: ON.
+ *
  * Idempotency: skip families who already got a pre_charge notification in the last 14 days.
  *
  * Vercel Cron: "0 9 * * *" (daily).
@@ -84,16 +91,15 @@ export async function GET(request: NextRequest) {
   let skipped = 0
 
   for (const familyId of familyIds) {
-    // Preference check
+    // Family-legacy preference (Plan 22 fallback for parents with no per-user pref).
     const { data: family } = await supabase
       .from('families')
       .select('notification_preferences')
       .eq('id', familyId)
       .single()
 
-    const prefs = family?.notification_preferences as Record<string, unknown> | null
-    const enabled = prefs?.pre_charge_heads_up !== false
-    if (!enabled) { skipped++; continue }
+    const familyPrefs = family?.notification_preferences as Record<string, unknown> | null
+    const familyOptOut = familyPrefs?.pre_charge_heads_up === false
 
     // Idempotency: skip if a pre_charge notification was already sent in last 14 days
     const fourteenDaysAgo = new Date()
@@ -109,11 +115,35 @@ export async function GET(request: NextRequest) {
 
     if (recent && recent.length > 0) { skipped++; continue }
 
+    // Resolve parent user_ids first — we now gate per-user, not per-family.
+    const { data: parentRoles } = await supabase
+      .from('user_roles')
+      .select('user_id')
+      .eq('family_id', familyId)
+      .eq('role', 'parent')
+    const parentIds = (parentRoles ?? []).map((r) => r.user_id as string)
+
+    // Per-user prefs: explicit false skips that parent; missing falls through
+    // to the family-legacy opt-out below.
+    const prefsByUser = await fetchUserPrefs(supabase, parentIds)
+
+    const recipients: string[] = []
+    for (const uid of parentIds) {
+      const userExplicit = prefsByUser.get(uid)?.push?.reminder
+      if (userExplicit === false) continue                          // user opted out
+      if (userExplicit === undefined && familyOptOut) continue      // family legacy opt-out
+      recipients.push(uid)
+    }
+
+    if (recipients.length === 0) { skipped++; continue }
+
     const title = 'Heads-up: upcoming charge'
     const body = 'Sessions in ~10 days will add charges to your family balance. Tap to review.'
     const url = '/parent/payments'
 
-    // Insert in-platform notification row
+    // Insert in-platform notification row (per-family, surfaced via the feed
+    // for any parent with the family targeting). In-app feed isn't gated by
+    // the per-user push pref — the row is informational and harmless.
     await supabase.from('notifications').insert({
       type: 'pre_charge',
       title,
@@ -123,16 +153,9 @@ export async function GET(request: NextRequest) {
       target_id: familyId,
     })
 
-    // Resolve parent user_ids and send push
-    const { data: parentRoles } = await supabase
-      .from('user_roles')
-      .select('user_id')
-      .eq('family_id', familyId)
-      .eq('role', 'parent')
-
-    for (const role of parentRoles ?? []) {
+    for (const uid of recipients) {
       try {
-        await sendPushToUser(role.user_id, { title, body, url })
+        await sendPushToUser(uid, { title, body, url })
       } catch { /* continue */ }
     }
 

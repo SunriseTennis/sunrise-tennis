@@ -2,17 +2,21 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { sendPushToUser } from '@/lib/push/send'
 import { formatTime } from '@/lib/utils/dates'
+import { fetchUserPrefs } from '@/lib/notifications/preferences'
 
 /**
  * Cron: Session Reminders
  * Runs daily at ~7pm ACDT. Finds tomorrow's sessions (private + group)
  * and sends push reminders to parents based on their notification preferences.
  *
- * Preferences (families.notification_preferences.session_reminders):
- *   "all"                   — all sessions
- *   "first_week_and_privates" — privates + first week of a new enrollment (default)
- *   "privates_only"         — private sessions only
- *   "off"                   — no reminders
+ * Preferences (Plan 22):
+ *   1. Per-user (master toggle): user_notification_preferences.prefs.push.reminder.
+ *      Explicit `false` skips that parent regardless of family 4-way setting.
+ *   2. Family 4-way (sub-control, applies when user pref is missing or true):
+ *      "all"                       all sessions
+ *      "first_week_and_privates"   privates + first week of new enrolment (default)
+ *      "privates_only"             private sessions only
+ *      "off"                       no reminders
  *
  * Vercel Cron: schedule in vercel.json as "0 8 * * *" (8:00 UTC = ~6:30pm ACST / 7:00pm ACDT)
  */
@@ -53,28 +57,34 @@ export async function GET(request: NextRequest) {
 
     if (!booking) continue
 
-    // Check notification preference — privates are sent unless "off"
+    // Family 4-way (privates are sent in all modes except 'off').
     const { data: family } = await supabase
       .from('families')
       .select('notification_preferences')
       .eq('id', booking.family_id)
       .single()
 
-    const pref = (family?.notification_preferences as Record<string, string> | null)?.session_reminders ?? 'first_week_and_privates'
-    if (pref === 'off') continue
+    const familyPref = (family?.notification_preferences as Record<string, string> | null)?.session_reminders ?? 'first_week_and_privates'
+    if (familyPref === 'off') continue
 
     const { data: parentRoles } = await supabase
       .from('user_roles')
       .select('user_id')
       .eq('family_id', booking.family_id)
       .eq('role', 'parent')
+    const parentIds = (parentRoles ?? []).map((r) => r.user_id as string)
+
+    // Plan 22 per-user gate: explicit false skips that parent.
+    const prefsByUser = await fetchUserPrefs(supabase, parentIds)
 
     const coachName = (session.coaches as unknown as { name: string } | null)?.name ?? 'coach'
     const playerName = (booking.players as unknown as { first_name: string } | null)?.first_name ?? 'your child'
 
-    for (const role of parentRoles ?? []) {
+    for (const uid of parentIds) {
+      const userExplicit = prefsByUser.get(uid)?.push?.reminder
+      if (userExplicit === false) continue   // user opted out
       try {
-        await sendPushToUser(role.user_id, {
+        await sendPushToUser(uid, {
           title: 'Session Tomorrow',
           body: `${playerName} has a private lesson with ${coachName} at ${session.start_time ? formatTime(session.start_time) : 'TBD'}`,
           url: '/parent/bookings',
@@ -126,18 +136,18 @@ export async function GET(request: NextRequest) {
     const programName = (session.programs as unknown as { name: string; type: string } | null)?.name ?? 'Group Session'
 
     for (const [familyId, info] of familyMap) {
-      // Check notification preference
+      // Family 4-way sub-control.
       const { data: family } = await supabase
         .from('families')
         .select('notification_preferences')
         .eq('id', familyId)
         .single()
 
-      const pref = (family?.notification_preferences as Record<string, string> | null)?.session_reminders ?? 'first_week_and_privates'
+      const familyPref = (family?.notification_preferences as Record<string, string> | null)?.session_reminders ?? 'first_week_and_privates'
 
-      if (pref === 'off' || pref === 'privates_only') continue
+      if (familyPref === 'off' || familyPref === 'privates_only') continue
 
-      if (pref === 'first_week_and_privates') {
+      if (familyPref === 'first_week_and_privates') {
         // Only send if enrolled within the last 7 days (first week)
         if (info.enrolledAt) {
           const enrolledDate = new Date(info.enrolledAt)
@@ -148,19 +158,25 @@ export async function GET(request: NextRequest) {
         }
       }
 
-      // pref === 'all' always gets through
+      // familyPref === 'all' always gets through
 
       const { data: parentRoles } = await supabase
         .from('user_roles')
         .select('user_id')
         .eq('family_id', familyId)
         .eq('role', 'parent')
+      const parentIds = (parentRoles ?? []).map((r) => r.user_id as string)
+
+      // Plan 22 per-user gate.
+      const prefsByUser = await fetchUserPrefs(supabase, parentIds)
 
       const playerList = info.playerNames.join(' & ')
 
-      for (const role of parentRoles ?? []) {
+      for (const uid of parentIds) {
+        const userExplicit = prefsByUser.get(uid)?.push?.reminder
+        if (userExplicit === false) continue   // user opted out
         try {
-          await sendPushToUser(role.user_id, {
+          await sendPushToUser(uid, {
             title: 'Session Tomorrow',
             body: `${playerList} ${info.playerNames.length > 1 ? 'have' : 'has'} ${programName} at ${session.start_time ? formatTime(session.start_time) : 'TBD'}`,
             url: '/parent/programs',
