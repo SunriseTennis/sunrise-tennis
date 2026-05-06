@@ -11,6 +11,18 @@ import {
   coachExceptionFormSchema,
   payPeriodSchema,
 } from '@/lib/utils/validation'
+import {
+  createCharge,
+  formatChargeDescription,
+  voidCharge,
+  getExistingSessionCharge,
+} from '@/lib/utils/billing'
+import {
+  getPlayerSessionPriceBreakdown,
+  formatDiscountSuffix,
+  buildPricingBreakdown,
+} from '@/lib/utils/player-pricing'
+import { getTermLabel } from '@/lib/utils/school-terms'
 
 // ── Lesson Notes ────────────────────────────────────────────────────────
 
@@ -84,6 +96,185 @@ export async function coachUpdateAttendance(sessionId: string, formData: FormDat
         { session_id: sessionId, player_id: entry.playerId, status: entry.status },
         { onConflict: 'session_id,player_id' }
       )
+  }
+
+  // ── Billing side effects (06-May-2026) ────────────────────────────────
+  // Mirrors admin `updateAttendance`: marking a player present/absent/noshow
+  // can produce / void a charge depending on whether the player is on the
+  // program roster and the booking's payment_option. Without this block,
+  // coach-marked attendance was a no-op for billing — fine for term-pre-paid
+  // sessions (charges already exist + dedup catches them), but a real bug
+  // for non-rostered walk-ins where no charge ever materialised.
+  // Coach RLS gives them read access to bookings/charges/players for their
+  // own sessions; the same JWT-scoped client handles inserts and updates.
+  const { data: session } = await supabase
+    .from('sessions')
+    .select('id, program_id, session_type, date, start_time, coach_id, coaches:coach_id(name)')
+    .eq('id', sessionId)
+    .single()
+
+  const playerNames = new Map<string, string>()
+  if (entries.length > 0) {
+    const { data: playerRows } = await supabase
+      .from('players')
+      .select('id, first_name')
+      .in('id', entries.map(e => e.playerId))
+    for (const p of playerRows ?? []) playerNames.set(p.id, p.first_name)
+  }
+  const sessionDate = session?.date ?? null
+  const termLabel = sessionDate ? getTermLabel(sessionDate) : null
+  const privateCoachName = (session?.coaches as unknown as { name?: string } | null)?.name ?? null
+
+  if (session?.program_id) {
+    const programId = session.program_id
+    const isPrivate = session.session_type === 'private'
+
+    const { data: program } = await supabase
+      .from('programs')
+      .select('type, name, per_session_cents')
+      .eq('id', programId)
+      .single()
+
+    for (const entry of entries) {
+      const { data: booking } = await supabase
+        .from('bookings')
+        .select('id, family_id, payment_option, sessions_charged')
+        .eq('player_id', entry.playerId)
+        .eq('program_id', programId)
+        .eq('status', 'confirmed')
+        .order('booked_at', { ascending: false })
+        .limit(1)
+        .single()
+
+      // Walk-in fallback: no booking → mark-present creates a single-session
+      // charge. Absorbed cleanly later when the family enrols for the term.
+      if (!booking) {
+        if (entry.status !== 'present') continue
+        const { data: walkInPlayer } = await supabase
+          .from('players')
+          .select('family_id')
+          .eq('id', entry.playerId)
+          .single()
+        if (!walkInPlayer?.family_id) continue
+        const walkInExisting = await getExistingSessionCharge(supabase, sessionId, entry.playerId)
+        if (walkInExisting) continue
+        const walkInBreakdown = await getPlayerSessionPriceBreakdown(
+          supabase, walkInPlayer.family_id, programId, program?.type, entry.playerId,
+        )
+        if (walkInBreakdown.priceCents <= 0) continue
+        await createCharge(supabase, {
+          familyId: walkInPlayer.family_id,
+          playerId: entry.playerId,
+          type: 'session',
+          sourceType: 'attendance',
+          sourceId: sessionId,
+          sessionId,
+          programId,
+          description: formatChargeDescription({
+            playerName: playerNames.get(entry.playerId),
+            label: `${program?.name ?? 'Session'} (walk-in)`,
+            suffix: formatDiscountSuffix({ multiGroupApplied: walkInBreakdown.multiGroupApplied, earlyPayPct: 0 }),
+            term: termLabel,
+            date: sessionDate,
+          }),
+          amountCents: walkInBreakdown.priceCents,
+          status: 'confirmed',
+          createdBy: user.id,
+          pricingBreakdown: buildPricingBreakdown({
+            basePriceCents: walkInBreakdown.basePriceCents,
+            perSessionPriceCents: walkInBreakdown.priceCents,
+            morningSquadPartnerApplied: walkInBreakdown.morningSquadPartnerApplied,
+            multiGroupApplied: walkInBreakdown.multiGroupApplied,
+            sessions: 1,
+          }) as never,
+        })
+        continue
+      }
+
+      const familyId = booking.family_id
+      const paymentOption = booking.payment_option
+      const existingCharge = await getExistingSessionCharge(supabase, sessionId, entry.playerId)
+      const priceBreakdown = await getPlayerSessionPriceBreakdown(
+        supabase, familyId, programId, program?.type, entry.playerId,
+      )
+      const sessionPrice = priceBreakdown.priceCents
+
+      if (paymentOption === 'pay_later') {
+        // Pay-later: term enrol already wrote N pending per-session charges
+        // at enrol time. Dedup via existingCharge means present/absent are
+        // no-ops here for billing; absent voids any pre-existing pending.
+        if (entry.status === 'present') {
+          if (!existingCharge) {
+            // Term enrolment somehow missed this session (e.g. enrolled
+            // after the session date passed without a backfill). Create a
+            // walk-in-shaped charge so the family pays for delivered service.
+            await createCharge(supabase, {
+              familyId,
+              playerId: entry.playerId,
+              type: 'session',
+              sourceType: 'attendance',
+              sourceId: sessionId,
+              sessionId,
+              programId,
+              bookingId: booking.id,
+              description: formatChargeDescription({
+                playerName: playerNames.get(entry.playerId),
+                label: program?.name ?? 'Session',
+                suffix: formatDiscountSuffix({ multiGroupApplied: priceBreakdown.multiGroupApplied, earlyPayPct: 0 }),
+                term: termLabel,
+                date: sessionDate,
+              }),
+              amountCents: sessionPrice,
+              status: 'confirmed',
+              createdBy: user.id,
+              pricingBreakdown: buildPricingBreakdown({
+                basePriceCents: priceBreakdown.basePriceCents,
+                perSessionPriceCents: priceBreakdown.priceCents,
+                morningSquadPartnerApplied: priceBreakdown.morningSquadPartnerApplied,
+                multiGroupApplied: priceBreakdown.multiGroupApplied,
+                sessions: 1,
+              }) as never,
+            })
+          }
+        } else if (entry.status === 'absent') {
+          if (existingCharge) {
+            await voidCharge(supabase, existingCharge.id, familyId)
+          }
+        }
+        // 'noshow' policy lives in admin/actions.ts; coach attendance lets
+        // admin recompute on review (matches existing posture — coach was a
+        // no-op for billing prior to this change).
+      } else if (isPrivate) {
+        // Private lessons (coach marking attendance for their own session)
+        if (entry.status === 'present') {
+          if (!existingCharge) {
+            await createCharge(supabase, {
+              familyId,
+              playerId: entry.playerId,
+              type: 'private',
+              sourceType: 'attendance',
+              sourceId: sessionId,
+              sessionId,
+              programId,
+              bookingId: booking.id,
+              description: formatChargeDescription({
+                playerName: playerNames.get(entry.playerId),
+                label: privateCoachName ? `Private w/ ${privateCoachName}` : 'Private lesson',
+                date: sessionDate,
+              }),
+              amountCents: sessionPrice,
+              status: 'confirmed',
+              createdBy: user.id,
+            })
+          }
+        } else if (entry.status === 'absent') {
+          if (existingCharge) {
+            await voidCharge(supabase, existingCharge.id, familyId)
+          }
+        }
+      }
+      // pay_now path: charges already exist and are paid. No-op for coach.
+    }
   }
 
   // Mark session as completed if not already

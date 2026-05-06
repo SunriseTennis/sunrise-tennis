@@ -1,8 +1,9 @@
 import { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/lib/supabase/types'
-import { createCharge, formatChargeDescription, type CreateChargeParams } from './billing'
+import { createCharge, formatChargeDescription, voidCharge, type CreateChargeParams } from './billing'
 import { getPlayerSessionPriceBreakdown, formatDiscountSuffix, buildPricingBreakdown, type EarlyBirdMeta } from './player-pricing'
 import { getTermLabel } from './school-terms'
+import { adelaideTodayString, isSessionFuture, filterFutureSessions } from './sessions-filter'
 
 type Supabase = SupabaseClient<Database>
 
@@ -106,6 +107,164 @@ export async function buildTermSessionCharges(
       sessionId: session.id,
     }
   })
+}
+
+// ── Mid-term enrol absorption (06-May-2026) ─────────────────────────────
+//
+// When a player is enrolled into a term program mid-term, their term
+// enrolment should fold in any sessions they've already attended (status =
+// 'present') AND any future-scheduled sessions, charging them at the term
+// rate (with multi-group + early-bird applied) for the entire combined set.
+// Pre-existing per-session charges (walk-in charges, partial-enrol
+// leftovers) get voided and replaced by term-shaped charges; if any of
+// them were paid, the surplus auto-applies via Plan-22 credit-allocation.
+//
+// Past sessions where the attendance was 'absent' or 'noshow' are NOT
+// folded in — those follow the existing absence-credit / no-show policy
+// (see `Apps/Features/payments.md`).
+
+export interface TermEnrolSessions {
+  /** Past-attended-present + future-scheduled sessions for this program,
+   *  sorted by date ascending, deduped by session id. This is the list
+   *  every term-enrol path should fan per-session charges over. */
+  combinedSessions: { id: string; date: string; start_time: string | null }[]
+  /** Existing non-voided per-session `charges.id` rows for THIS player+program
+   *  scoped to sessions in `combinedSessions`. The caller voids these before
+   *  creating fresh term-shaped charges. */
+  absorbableChargeIds: string[]
+  /** Sum of `payment_allocations.amount_cents` against absorbable charges
+   *  whose status is 'pending' or 'confirmed'. This is "credit pending from
+   *  voids" — feeds `prepareEnrolPayment`'s Stripe-amount calculation so a
+   *  paid walk-in reduces the Stripe charge by exactly the prior payment. */
+  pendingVoidCreditCents: number
+}
+
+/**
+ * Gather everything a term-enrol path needs to produce a clean per-session
+ * charge fan-out, even mid-term where the player has already attended some
+ * sessions or has stranded walk-in charges.
+ *
+ * Two queries: future-scheduled sessions for the program, and the player's
+ * past 'present' attendances joined back to their session rows. Combined and
+ * deduped on session id. Then one query for absorbable charges and one for
+ * their allocations.
+ *
+ * Adelaide-aware: uses `isSessionFuture` to split past vs future. A session
+ * dated today whose `start_time` has already passed counts as past.
+ */
+export async function gatherTermEnrolSessions(
+  supabase: Supabase,
+  programId: string,
+  playerId: string,
+): Promise<TermEnrolSessions> {
+  // 1) Future-scheduled sessions for this program (Adelaide-aware).
+  const { data: futureRows } = await supabase
+    .from('sessions')
+    .select('id, date, start_time')
+    .eq('program_id', programId)
+    .eq('status', 'scheduled')
+    .gte('date', adelaideTodayString())
+    .order('date', { ascending: true })
+
+  const futureSessions = filterFutureSessions(
+    (futureRows ?? []) as { id: string; date: string; start_time: string | null }[],
+  )
+
+  // 2) Past-attended sessions: this player's 'present' attendances joined
+  //    to their sessions, filtered to this program AND past-or-already-started.
+  const { data: attendedRows } = await supabase
+    .from('attendances')
+    .select('session_id, sessions:session_id(id, date, start_time, program_id, status)')
+    .eq('player_id', playerId)
+    .eq('status', 'present')
+
+  type AttendedSession = {
+    id: string
+    date: string
+    start_time: string | null
+    program_id: string | null
+    status: string | null
+  }
+
+  const pastAttended = (attendedRows ?? [])
+    .map(r => r.sessions as unknown as AttendedSession | null)
+    .filter((s): s is AttendedSession =>
+      !!s && s.program_id === programId && s.status !== 'cancelled' && !isSessionFuture(s),
+    )
+    .map(s => ({ id: s.id, date: s.date, start_time: s.start_time }))
+
+  // 3) Combine + dedupe by session id (a session is normally either past
+  //    or future, but a 'present' marked on a not-yet-started session would
+  //    appear in both — keep the future-list version which is canonical).
+  const seen = new Set<string>()
+  const combinedSessions: { id: string; date: string; start_time: string | null }[] = []
+  for (const s of [...pastAttended, ...futureSessions]) {
+    if (!seen.has(s.id)) {
+      seen.add(s.id)
+      combinedSessions.push(s)
+    }
+  }
+  combinedSessions.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0))
+
+  if (combinedSessions.length === 0) {
+    return { combinedSessions, absorbableChargeIds: [], pendingVoidCreditCents: 0 }
+  }
+
+  // 4) Absorbable charges: non-voided per-session rows for this player+program
+  //    bound to a session in the combined list.
+  const sessionIds = combinedSessions.map(s => s.id)
+  const { data: chargeRows } = await supabase
+    .from('charges')
+    .select('id')
+    .eq('player_id', playerId)
+    .eq('program_id', programId)
+    .in('session_id', sessionIds)
+    .in('status', ['pending', 'confirmed'])
+
+  const absorbableChargeIds = (chargeRows ?? []).map(r => r.id)
+
+  if (absorbableChargeIds.length === 0) {
+    return { combinedSessions, absorbableChargeIds: [], pendingVoidCreditCents: 0 }
+  }
+
+  // 5) Allocations against absorbable charges → "credit pending from voids".
+  //    Only count allocations from received payments; pending/voided payments
+  //    don't represent real money on the family's balance.
+  const { data: allocRows } = await supabase
+    .from('payment_allocations')
+    .select('amount_cents, payments:payment_id(status)')
+    .in('charge_id', absorbableChargeIds)
+
+  type AllocRow = { amount_cents: number; payments: { status: string } | null }
+  const pendingVoidCreditCents = (allocRows ?? [])
+    .map(r => r as unknown as AllocRow)
+    .filter(r => r.payments?.status === 'received')
+    .reduce((sum, r) => sum + (r.amount_cents ?? 0), 0)
+
+  return { combinedSessions, absorbableChargeIds, pendingVoidCreditCents }
+}
+
+/**
+ * Void each absorbable charge in turn. Idempotent on re-fire (voiding an
+ * already-voided charge is a no-op via the status check inside `voidCharge`).
+ * Caller is responsible for using a service-role client when the JWT-scoped
+ * client has no UPDATE policy on `charges` (parents) — admin paths can pass
+ * the JWT-scoped client.
+ */
+export async function voidAbsorbableCharges(
+  supabase: Supabase,
+  chargeIds: string[],
+  familyId: string,
+): Promise<void> {
+  for (const id of chargeIds) {
+    try {
+      await voidCharge(supabase, id, familyId)
+    } catch (e) {
+      console.error('Failed to void absorbable charge', id, e instanceof Error ? e.message : e)
+      // Non-fatal — we'll still create the new term charges; admin can
+      // sweep any orphan walk-in charges manually if this ever surfaces.
+    }
+  }
 }
 
 /**

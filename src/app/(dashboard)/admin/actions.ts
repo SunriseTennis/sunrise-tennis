@@ -28,10 +28,11 @@ import {
 import { getPlayerSessionPriceBreakdown, formatDiscountSuffix, buildPricingBreakdown } from '@/lib/utils/player-pricing'
 import { getTermLabel } from '@/lib/utils/school-terms'
 import { getActiveEarlyBird } from '@/lib/utils/eligibility'
-import { adelaideTodayString, filterFutureSessions } from '@/lib/utils/sessions-filter'
+// Adelaide-aware future-session filtering is now centralised inside
+// `gatherTermEnrolSessions` for every term-enrol path on this page.
 import { formatDate } from '@/lib/utils/dates'
 import { dispatchNotification } from '@/lib/notifications/dispatch'
-import { createTermSessionCharges } from '@/lib/utils/term-charges'
+import { createTermSessionCharges, gatherTermEnrolSessions, voidAbsorbableCharges } from '@/lib/utils/term-charges'
 
 // ── Families ────────────────────────────────────────────────────────────
 
@@ -802,7 +803,55 @@ export async function updateAttendance(sessionId: string, formData: FormData) {
         .limit(1)
         .single()
 
-      if (!booking) continue
+      // Walk-in fallback: no booking row means this player is being marked
+      // attended without a prior enrolment. Mirror `adminAddWalkInAttendance`
+      // and create a single-session charge so today's attendance is billed.
+      // The charge gets absorbed cleanly when the family later enrols for
+      // the term (gatherTermEnrolSessions picks it up at enrol time).
+      // Only `present` triggers a walk-in charge — `absent`/`noshow` for a
+      // non-rostered player has no policy meaning here.
+      if (!booking) {
+        if (entry.status !== 'present') continue
+        const { data: walkInPlayer } = await supabase
+          .from('players')
+          .select('family_id')
+          .eq('id', entry.playerId)
+          .single()
+        if (!walkInPlayer?.family_id) continue
+        const walkInExisting = await getExistingSessionCharge(supabase, sessionId, entry.playerId)
+        if (walkInExisting) continue
+        const walkInBreakdown = await getPlayerSessionPriceBreakdown(
+          supabase, walkInPlayer.family_id, programId, program?.type, entry.playerId,
+        )
+        if (walkInBreakdown.priceCents <= 0) continue
+        await createCharge(supabase, {
+          familyId: walkInPlayer.family_id,
+          playerId: entry.playerId,
+          type: 'session',
+          sourceType: 'attendance',
+          sourceId: sessionId,
+          sessionId,
+          programId,
+          description: formatChargeDescription({
+            playerName: playerNames.get(entry.playerId),
+            label: `${program?.name ?? 'Session'} (walk-in)`,
+            suffix: formatDiscountSuffix({ multiGroupApplied: walkInBreakdown.multiGroupApplied, earlyPayPct: 0 }),
+            term: termLabel,
+            date: sessionDate,
+          }),
+          amountCents: walkInBreakdown.priceCents,
+          status: 'confirmed',
+          createdBy: user.id,
+          pricingBreakdown: buildPricingBreakdown({
+            basePriceCents: walkInBreakdown.basePriceCents,
+            perSessionPriceCents: walkInBreakdown.priceCents,
+            morningSquadPartnerApplied: walkInBreakdown.morningSquadPartnerApplied,
+            multiGroupApplied: walkInBreakdown.multiGroupApplied,
+            sessions: 1,
+          }) as never,
+        })
+        continue
+      }
 
       const familyId = booking.family_id
       const paymentOption = booking.payment_option
@@ -1467,23 +1516,6 @@ export async function bulkEnrolPlayers(formData: FormData) {
       .in('id', newPlayerIds),
   ])
 
-  // Adelaide-aware future sessions (term path uses these for per-session charges).
-  let sessionsList: { id: string; date: string; start_time: string | null }[] = []
-  if (isTermEnrollment) {
-    const { data: upcomingSessions } = await supabase
-      .from('sessions')
-      .select('id, date, start_time')
-      .eq('program_id', programId)
-      .gte('date', adelaideTodayString())
-      .eq('status', 'scheduled')
-      .order('date', { ascending: true })
-
-    sessionsList = filterFutureSessions(
-      (upcomingSessions ?? []) as { id: string; date: string; start_time: string | null }[],
-    )
-  }
-  const sessionsTotal = sessionsList.length
-
   const earlyBirdInfo = isTermEnrollment
     ? getActiveEarlyBird({
         early_pay_discount_pct: program?.early_pay_discount_pct ?? null,
@@ -1502,21 +1534,32 @@ export async function bulkEnrolPlayers(formData: FormData) {
       }
     : null
 
-  // Per-player: insert booking with financial fields, then per-session
-  // charges (term) or single charge (casual). Trial = free, no charges.
+  // Per-player: gather combined sessions (past-attended + future-scheduled),
+  // void absorbable per-session charges, insert booking with financial
+  // fields, then per-session charges (term) or single charge (casual).
+  // Trial = free, no charges. Sessions are gathered per-player because
+  // different players may have attended different past sessions; the
+  // future-session query is the same per-player but the helper keeps the
+  // logic in one place.
   for (const p of enrolledPlayers ?? []) {
     let priceCents = 0
     let casualBreakdown: ReturnType<typeof buildPricingBreakdown> | null = null
     let casualMultiGroupApplied = false
+    let perPlayerSessions: { id: string; date: string; start_time: string | null }[] = []
+    let perPlayerAbsorbableIds: string[] = []
 
     if (isTermEnrollment) {
+      const gathered = await gatherTermEnrolSessions(supabase, programId, p.id)
+      perPlayerSessions = gathered.combinedSessions
+      perPlayerAbsorbableIds = gathered.absorbableChargeIds
+
       const breakdown = await getPlayerSessionPriceBreakdown(
         supabase, p.family_id, programId, program?.type, p.id,
       )
       const perSessionAfterEB = earlyBirdInfo.pct > 0
         ? Math.round(breakdown.priceCents * (100 - earlyBirdInfo.pct) / 100)
         : breakdown.priceCents
-      priceCents = perSessionAfterEB * sessionsTotal
+      priceCents = perSessionAfterEB * perPlayerSessions.length
     } else if (isCasual) {
       const breakdown = await getPlayerSessionPriceBreakdown(
         supabase, p.family_id, programId, program?.type, p.id,
@@ -1545,7 +1588,7 @@ export async function bulkEnrolPlayers(formData: FormData) {
         payment_option: isTermEnrollment ? 'pay_later' : null,
         price_cents: priceCents,
         discount_cents: 0,
-        sessions_total: sessionsTotal,
+        sessions_total: perPlayerSessions.length,
         sessions_charged: 0,
       })
       .select('id')
@@ -1556,7 +1599,14 @@ export async function bulkEnrolPlayers(formData: FormData) {
       continue
     }
 
-    if (isTermEnrollment && booking && sessionsTotal > 0) {
+    if (isTermEnrollment && booking && perPlayerSessions.length > 0) {
+      // Void absorbable charges (walk-ins + partial-enrol leftovers for
+      // sessions in this player's combined list) BEFORE creating new term
+      // charges. Admin's JWT-scoped client has UPDATE policy on `charges`
+      // (mirrors `updateAttendance`'s use of `voidCharge` directly).
+      if (perPlayerAbsorbableIds.length > 0) {
+        await voidAbsorbableCharges(supabase, perPlayerAbsorbableIds, p.family_id)
+      }
       try {
         await createTermSessionCharges(supabase, {
           familyId: p.family_id,
@@ -1568,7 +1618,7 @@ export async function bulkEnrolPlayers(formData: FormData) {
           earlyBirdMeta,
           chargeStatus: 'pending',
           createdBy: user.id,
-          sessions: sessionsList,
+          sessions: perPlayerSessions,
           playerName: p.first_name,
           programName: program?.name,
         })
