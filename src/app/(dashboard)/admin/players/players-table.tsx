@@ -15,6 +15,9 @@ import { ArrowUpDown, Search, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
 import { updatePlayerInline } from '../actions'
 
+type GenderValue = 'male' | 'female' | 'non_binary' | null
+type GenderUiValue = 'unset' | 'male' | 'female' | 'non_binary'
+
 interface PlayerRow {
   id: string
   firstName: string
@@ -37,7 +40,7 @@ interface PlayerRow {
   utr: string | null
 }
 
-type SortKey = 'firstName' | 'lastName' | 'dob' | 'age' | 'ballColor' | 'family' | 'utr' | 'compStatus' | 'track' | 'status'
+type SortKey = 'firstName' | 'lastName' | 'dob' | 'age' | 'ballColor' | 'family' | 'utr' | 'compStatus' | 'track' | 'status' | 'gender'
 
 function calcAge(dob: string | null): number | null {
   if (!dob) return null
@@ -72,6 +75,29 @@ const STATUS_STYLES: Record<string, string> = {
   active:   'bg-success/10 text-success border-success/30',
   inactive: 'bg-warning/10 text-warning border-warning/30',
   archived: 'bg-muted text-muted-foreground border-border',
+}
+
+const GENDER_STYLES: Record<GenderUiValue, string> = {
+  unset:      'bg-warning/10 text-warning border-warning/40',
+  male:       'bg-sky-100 text-sky-700 border-sky-300',
+  female:     'bg-pink-100 text-pink-700 border-pink-300',
+  non_binary: 'bg-violet-100 text-violet-700 border-violet-300',
+}
+
+const GENDER_SORT_ORDER: Record<GenderUiValue, number> = {
+  female: 0,
+  male: 1,
+  non_binary: 2,
+  unset: 3,
+}
+
+function genderToUi(g: string | null): GenderUiValue {
+  if (g === 'male' || g === 'female' || g === 'non_binary') return g
+  return 'unset'
+}
+
+function uiToGender(g: GenderUiValue): GenderValue {
+  return g === 'unset' ? null : g
 }
 
 // ── Inline editing cells ──────────────────────────────────────────────────────
@@ -158,7 +184,12 @@ function useRowState(initial: PlayerRow) {
   const [isPending, startTransition] = useTransition()
   const [error, setError] = useState<string | null>(null)
 
-  function patch(update: Partial<Pick<PlayerRow, 'classifications' | 'track' | 'status'>>) {
+  function patch(update: {
+    classifications?: string[]
+    track?: 'performance' | 'participation'
+    status?: 'active' | 'inactive' | 'archived'
+    gender?: GenderValue
+  }) {
     const before = row
     const next = { ...row, ...update }
     setRow(next)
@@ -221,6 +252,20 @@ function EditableRow({ player }: { player: PlayerRow }) {
         />
       </TableCell>
       <TableCell>
+        <InlineSelect<GenderUiValue>
+          value={genderToUi(row.gender)}
+          options={[
+            { value: 'unset', label: 'Unset' },
+            { value: 'female', label: 'Female' },
+            { value: 'male', label: 'Male' },
+            { value: 'non_binary', label: 'Non-binary' },
+          ]}
+          onChange={(next) => patch({ gender: uiToGender(next) })}
+          styles={GENDER_STYLES}
+          saving={false}
+        />
+      </TableCell>
+      <TableCell>
         <InlineSelect
           value={row.status}
           options={[
@@ -267,6 +312,7 @@ export function PlayersTable({ players }: { players: PlayerRow[] }) {
   const [trackFilter, setTrackFilter] = useState<'all' | 'performance' | 'participation'>('all')
   const [statusFilter, setStatusFilter] = useState<'active' | 'all' | 'inactive' | 'archived'>('active')
   const [compFilter, setCompFilter] = useState<'all' | 'in_comp' | 'not_in_comp'>('all')
+  const [genderFilter, setGenderFilter] = useState<'all' | 'unset' | 'female' | 'male' | 'non_binary'>('all')
   const [sortKey, setSortKey] = useState<SortKey>('lastName')
   const [sortAsc, setSortAsc] = useState(true)
 
@@ -309,6 +355,10 @@ export function PlayersTable({ players }: { players: PlayerRow[] }) {
       list = list.filter(p => p.track === trackFilter)
     }
 
+    if (genderFilter !== 'all') {
+      list = list.filter(p => genderToUi(p.gender) === genderFilter)
+    }
+
     if (compFilter === 'in_comp') {
       list = list.filter(p => p.comps.length > 0)
     } else if (compFilter === 'not_in_comp') {
@@ -316,7 +366,7 @@ export function PlayersTable({ players }: { players: PlayerRow[] }) {
     }
 
     return list
-  }, [players, search, ballFilter, classFilter, trackFilter, statusFilter, compFilter])
+  }, [players, search, ballFilter, classFilter, trackFilter, statusFilter, genderFilter, compFilter])
 
   const sorted = useMemo(() => {
     const dir = sortAsc ? 1 : -1
@@ -355,11 +405,18 @@ export function PlayersTable({ players }: { players: PlayerRow[] }) {
           return dir * a.track.localeCompare(b.track)
         case 'status':
           return dir * a.status.localeCompare(b.status)
+        case 'gender':
+          return dir * (GENDER_SORT_ORDER[genderToUi(a.gender)] - GENDER_SORT_ORDER[genderToUi(b.gender)])
         default:
           return 0
       }
     })
   }, [filtered, sortKey, sortAsc])
+
+  const unsetGenderCount = useMemo(
+    () => players.filter(p => p.status === 'active' && genderToUi(p.gender) === 'unset').length,
+    [players],
+  )
 
   const SortHeader = ({ label, sortId }: { label: string; sortId: SortKey }) => (
     <button
@@ -413,6 +470,13 @@ export function PlayersTable({ players }: { players: PlayerRow[] }) {
             <option key={c} value={c} className="capitalize">{c}</option>
           ))}
         </select>
+        <select value={genderFilter} onChange={(e) => setGenderFilter(e.target.value as typeof genderFilter)} className={selectClasses}>
+          <option value="all">All genders</option>
+          <option value="unset">Unset{unsetGenderCount > 0 ? ` (${unsetGenderCount})` : ''}</option>
+          <option value="female">Female</option>
+          <option value="male">Male</option>
+          <option value="non_binary">Non-binary</option>
+        </select>
         <select value={compFilter} onChange={(e) => setCompFilter(e.target.value as typeof compFilter)} className={selectClasses}>
           <option value="all">All players</option>
           <option value="in_comp">In a comp</option>
@@ -423,50 +487,56 @@ export function PlayersTable({ players }: { players: PlayerRow[] }) {
 
       {/* Inline-edit hint */}
       <p className="mt-3 text-xs text-muted-foreground">
-        Click classification chips to toggle. Track and status save on change.
+        Click classification chips to toggle. Track, gender, and status save on change.
       </p>
 
       {/* Mobile cards (read-only — use desktop for editing) */}
       <div className="mt-4 space-y-3 md:hidden">
-        {sorted.map((p) => (
-          <Link
-            key={p.id}
-            href={`/admin/families/${p.familyId}/players/${p.id}`}
-            className="block rounded-lg border border-border bg-card p-4 shadow-card transition-colors hover:border-primary/30"
-          >
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="font-medium text-foreground">{p.firstName} {p.lastName}</p>
-                <p className="text-xs text-muted-foreground">{p.familyDisplayId} - {p.familyName}</p>
+        {sorted.map((p) => {
+          const genderUi = genderToUi(p.gender)
+          return (
+            <Link
+              key={p.id}
+              href={`/admin/families/${p.familyId}/players/${p.id}`}
+              className="block rounded-lg border border-border bg-card p-4 shadow-card transition-colors hover:border-primary/30"
+            >
+              <div className="flex items-start justify-between">
+                <div>
+                  <p className="font-medium text-foreground">{p.firstName} {p.lastName}</p>
+                  <p className="text-xs text-muted-foreground">{p.familyDisplayId} - {p.familyName}</p>
+                </div>
+                {p.ballColor && (
+                  <span className="rounded-full bg-muted px-2 py-0.5 text-xs capitalize">{p.ballColor}</span>
+                )}
               </div>
-              {p.ballColor && (
-                <span className="rounded-full bg-muted px-2 py-0.5 text-xs capitalize">{p.ballColor}</span>
-              )}
-            </div>
-            <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-              {p.dob && <span>Age {calcAge(p.dob)}</span>}
-              {p.utr && <span>UTR {p.utr}</span>}
-              {p.classifications.length > 0 && (
-                <span className="rounded-full bg-primary/10 px-2 py-0.5 text-primary">
-                  {p.classifications.join(', ')}
+              <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                {p.dob && <span>Age {calcAge(p.dob)}</span>}
+                {p.utr && <span>UTR {p.utr}</span>}
+                <span className={cn('rounded-full px-2 py-0.5 capitalize border', GENDER_STYLES[genderUi])}>
+                  {genderUi === 'non_binary' ? 'Non-binary' : genderUi}
                 </span>
-              )}
-              <span className={cn('rounded-full px-2 py-0.5 capitalize border', TRACK_STYLES[p.track])}>{p.track}</span>
-              {p.status !== 'active' && (
-                <span className={cn('rounded-full px-2 py-0.5 capitalize border', STATUS_STYLES[p.status])}>{p.status}</span>
-              )}
-              {p.comps.length > 0 && (
-                <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-emerald-700">
-                  {p.comps.map(c => c.compName).join(', ')}
-                </span>
-              )}
-              {p.programs.length > 0 && <span>{p.programs.length} program{p.programs.length > 1 ? 's' : ''}</span>}
-            </div>
-          </Link>
-        ))}
+                {p.classifications.length > 0 && (
+                  <span className="rounded-full bg-primary/10 px-2 py-0.5 text-primary">
+                    {p.classifications.join(', ')}
+                  </span>
+                )}
+                <span className={cn('rounded-full px-2 py-0.5 capitalize border', TRACK_STYLES[p.track])}>{p.track}</span>
+                {p.status !== 'active' && (
+                  <span className={cn('rounded-full px-2 py-0.5 capitalize border', STATUS_STYLES[p.status])}>{p.status}</span>
+                )}
+                {p.comps.length > 0 && (
+                  <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-emerald-700">
+                    {p.comps.map(c => c.compName).join(', ')}
+                  </span>
+                )}
+                {p.programs.length > 0 && <span>{p.programs.length} program{p.programs.length > 1 ? 's' : ''}</span>}
+              </div>
+            </Link>
+          )
+        })}
       </div>
 
-      {/* Desktop table — inline editing for classifications, track, status */}
+      {/* Desktop table — inline editing for classifications, track, gender, status */}
       <div className="mt-4 hidden overflow-hidden rounded-lg border border-border bg-card shadow-card md:block">
         <Table>
           <TableHeader>
@@ -478,6 +548,7 @@ export function PlayersTable({ players }: { players: PlayerRow[] }) {
               <TableHead><SortHeader label="Family" sortId="family" /></TableHead>
               <TableHead>Classifications</TableHead>
               <TableHead><SortHeader label="Track" sortId="track" /></TableHead>
+              <TableHead><SortHeader label="Gender" sortId="gender" /></TableHead>
               <TableHead><SortHeader label="Status" sortId="status" /></TableHead>
               <TableHead>Programs</TableHead>
               <TableHead><SortHeader label="UTR" sortId="utr" /></TableHead>
