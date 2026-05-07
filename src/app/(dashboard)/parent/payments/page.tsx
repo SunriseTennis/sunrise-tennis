@@ -44,8 +44,8 @@ export default async function ParentPaymentsPage({
 
   const [balanceRes, paymentsRes, chargesRes, vouchersRes, playersRes, familyRes] = await Promise.all([
     supabase.from('family_balance').select('balance_cents, confirmed_balance_cents, projected_balance_cents').eq('family_id', familyId).single(),
-    supabase.from('payments').select('*, payment_allocations(amount_cents, charge_id, charges:charge_id(description, status, session_id, program_id, booking_id, pricing_breakdown, sessions:session_id(date, status)))').eq('family_id', familyId).neq('status', 'voided').neq('status', 'pending').order('created_at', { ascending: false }).limit(100),
-    supabase.from('charges').select('id, type, source_type, description, amount_cents, status, program_id, session_id, booking_id, player_id, created_at, pricing_breakdown, sessions:session_id(date, status), players:player_id(first_name), payment_allocations(amount_cents)').eq('family_id', familyId).in('status', ['pending', 'confirmed', 'paid', 'credited']).order('created_at', { ascending: false }).limit(150),
+    supabase.from('payments').select('*, payment_allocations(amount_cents, charge_id, charges:charge_id(description, status, session_id, program_id, booking_id, pricing_breakdown, sessions:session_id(date, status), programs:program_id(name)))').eq('family_id', familyId).neq('status', 'voided').neq('status', 'pending').order('created_at', { ascending: false }).limit(100),
+    supabase.from('charges').select('id, type, source_type, description, amount_cents, status, program_id, session_id, booking_id, player_id, created_at, pricing_breakdown, sessions:session_id(date, status), players:player_id(first_name), programs:program_id(name, type), payment_allocations(amount_cents)').eq('family_id', familyId).in('status', ['pending', 'confirmed', 'paid', 'credited']).order('created_at', { ascending: false }).limit(150),
     supabase.from('vouchers').select('id, child_first_name, child_surname, amount_cents, status, submitted_at, rejection_reason, voucher_number, submission_method').eq('family_id', familyId).order('submitted_at', { ascending: false }).limit(20),
     supabase.from('players').select('id, first_name, last_name, dob, gender').eq('family_id', familyId).eq('status', 'active').order('first_name'),
     supabase.from('families').select('primary_contact, address, family_name').eq('id', familyId).single(),
@@ -61,26 +61,9 @@ export default async function ParentPaymentsPage({
   const familyAddress = familyData?.address as string | null
   const familyName = familyData?.family_name ?? null
 
-  // Enrich charges with program names + types. Also include programs referenced
-  // only via payment allocations (paid charges past the current-charges window)
-  // so PaymentHistory bundle headers can show the program name.
-  const chargeProgramIds = (charges ?? []).filter(c => c.program_id).map(c => c.program_id!)
-  const allocProgramIds = (payments ?? []).flatMap(p =>
-    ((p.payment_allocations ?? []) as unknown as { charges: { program_id: string | null } | null }[])
-      .map(a => a.charges?.program_id)
-      .filter((id): id is string => !!id),
-  )
-  const programIds = [...new Set([...chargeProgramIds, ...allocProgramIds])]
-  let programInfo: Record<string, { name: string; type: string }> = {}
-  if (programIds.length > 0) {
-    const { data: programs } = await supabase
-      .from('programs')
-      .select('id, name, type')
-      .in('id', programIds)
-    if (programs) {
-      programInfo = Object.fromEntries(programs.map(p => [p.id, { name: p.name, type: p.type }]))
-    }
-  }
+  // Programs (name, type) are now joined directly into the charges + inner-
+  // charges-via-payments queries above — the previous separate `programs`
+  // fetch (one extra round trip after the Promise.all resolved) is gone.
   // Live recompute drives the in-memory display only — multi-group state is
   // overlaid against today's roster, early-bird tier resolved against today's
   // date. Cached per (player, program) tuple inside the helper. The DB-side
@@ -93,7 +76,7 @@ export default async function ParentPaymentsPage({
   const enrichedCharges = (charges ?? []).map(c => {
     const session = c.sessions as unknown as { date: string; status: string } | null
     const player = c.players as unknown as { first_name: string } | null
-    const info = c.program_id ? programInfo[c.program_id] : null
+    const info = (c.programs as unknown as { name: string; type: string } | null) ?? null
     const allocations = (c.payment_allocations ?? []) as unknown as { amount_cents: number }[]
     const paid_cents = allocations.reduce((sum, a) => sum + (a.amount_cents ?? 0), 0)
     // Positive charges: outstanding = amount - allocated. Negative (credits) pass through unchanged.
@@ -183,6 +166,7 @@ export default async function ParentPaymentsPage({
         booking_id: string | null
         pricing_breakdown: unknown | null
         sessions: { date: string; status: string } | null
+        programs: { name: string } | null
       } | null
     }[]
     const visibleAllocations = allocations.filter(a => a.charges?.status !== 'voided')
@@ -200,7 +184,7 @@ export default async function ParentPaymentsPage({
         sessionStatus: a.charges?.sessions?.status ?? null,
         programId: a.charges?.program_id ?? null,
         bookingId: a.charges?.booking_id ?? null,
-        programName: a.charges?.program_id ? programInfo[a.charges.program_id]?.name ?? null : null,
+        programName: a.charges?.programs?.name ?? null,
         pricingBreakdown: (a.charges?.pricing_breakdown as import('@/components/pricing-breakdown-panel').PricingBreakdownData | null) ?? null,
       })),
     }

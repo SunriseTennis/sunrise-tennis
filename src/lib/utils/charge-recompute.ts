@@ -507,26 +507,33 @@ export async function recomputePendingChargesForFamily(
 
   const today = new Date().toISOString().split('T')[0]
 
-  // Cache by (playerId, programId) — every charge for the same tuple shares
-  // the same per-session price + breakdown shape.
-  const tupleCache = new Map<string, { breakdown: Awaited<ReturnType<typeof getPlayerSessionPriceBreakdown>>; ebPct: number; ebMeta: EarlyBirdMeta }>()
-
+  // Step 1 — collect unique (player, program) tuples. Every pending charge
+  // for the same tuple shares the same per-session price + breakdown shape,
+  // so we only need to fetch one breakdown per tuple.
+  type TupleSeed = {
+    playerId: string
+    programId: string
+    program: PendingChargeForRecompute['programs']
+  }
+  const uniqueTuples = new Map<string, TupleSeed>()
   for (const raw of pending) {
     const c = raw as unknown as PendingChargeForRecompute
     if (!c.player_id || !c.program_id) continue
-
-    // Filter to charges with an outstanding balance — fully-allocated pending
-    // charges (rare race window) don't need recompute.
-    // We don't have allocations here; the caller (page.tsx) has already
-    // computed outstanding_cents. For belt-and-braces, we still write the
-    // breakdown — page filters which to render.
-
     const tupleKey = `${c.player_id}::${c.program_id}`
-    let cached = tupleCache.get(tupleKey)
-    if (!cached) {
-      const program = c.programs
+    if (!uniqueTuples.has(tupleKey)) {
+      uniqueTuples.set(tupleKey, { playerId: c.player_id, programId: c.program_id, program: c.programs })
+    }
+  }
+
+  // Step 2 — fetch breakdowns for every tuple in PARALLEL. Each
+  // `getPlayerSessionPriceBreakdown` fires ~5 internal DB calls; awaiting
+  // them sequentially in the previous loop dominated render latency for
+  // multi-program families.
+  type TupleResult = { breakdown: Awaited<ReturnType<typeof getPlayerSessionPriceBreakdown>>; ebPct: number; ebMeta: EarlyBirdMeta }
+  const tupleEntries = await Promise.all(
+    Array.from(uniqueTuples.entries()).map(async ([key, { playerId, programId, program }]): Promise<readonly [string, TupleResult]> => {
       const breakdown = await getPlayerSessionPriceBreakdown(
-        supabase, familyId, c.program_id, program?.type ?? null, c.player_id,
+        supabase, familyId, programId, program?.type ?? null, playerId,
       )
       const eb = getActiveEarlyBird({
         early_pay_discount_pct: program?.early_pay_discount_pct ?? null,
@@ -534,7 +541,7 @@ export async function recomputePendingChargesForFamily(
         early_pay_discount_pct_tier2: program?.early_pay_discount_pct_tier2 ?? null,
         early_bird_deadline_tier2: program?.early_bird_deadline_tier2 ?? null,
       }, today)
-      cached = {
+      return [key, {
         breakdown,
         ebPct: eb.pct,
         ebMeta: {
@@ -543,9 +550,19 @@ export async function recomputePendingChargesForFamily(
           tier2Pct: program?.early_pay_discount_pct_tier2 ?? null,
           tier2Deadline: program?.early_bird_deadline_tier2 ?? null,
         },
-      }
-      tupleCache.set(tupleKey, cached)
-    }
+      }] as const
+    }),
+  )
+  const tupleCache = new Map<string, TupleResult>(tupleEntries)
+
+  // Step 3 — synchronously assign each pending charge its live breakdown.
+  for (const raw of pending) {
+    const c = raw as unknown as PendingChargeForRecompute
+    if (!c.player_id || !c.program_id) continue
+
+    const tupleKey = `${c.player_id}::${c.program_id}`
+    const cached = tupleCache.get(tupleKey)
+    if (!cached) continue
 
     const liveBreakdown = buildPricingBreakdown({
       basePriceCents: cached.breakdown.basePriceCents,
