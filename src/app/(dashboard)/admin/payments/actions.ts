@@ -520,9 +520,15 @@ export async function cancelFamilyPricing(formData: FormData) {
     redirect('/admin/payments?error=' + encodeURIComponent('Pricing id missing'))
   }
 
-  // Soft-end: set valid_until to today. Preserves audit trail of "this family
-  // had this rate for this period". Hard-delete would lose that.
-  const today = new Date().toISOString().split('T')[0]
+  // Soft-end: set valid_until to yesterday so the row falls out of the
+  // active filter immediately. Every consumer (admin pages + parent UI +
+  // get_private_price RPC) treats valid_until as the inclusive last active
+  // day, so setting it to today would leave the override active for the
+  // rest of today. Yesterday makes "End" mean "ended now". Audit trail
+  // preserved (hard-delete would lose it).
+  const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000)
+    .toISOString()
+    .split('T')[0]
 
   const { data: row, error: fetchError } = await supabase
     .from('family_pricing')
@@ -536,7 +542,7 @@ export async function cancelFamilyPricing(formData: FormData) {
 
   const { error } = await supabase
     .from('family_pricing')
-    .update({ valid_until: today })
+    .update({ valid_until: yesterday })
     .eq('id', pricingId)
 
   if (error) {
