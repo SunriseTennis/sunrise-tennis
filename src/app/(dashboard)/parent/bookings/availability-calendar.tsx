@@ -724,30 +724,43 @@ export function AvailabilityCalendar({
             <tbody>
               {(() => {
                 const filteredCoaches = bookableCoaches.filter(c => visibleCoachIds.has(c.id))
-                // Group: Maxim alone, Zoe alone, then rest together. When a coach has a
-                // grandfathered rate they show on their own row regardless (so the override
-                // is visible) — they're never bundled into "rest".
-                const maxim = filteredCoaches.find(c => c.name.toLowerCase().includes('maxim'))
-                const zoe = filteredCoaches.find(c => c.name.toLowerCase().includes('zoe'))
-                const overriddenCoaches = filteredCoaches.filter(c => privateRateOverrides[c.id] && c !== maxim && c !== zoe)
-                const rest = filteredCoaches.filter(c => c !== maxim && c !== zoe && !privateRateOverrides[c.id])
+                // Coaches with a per-coach grandfathered rate get their own row so the
+                // strikethrough + valid-until badge is visible. Remaining coaches are
+                // grouped by their default hourly rate so same-priced coaches share a
+                // row (e.g. "Zoe, Coby"). Rows sorted desc by DEFAULT rate (not the
+                // discounted effective rate) so a grandfathered senior coach stays
+                // above lower-tier coaches even when their override price matches.
+                // Tie-break: override rows come first within a rate tier.
                 interface Row {
                   label: string
-                  defaultRate: number          // per hour cents
+                  defaultRate: number          // per hour cents — drives sort order
                   override: PrivateOverride | null
                 }
+                const groupableByRate = new Map<number, Coach[]>()
                 const rows: Row[] = []
-                if (maxim) rows.push({ label: maxim.name.split(' ')[0], defaultRate: maxim.rate_per_hour_cents, override: getCoachOverride(maxim.id) })
-                if (zoe) rows.push({ label: zoe.name.split(' ')[0], defaultRate: zoe.rate_per_hour_cents, override: getCoachOverride(zoe.id) })
-                for (const c of overriddenCoaches) {
-                  rows.push({ label: c.name.split(' ')[0], defaultRate: c.rate_per_hour_cents, override: getCoachOverride(c.id) })
+                for (const c of filteredCoaches) {
+                  if (privateRateOverrides[c.id]) {
+                    rows.push({
+                      label: c.name.split(' ')[0],
+                      defaultRate: c.rate_per_hour_cents,
+                      override: getCoachOverride(c.id),
+                    })
+                  } else {
+                    const list = groupableByRate.get(c.rate_per_hour_cents) ?? []
+                    list.push(c)
+                    groupableByRate.set(c.rate_per_hour_cents, list)
+                  }
                 }
-                if (rest.length > 0) {
-                  const rate = rest[0].rate_per_hour_cents
-                  const label = rest.length <= 2 ? rest.map(c => c.name.split(' ')[0]).join(', ') : 'Other coaches'
-                  // "Rest" coaches share the same default; if all-privates override applies, show it once
-                  rows.push({ label, defaultRate: rate, override: allPrivatesOverride && !rest.some(c => privateRateOverrides[c.id]) ? allPrivatesOverride : null })
+                for (const [rate, group] of groupableByRate) {
+                  const label = group.length <= 3
+                    ? group.map(c => c.name.split(' ')[0]).join(', ')
+                    : 'Other coaches'
+                  rows.push({ label, defaultRate: rate, override: allPrivatesOverride ?? null })
                 }
+                rows.sort((a, b) => {
+                  if (b.defaultRate !== a.defaultRate) return b.defaultRate - a.defaultRate
+                  return (a.override ? 0 : 1) - (b.override ? 0 : 1)
+                })
                 return rows.map(r => {
                   const default30 = Math.round(r.defaultRate / 2)
                   const default60 = r.defaultRate
