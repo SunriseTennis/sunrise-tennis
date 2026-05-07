@@ -589,25 +589,36 @@ export async function persistChargeRecompute(
 
   const live = precomputed ?? await recomputePendingChargesForFamily(supabase, familyId)
 
+  // Build the (chargeId, info) work list, then fan out the UPDATEs in parallel
+  // — was sequential awaits in a tight loop, which dominated runtime when
+  // called from page render (N round trips per visit).
+  const work = chargeIds
+    .map(id => [id, live.get(id)] as const)
+    .filter((x): x is readonly [string, LiveBreakdownInfo] => x[1] != null)
+
+  const results = await Promise.all(
+    work.map(async ([chargeId, info]) => {
+      const { error } = await supabase
+        .from('charges')
+        .update({
+          amount_cents: info.amountCents,
+          pricing_breakdown: info.breakdown as never,
+        })
+        .eq('id', chargeId)
+      if (error) {
+        console.error('persistChargeRecompute update failed:', error.message, 'charge:', chargeId)
+        return null
+      }
+      return { chargeId, amountCents: info.amountCents }
+    }),
+  )
+
   let verifiedTotalCents = 0
   const updatedChargeIds: string[] = []
-
-  for (const chargeId of chargeIds) {
-    const info = live.get(chargeId)
-    if (!info) continue // not pending or no longer eligible — skip
-    const { error } = await supabase
-      .from('charges')
-      .update({
-        amount_cents: info.amountCents,
-        pricing_breakdown: info.breakdown as never,
-      })
-      .eq('id', chargeId)
-    if (error) {
-      console.error('persistChargeRecompute update failed:', error.message, 'charge:', chargeId)
-      continue
-    }
-    verifiedTotalCents += info.amountCents
-    updatedChargeIds.push(chargeId)
+  for (const r of results) {
+    if (!r) continue
+    verifiedTotalCents += r.amountCents
+    updatedChargeIds.push(r.chargeId)
   }
 
   // Recalculate family_balance once after the batch — Phase C must keep the

@@ -3,11 +3,12 @@
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { z } from 'zod'
-import { createClient, getSessionUser } from '@/lib/supabase/server'
+import { createClient, createServiceClient, getSessionUser } from '@/lib/supabase/server'
 import { validateFormData } from '@/lib/utils/validation'
 import { checkRateLimit } from '@/lib/utils/rate-limit'
 import { getStripe } from '@/lib/stripe/client'
 import { getOrCreateStripeCustomerForFamily } from '@/lib/stripe/customer'
+import { recomputePendingChargesForFamily, persistChargeRecompute } from '@/lib/utils/charge-recompute'
 
 const createPaymentIntentSchema = z.object({
   family_id: z.string().uuid('Invalid family'),
@@ -81,6 +82,23 @@ export async function createPaymentIntent(formData: FormData): Promise<CreatePay
   } catch (e) {
     console.error('Stripe customer lookup/create failed:', e instanceof Error ? e.message : e)
     return { ok: false, error: 'Payment could not be initialised. Please try again.' }
+  }
+
+  // Persist today's recomputed pricing onto pending charges so the FIFO webhook
+  // allocator (`allocate_payment_to_charges`) sees the same amounts the parent
+  // saw on the page. Was previously run on every page render of /parent/payments;
+  // moved here so the work only happens when the parent actually pays. Quietly
+  // skip on failure — display already used the live values, so the user-paid
+  // amount is correct; only risk is a webhook allocation against frozen amounts,
+  // which any subsequent recompute pass corrects.
+  try {
+    const live = await recomputePendingChargesForFamily(supabase, familyId)
+    if (live.size > 0) {
+      const service = createServiceClient()
+      await persistChargeRecompute(service, [...live.keys()], familyId, live)
+    }
+  } catch (e) {
+    console.error('persistChargeRecompute on createPaymentIntent failed:', e instanceof Error ? e.message : e)
   }
 
   let intent

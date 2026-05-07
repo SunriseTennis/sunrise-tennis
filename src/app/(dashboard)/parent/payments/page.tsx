@@ -9,7 +9,7 @@ import { VoucherForm, VoucherHistory } from './voucher-form'
 import { BalanceHero } from './balance-hero'
 import { PaymentHistory } from './payment-history'
 import { PaymentProvider } from './payment-context'
-import { recomputePendingChargesForFamily, persistChargeRecompute } from '@/lib/utils/charge-recompute'
+import { recomputePendingChargesForFamily } from '@/lib/utils/charge-recompute'
 
 export default async function ParentPaymentsPage({
   searchParams,
@@ -81,28 +81,14 @@ export default async function ParentPaymentsPage({
       programInfo = Object.fromEntries(programs.map(p => [p.id, { name: p.name, type: p.type }]))
     }
   }
-  // Phase B — Live recompute for pending unpaid charges. The DB-stored
-  // `pricing_breakdown` is frozen at charge-creation; the live one reflects
-  // today's roster + today's early-bird tier. Cached per (player, program)
-  // tuple inside the helper to avoid N+1 RPC calls.
+  // Live recompute drives the in-memory display only — multi-group state is
+  // overlaid against today's roster, early-bird tier resolved against today's
+  // date. Cached per (player, program) tuple inside the helper. The DB-side
+  // persist of these recomputed amounts now happens at pay-click time inside
+  // `createPaymentIntent`, not on every page render — the previous on-render
+  // persist did N sequential UPDATEs + a balance recalc on every visit even
+  // when nothing had changed.
   const liveBreakdowns = await recomputePendingChargesForFamily(supabase, familyId)
-
-  // Phase C — Persist the live recompute to DB so the prefilled Pay amount,
-  // the Stripe intent, and the FIFO webhook allocation all agree. Idempotent
-  // (running twice writes the same values). Service client because parents
-  // don't have UPDATE policy on charges. Quietly skip on failure (display
-  // still renders correctly via liveBreakdowns; the only risk is a webhook
-  // allocation against frozen amounts, which the next page load fixes).
-  if (liveBreakdowns.size > 0) {
-    try {
-      const { createServiceClient } = await import('@/lib/supabase/server')
-      const service = createServiceClient()
-      const chargeIds = [...liveBreakdowns.keys()]
-      await persistChargeRecompute(service, chargeIds, familyId, liveBreakdowns)
-    } catch (e) {
-      console.error('Phase C persist on page render failed:', e instanceof Error ? e.message : e)
-    }
-  }
 
   const enrichedCharges = (charges ?? []).map(c => {
     const session = c.sessions as unknown as { date: string; status: string } | null
