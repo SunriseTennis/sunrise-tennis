@@ -17,6 +17,9 @@
 /.next/
 /out/
 
+# script working directory (logs, dry-run output, plan notes)
+scripts/_out/
+
 # production
 /build
 
