@@ -30,7 +30,7 @@ import { getTermLabel } from '@/lib/utils/school-terms'
 import { getActiveEarlyBird } from '@/lib/utils/eligibility'
 // Adelaide-aware future-session filtering is now centralised inside
 // `gatherTermEnrolSessions` for every term-enrol path on this page.
-import { formatDate } from '@/lib/utils/dates'
+import { formatDate, formatTime } from '@/lib/utils/dates'
 import { dispatchNotification } from '@/lib/notifications/dispatch'
 import { createTermSessionCharges, gatherTermEnrolSessions, voidAbsorbableCharges } from '@/lib/utils/term-charges'
 
@@ -1076,7 +1076,7 @@ export async function cancelSession(sessionId: string, formData: FormData) {
   // Get session details
   const { data: session } = await supabase
     .from('sessions')
-    .select('id, program_id, date, session_type')
+    .select('id, program_id, date, start_time, session_type')
     .eq('id', sessionId)
     .single()
 
@@ -1129,7 +1129,11 @@ export async function cancelSession(sessionId: string, formData: FormData) {
       .eq('status', 'enrolled')
 
     if (roster) {
-      const affectedFamilies = new Set<string>()
+      // Track per-family which payment options were touched so we can
+      // render an accurate creditNote for each family in the dispatched
+      // notification (pay-now → credit added; pay-later → charge removed).
+      type FamilyImpact = { hadPayNow: boolean; hadPayLater: boolean }
+      const familyImpact = new Map<string, FamilyImpact>()
 
       for (const rosterEntry of roster) {
         const playerId = rosterEntry.player_id
@@ -1148,7 +1152,7 @@ export async function cancelSession(sessionId: string, formData: FormData) {
         if (!booking) continue
 
         const familyId = booking.family_id
-        affectedFamilies.add(familyId)
+        const impact = familyImpact.get(familyId) ?? { hadPayNow: false, hadPayLater: false }
 
         // Check for existing charges on this session
         const existingCharge = await getExistingSessionCharge(supabase, sessionId, playerId)
@@ -1156,6 +1160,7 @@ export async function cancelSession(sessionId: string, formData: FormData) {
         if (booking.payment_option === 'pay_later' && existingCharge) {
           // Void the existing charge
           await voidCharge(supabase, existingCharge.id, familyId)
+          impact.hadPayLater = true
         } else if (booking.payment_option === 'pay_now') {
           // Create credit for pre-paid session — at the player's current per-session
           // rate (multi-group + morning-squad partner aware) so credit reflects
@@ -1183,41 +1188,46 @@ export async function cancelSession(sessionId: string, formData: FormData) {
               status: 'confirmed',
               createdBy: user.id,
             })
+            impact.hadPayNow = true
           }
         }
+
+        familyImpact.set(familyId, impact)
       }
 
       // Recalculate balance for all affected families
-      for (const fid of affectedFamilies) {
+      for (const fid of familyImpact.keys()) {
         await recalculateBalance(supabase, fid)
       }
 
-      // Send notification to affected families
-      try {
-        const serviceClient = createServiceClient(
-          process.env.NEXT_PUBLIC_SUPABASE_URL!,
-          process.env.SUPABASE_SERVICE_ROLE_KEY!,
-        )
+      // Notify each affected family via the rule-driven dispatcher so
+      // push + in_app + email all fan out per the admin.session.cancelled
+      // rule, gated by each parent's notification preferences.
+      const dateStr = session?.date ? formatDate(session.date) : ''
+      const timeStr = session?.start_time ? formatTime(session.start_time) : ''
+      const programName = program?.name ?? 'A session'
 
-        await serviceClient.from('notifications').insert({
-          type: 'session_cancelled',
-          title: 'Session Cancelled',
-          body: `${program?.name ?? 'A session'} has been cancelled${reason ? `: ${reason}` : '.'}`,
-          url: '/parent',
-          target_type: 'program',
-          target_id: programId,
-          created_by: user.id,
-        })
+      for (const [familyId, impact] of familyImpact) {
+        const creditNote =
+          impact.hadPayNow && impact.hadPayLater
+            ? "We've adjusted your account accordingly."
+            : impact.hadPayNow
+              ? "A credit has been added to your account."
+              : impact.hadPayLater
+                ? "We've removed the upcoming charge from your account."
+                : ''
 
-        await sendNotificationToTarget({
-          title: 'Session Cancelled',
-          body: `${program?.name ?? 'A session'} has been cancelled${reason ? `: ${reason}` : '.'}`,
-          url: '/parent',
-          targetType: 'program',
-          targetId: programId,
-        })
-      } catch (e) {
-        console.error('Cancel notification failed:', e instanceof Error ? e.message : 'Unknown error')
+        try {
+          await dispatchNotification('admin.session.cancelled', {
+            familyId,
+            programName,
+            date: dateStr,
+            time: timeStr,
+            creditNote,
+          })
+        } catch (e) {
+          console.error('dispatch admin.session.cancelled failed for', familyId, e instanceof Error ? e.message : e)
+        }
       }
     }
   }

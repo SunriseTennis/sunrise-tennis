@@ -1,0 +1,31 @@
+# Breely import — 2026-05-04 (DRY RUN)
+# 20 families imported, 20 unique primary emails.
+
+=== BCC line (paste into Gmail BCC field) ===
+
+odiapi@yahoo.com, angelahubbard08@yahoo.com.au, annekamau57@gmail.com, billspurling89@gmail.com, bita.russell84@gmail.com, carly.cordner@gmail.com, chadnorsworthy@metrooffice.com.au, daniellewhitters@gmail.com, edel.silke@gmail.com, gretzr@gmail.com, jess.smith339@yahoo.com.au, joandphil3@outlook.com, kgriffin@scentregroup.com, kaotway@gmail.com, kryswielco@gmail.com, mkaouri1978@gmail.com, marnus.venter@gmail.com, stoouli@gmail.com, tsmatijevic@gmail.com, kyliechris@icloud.com
+
+=== Per-family breakdown ===
+
+ID   | Family      | Primary email
+----------------------------------
+C080 | Doroja      | odiapi@yahoo.com
+C081 | Pummeroy    | angelahubbard08@yahoo.com.au
+C082 | Kamau       | annekamau57@gmail.com
+C083 | Spurling    | billspurling89@gmail.com
+C084 | Russelli    | bita.russell84@gmail.com
+C085 | Cordner     | carly.cordner@gmail.com
+C086 | Norsworthy  | chadnorsworthy@metrooffice.com.au
+C087 | Whitters    | daniellewhitters@gmail.com
+C088 | Silke       | edel.silke@gmail.com
+C089 | Ramswamy    | gretzr@gmail.com
+C090 | Smith       | jess.smith339@yahoo.com.au
+C091 | Elliott     | joandphil3@outlook.com
+C092 | Griffin     | kgriffin@scentregroup.com
+C093 | Joncheff    | kaotway@gmail.com
+C094 | Wielgosz    | kryswielco@gmail.com
+C095 | Kaouri      | mkaouri1978@gmail.com
+C096 | Venter      | marnus.venter@gmail.com
+C097 | Martelle    | stoouli@gmail.com
+C098 | Matijevic   | tsmatijevic@gmail.com
+C099 | Clarke      | kyliechris@icloud.com
