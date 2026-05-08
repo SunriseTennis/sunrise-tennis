@@ -25,6 +25,15 @@ export function AdminSessionPopup({ event, onClose }: { event: CalendarEvent; on
     })
   }
 
+  function handleRainOut() {
+    if (!event.sessionId || !confirm('Rain out this session? Enrolled families will be credited and notified.')) return
+    startTransition(async () => {
+      const fd = new FormData()
+      fd.set('reason', 'Rained out — no charge')
+      await cancelSession(event.sessionId!, fd)
+    })
+  }
+
   function handleComplete() {
     if (!event.sessionId || !confirm('Mark this session as complete?')) return
     startTransition(async () => {
@@ -114,15 +123,14 @@ export function AdminSessionPopup({ event, onClose }: { event: CalendarEvent; on
                 <XCircle className="size-3.5" />
                 {isPending ? 'Cancelling...' : 'Cancel'}
               </button>
-              <Link
-                href={event.programId
-                  ? `/admin/programs/${event.programId}/sessions/${event.sessionId}?rainout=1`
-                  : `/admin/sessions/${event.sessionId}?rainout=1`}
-                className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-blue-300 bg-blue-50 px-3 py-2 text-sm font-medium text-blue-700 transition-all hover:bg-blue-100"
+              <button
+                onClick={handleRainOut}
+                disabled={isPending}
+                className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-blue-300 bg-blue-50 px-3 py-2 text-sm font-medium text-blue-700 transition-all hover:bg-blue-100 disabled:opacity-50"
               >
                 <CloudRain className="size-3.5" />
-                Rained Out
-              </Link>
+                {isPending ? 'Cancelling...' : 'Rained Out'}
+              </button>
             </div>
           </>
         )}
