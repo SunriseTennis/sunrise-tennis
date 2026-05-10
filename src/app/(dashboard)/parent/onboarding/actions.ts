@@ -3,7 +3,7 @@
 import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
-import { createClient, getSessionUser } from '@/lib/supabase/server'
+import { createClient, createServiceClient, getSessionUser } from '@/lib/supabase/server'
 import { checkRateLimitAsync } from '@/lib/utils/rate-limit'
 import {
   validateFormData,
@@ -146,6 +146,35 @@ export async function updateOnboardingContact(formData: FormData) {
     if (error) {
       console.error('[onboarding] updateOnboardingContact (invite):', error)
       redirect('/parent/onboarding?step=1&error=Failed+to+save.+Please+try+again.')
+    }
+  }
+
+  // Mirror the parent's name into auth.users.raw_user_meta_data so the
+  // /admin/activity directory + Supabase dashboard show the real name.
+  // Plan-20 admin-invite signup (signupViaInvite) skips Supabase's
+  // confirmation email and never writes name fields into user_metadata,
+  // so the metadata column is empty until this step. Idempotent — same
+  // payload on re-submission is a no-op.
+  const formFirst = (formData.get('contact_first_name') as string | null)?.trim() ?? ''
+  const formLast = (formData.get('contact_last_name') as string | null)?.trim() ?? ''
+  const formFull = `${formFirst} ${formLast}`.trim()
+  if (formFull) {
+    const service = createServiceClient()
+    const { data: existingUser } = await service.auth.admin.getUserById(userId)
+    const existingMeta = (existingUser?.user?.user_metadata ?? {}) as Record<string, unknown>
+    const { error: metaErr } = await service.auth.admin.updateUserById(userId, {
+      user_metadata: {
+        ...existingMeta,
+        first_name: formFirst,
+        last_name: formLast,
+        full_name: formFull,
+      },
+    })
+    if (metaErr) {
+      // Non-fatal — primary_contact is the source of truth; the directory
+      // RPC falls back to it. Log and continue so a transient auth-admin
+      // hiccup doesn't trap the parent in the wizard.
+      console.error('[onboarding] updateUserById metadata sync:', metaErr)
     }
   }
 

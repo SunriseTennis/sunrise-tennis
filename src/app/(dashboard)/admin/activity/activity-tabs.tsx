@@ -11,6 +11,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import Link from 'next/link'
 import {
   LogIn,
   LogOut,
@@ -23,6 +24,8 @@ import {
   Monitor,
   Search,
   X as XIcon,
+  Users as UsersIcon,
+  Award,
 } from 'lucide-react'
 import { isTestEmail } from '@/lib/utils/test-emails'
 
@@ -60,6 +63,8 @@ interface UserDirectoryEntry {
   email: string
   full_name: string
   roles: string[]
+  family_id: string | null
+  coach_id: string | null
   created_at: string
   last_sign_in_at: string
   email_confirmed_at: string
@@ -391,6 +396,36 @@ export function ActivityTabs({
                 Hiding admin actions, system changes, and seed/test accounts.
               </p>
             )}
+
+            {/* Quick links to the selected user's family/coach record */}
+            {actorFilter === 'specific' && selectedUserId && (() => {
+              const u = userDirectory.find((x) => x.id === selectedUserId)
+              if (!u) return null
+              if (!u.family_id && !u.coach_id) return null
+              return (
+                <div className="flex flex-wrap items-center gap-1">
+                  <span className="mr-1 text-xs text-muted-foreground">Open:</span>
+                  {u.family_id && (
+                    <Link
+                      href={`/admin/families/${u.family_id}`}
+                      className="inline-flex items-center gap-1 rounded-full border border-border px-3 py-1 text-xs hover:bg-muted/40"
+                    >
+                      <UsersIcon className="size-3" />
+                      Family page
+                    </Link>
+                  )}
+                  {u.coach_id && (
+                    <Link
+                      href={`/admin/coaches/${u.coach_id}`}
+                      className="inline-flex items-center gap-1 rounded-full border border-border px-3 py-1 text-xs hover:bg-muted/40"
+                    >
+                      <Award className="size-3" />
+                      Coach page
+                    </Link>
+                  )}
+                </div>
+              )
+            })()}
           </div>
 
           {combinedFeed.length === 0 ? (

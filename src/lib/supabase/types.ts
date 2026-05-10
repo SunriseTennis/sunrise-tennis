@@ -2841,9 +2841,11 @@ export type Database = {
         Args: never
         Returns: {
           banned_until: string
+          coach_id: string | null
           created_at: string
           email: string
           email_confirmed_at: string
+          family_id: string | null
           full_name: string
           id: string
           last_sign_in_at: string
