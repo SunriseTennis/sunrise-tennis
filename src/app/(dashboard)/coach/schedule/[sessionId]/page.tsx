@@ -67,7 +67,7 @@ export default async function CoachSessionDetailPage({
     program?.id
       ? supabase
           .from('program_roster')
-          .select('players:player_id(id, first_name, last_name, ball_color, current_focus)')
+          .select('players:player_id(id, first_name, last_name, classifications, current_focus)')
           .eq('program_id', program.id)
           .eq('status', 'enrolled')
       : Promise.resolve({ data: null }),
@@ -93,7 +93,7 @@ export default async function CoachSessionDetailPage({
   ])
 
   const enrolledRoster = rosterData?.map(r => r.players as unknown as {
-    id: string; first_name: string; last_name: string; ball_color: string | null; current_focus: string[] | null
+    id: string; first_name: string; last_name: string; classifications: string[] | null; current_focus: string[] | null
   }).filter(Boolean) ?? []
 
   const attendanceMap = new Map(
@@ -110,7 +110,7 @@ export default async function CoachSessionDetailPage({
   if (walkInPlayerIds.length > 0) {
     const { data: walkIns } = await supabase
       .from('players')
-      .select('id, first_name, last_name, ball_color, current_focus')
+      .select('id, first_name, last_name, classifications, current_focus')
       .in('id', walkInPlayerIds)
     walkInPlayers = (walkIns ?? []).map(p => ({
       ...p,

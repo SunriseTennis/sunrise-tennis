@@ -16,14 +16,12 @@ interface PlayerOption {
   family_id: string
   family_display_id: string
   family_name: string
-  ball_color: string | null
   classifications: string[]
   track: string | null
 }
 
 // Mirrors `eligibility.ts::CLASSIFICATION_ORDER` + the parent add-player form.
 const CLASSIFICATION_VALUES = ['blue', 'red', 'orange', 'green', 'yellow', 'advanced', 'elite'] as const
-const BALL_COLOR_VALUES = ['blue', 'red', 'orange', 'green', 'yellow', 'advanced', 'elite', 'competitive'] as const
 const TRACK_VALUES = ['performance', 'participation'] as const
 
 function titleCase(s: string): string {
@@ -133,16 +131,14 @@ export function BulkAllowedCoachesForm({
   // Pre-compute counts so each chip shows `(N)`.
   const counts = useMemo(() => {
     const byClassification: Record<string, number> = {}
-    const byBall: Record<string, number> = {}
     const byTrack: Record<string, number> = {}
     for (const p of players) {
       for (const c of (p.classifications ?? [])) {
         byClassification[c] = (byClassification[c] ?? 0) + 1
       }
-      if (p.ball_color) byBall[p.ball_color] = (byBall[p.ball_color] ?? 0) + 1
       if (p.track) byTrack[p.track] = (byTrack[p.track] ?? 0) + 1
     }
-    return { byClassification, byBall, byTrack }
+    return { byClassification, byTrack }
   }, [players])
 
   // Group matches by family so the dropdown is scannable.
@@ -299,24 +295,6 @@ export function BulkAllowedCoachesForm({
                     className="rounded-full border border-border bg-background px-2.5 py-0.5 text-xs hover:bg-primary/10 hover:border-primary/30 disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     {titleCase(c)} <span className="text-muted-foreground">({n})</span>
-                  </button>
-                )
-              })}
-            </div>
-
-            <div className="flex flex-wrap items-center gap-1.5">
-              <span className="mr-1 text-[11px] text-muted-foreground">Ball level:</span>
-              {BALL_COLOR_VALUES.map(b => {
-                const n = counts.byBall[b] ?? 0
-                return (
-                  <button
-                    key={b}
-                    type="button"
-                    onClick={() => addPlayersMatching(p => p.ball_color === b)}
-                    disabled={n === 0}
-                    className="rounded-full border border-border bg-background px-2.5 py-0.5 text-xs hover:bg-primary/10 hover:border-primary/30 disabled:opacity-40 disabled:cursor-not-allowed"
-                  >
-                    {titleCase(b)} <span className="text-muted-foreground">({n})</span>
                   </button>
                 )
               })}

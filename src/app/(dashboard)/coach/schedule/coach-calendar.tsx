@@ -6,7 +6,7 @@ import { StatusBadge } from '@/components/status-badge'
 import { Users, X, Eye } from 'lucide-react'
 import { InlineAttendance } from './inline-attendance'
 
-type Player = { id: string; first_name: string; last_name: string; ball_color: string | null }
+type Player = { id: string; first_name: string; last_name: string; classifications: string[] | null }
 
 function CoachSessionPopup({ event, onClose }: { event: CalendarEvent; onClose: () => void }) {
   return (

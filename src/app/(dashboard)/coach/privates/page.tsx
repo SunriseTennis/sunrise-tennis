@@ -27,7 +27,7 @@ export default async function CoachPrivatesPage({
       price_cents, duration_minutes, booked_at, session_id,
       shared_with_booking_id,
       sessions:session_id(id, date, start_time, end_time, status),
-      players:player_id(first_name, last_name, ball_color),
+      players:player_id(first_name, last_name, classifications),
       families:family_id(family_name, primary_contact)
     `)
     .eq('booking_type', 'private')
@@ -123,7 +123,7 @@ export default async function CoachPrivatesPage({
             {pending.map((g, i) => {
               const b = g.primary
               const session = b.sessions as unknown as { date: string; start_time: string; end_time: string }
-              const player = b.players as unknown as { first_name: string; last_name: string; ball_color: string }
+              const player = b.players as unknown as { first_name: string; last_name: string; classifications: string[] | null }
               const partnerPlayer = g.partner?.players as unknown as { first_name: string; last_name: string } | null
               const family = b.families as unknown as { family_name: string; primary_contact: { name?: string; phone?: string } | null }
               return (
@@ -135,8 +135,8 @@ export default async function CoachPrivatesPage({
                         {partnerPlayer && (
                           <span className="text-slate-blue"> / {partnerPlayer.first_name} {partnerPlayer.last_name}</span>
                         )}
-                        {player?.ball_color && !partnerPlayer && (
-                          <span className="ml-1 text-xs capitalize text-slate-blue">({player.ball_color})</span>
+                        {(player?.classifications ?? []).length > 0 && !partnerPlayer && (
+                          <span className="ml-1 text-xs capitalize text-slate-blue">({(player?.classifications ?? []).join(' / ')})</span>
                         )}
                         {g.isShared && (
                           <span className="ml-2 rounded-full bg-purple-100 px-2 py-0.5 text-[10px] font-medium text-purple-800">Shared</span>
@@ -180,7 +180,7 @@ export default async function CoachPrivatesPage({
               {upcoming.map((g) => {
                 const b = g.primary
                 const session = b.sessions as unknown as { id: string; date: string; start_time: string; end_time: string }
-                const player = b.players as unknown as { first_name: string; last_name: string; ball_color: string }
+                const player = b.players as unknown as { first_name: string; last_name: string; classifications: string[] | null }
                 const partnerPlayer = g.partner?.players as unknown as { first_name: string; last_name: string } | null
                 return (
                   <Link key={b.id} href={`/coach/privates/${session.id}`} className="flex items-center justify-between px-4 py-3 transition-colors hover:bg-[#FFF6ED]">

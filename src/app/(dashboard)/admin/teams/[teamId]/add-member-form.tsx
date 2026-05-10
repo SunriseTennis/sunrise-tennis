@@ -8,7 +8,7 @@ const selectClass = 'rounded-md border border-border bg-background px-3 py-2 tex
 
 interface Props {
   teamId: string
-  players: { id: string; first_name: string; last_name: string; ball_color: string | null }[]
+  players: { id: string; first_name: string; last_name: string; classifications: string[] | null }[]
 }
 
 export function AddMemberForm({ teamId, players }: Props) {
@@ -29,11 +29,14 @@ export function AddMemberForm({ teamId, players }: Props) {
           className={`mt-1 block w-full ${selectClass} py-1.5`}
         >
           <option value="">Select player...</option>
-          {players.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.first_name} {p.last_name} {p.ball_color ? `(${p.ball_color})` : ''}
-            </option>
-          ))}
+          {players.map((p) => {
+            const classes = (p.classifications ?? []) as string[]
+            return (
+              <option key={p.id} value={p.id}>
+                {p.first_name} {p.last_name} {classes.length > 0 ? `(${classes.join(' / ')})` : ''}
+              </option>
+            )
+          })}
         </select>
       </div>
       <div>

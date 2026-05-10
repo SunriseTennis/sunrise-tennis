@@ -69,14 +69,19 @@ export default async function ParentProgramsPage() {
   if (!familyId) redirect('/parent')
 
   // Get family's players to know their levels and eligibility
+  // Plan 24 — ball_color + level columns retired; classifications is the
+  // only signal. playerLevels is the union of all family-player classifications,
+  // used to default the level filter on /parent/programs.
   const { data: players } = await supabase
     .from('players')
-    .select('id, first_name, ball_color, level, status, gender, classifications, track')
+    .select('id, first_name, status, gender, classifications, track')
     .eq('family_id', familyId)
     .eq('status', 'active')
     .order('first_name')
 
-  const playerLevels = players?.map(p => p.ball_color).filter(Boolean) as string[] ?? []
+  const playerLevels = Array.from(
+    new Set((players ?? []).flatMap(p => (p.classifications ?? []) as string[])),
+  )
   const playerIds = players?.map(p => p.id) ?? []
 
   // Get all active programs with roster

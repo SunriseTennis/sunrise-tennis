@@ -10,7 +10,7 @@ import { Badge } from '@/components/ui/badge'
 import { WeeklyCalendar, type CalendarEvent, type EnrolledPlayersMap, type EligiblePlayersMap } from '@/components/weekly-calendar'
 import { Calendar, Layers, Tag, ChevronRight, Users, Filter, Lock } from 'lucide-react'
 import { bookSession, markSessionAway, cancelSessionBooking } from './actions'
-import { isEligible, isStrictlyGated } from '@/lib/utils/eligibility'
+import { isEligible, requiresPerformanceTrack, isAdvancedEliteOnly } from '@/lib/utils/eligibility'
 import { formatCalendarTitle } from '@/lib/utils/program-display'
 
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
@@ -399,20 +399,40 @@ export function ParentProgramFilters({
     return ids
   }, [programs, eligiblePlayersByProgram])
 
-  // Strict-hide programs — kept hidden in the "All" view too. These are
-  // programs with a track gate (currently morning squads + Thursday
-  // performance squads). A red-ball family will simply never see morning
-  // squads, even when browsing all of the catalogue.
+  // Strict-hide programs — kept hidden in the "All" view too. Plan 24
+  // reshape: hide rule is now per-family-context, not per-program-eligibility.
+  //
+  //   - Performance-only programs (Thursday squads): hide iff family has
+  //     zero performance-track players. Performance families browse all
+  //     performance squads — `isEligible()` still gates booking.
+  //   - Advanced/elite-only programs (morning squads): hide iff family
+  //     has no advanced/elite player.
+  //
+  // Net change: a yellow-performance family now SEES Thursday Red /
+  // Orange / Green / Advanced / Elite Squads with a "Not for your players"
+  // badge instead of having them strict-hidden.
   const strictHiddenProgramIds = useMemo(() => {
     const ids = new Set<string>()
+    const hasPerformancePlayer = familyPlayers.some(p => p.track === 'performance')
+    const hasAdvOrElite = familyPlayers.some(p =>
+      (p.classifications ?? []).some(c => c === 'advanced' || c === 'elite')
+    )
     for (const p of programs) {
-      if (eligibleProgramIds.has(p.id)) continue
-      if (isStrictlyGated({ day_of_week: p.day_of_week, allowed_classifications: p.allowed_classifications, gender_restriction: p.gender_restriction, track_required: p.track_required })) {
+      const programFields = {
+        day_of_week: p.day_of_week,
+        allowed_classifications: p.allowed_classifications,
+        gender_restriction: p.gender_restriction,
+        track_required: p.track_required,
+      }
+      if (requiresPerformanceTrack(programFields) && !hasPerformancePlayer) {
+        ids.add(p.id); continue
+      }
+      if (isAdvancedEliteOnly(programFields) && !hasAdvOrElite) {
         ids.add(p.id)
       }
     }
     return ids
-  }, [programs, eligibleProgramIds])
+  }, [programs, familyPlayers])
 
   // Programs to show in "All" view: everything except strict-hide.
   // Programs to show in "For you" view: only ones a family player can enrol in.

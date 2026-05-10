@@ -101,17 +101,17 @@ export default async function CoachSchedulePage() {
   // Get program rosters (player details for inline attendance)
   const programIds = [...new Set(allSessions.map(s => s.program_id).filter((id): id is string => id != null))]
   let rosterCounts: Record<string, number> = {}
-  let programRosters: Record<string, { id: string; first_name: string; last_name: string; ball_color: string | null }[]> = {}
+  let programRosters: Record<string, { id: string; first_name: string; last_name: string; classifications: string[] | null }[]> = {}
   if (programIds.length > 0) {
     const { data: roster } = await supabase
       .from('program_roster')
-      .select('program_id, players:player_id(id, first_name, last_name, ball_color)')
+      .select('program_id, players:player_id(id, first_name, last_name, classifications)')
       .in('program_id', programIds)
       .eq('status', 'enrolled')
     if (roster) {
       for (const row of roster) {
         rosterCounts[row.program_id] = (rosterCounts[row.program_id] ?? 0) + 1
-        const player = row.players as unknown as { id: string; first_name: string; last_name: string; ball_color: string | null } | null
+        const player = row.players as unknown as { id: string; first_name: string; last_name: string; classifications: string[] | null } | null
         if (player) {
           if (!programRosters[row.program_id]) programRosters[row.program_id] = []
           programRosters[row.program_id].push(player)

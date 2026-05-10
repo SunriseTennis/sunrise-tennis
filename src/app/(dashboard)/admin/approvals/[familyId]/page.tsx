@@ -46,7 +46,7 @@ export default async function ApprovalDetailPage({ params, searchParams }: PageP
       .single(),
     supabase
       .from('players')
-      .select('id, first_name, last_name, dob, gender, ball_color, level, classifications, track, medical_notes, media_consent_coaching, media_consent_social, status')
+      .select('id, first_name, last_name, dob, gender, classifications, track, medical_notes, media_consent_coaching, media_consent_social, status')
       .eq('family_id', familyId)
       .order('first_name'),
     // Plan 21 — Pool of legacy/admin-invite families the self-signup
@@ -222,11 +222,14 @@ export default async function ApprovalDetailPage({ params, searchParams }: PageP
                         <span className="font-semibold text-foreground">
                           {p.first_name} {p.last_name}
                         </span>
-                        {(p.ball_color || p.level) && (
-                          <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider ${BALL_LEVEL_BADGE[p.ball_color || p.level || ''] ?? 'bg-muted text-muted-foreground border-border'}`}>
-                            {p.ball_color || p.level}
+                        {((p.classifications as string[] | null) ?? []).map(c => (
+                          <span
+                            key={c}
+                            className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider ${BALL_LEVEL_BADGE[c] ?? 'bg-muted text-muted-foreground border-border'}`}
+                          >
+                            {c}
                           </span>
-                        )}
+                        ))}
                         {p.track && (
                           <span className="inline-flex items-center rounded-full border border-border bg-muted px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
                             {p.track}

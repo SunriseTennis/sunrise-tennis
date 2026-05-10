@@ -3,6 +3,7 @@ import { createClient, getSessionUser } from '@/lib/supabase/server'
 import { OnboardingWizard } from './onboarding-wizard'
 import { SelfSignupWizard } from './self-signup-wizard'
 import { SELF_SIGNUP_TOTAL_STEPS, ADMIN_INVITE_TOTAL_STEPS } from './constants'
+import { getPrimaryClassification } from '@/lib/utils/player-display'
 
 export default async function ParentOnboardingPage({
   searchParams,
@@ -32,7 +33,7 @@ export default async function ParentOnboardingPage({
       .single(),
     supabase
       .from('players')
-      .select('id, first_name, last_name, preferred_name, dob, gender, ball_color, level, school, media_consent_coaching, media_consent_social')
+      .select('id, first_name, last_name, preferred_name, dob, gender, classifications, school, media_consent_coaching, media_consent_social')
       .eq('family_id', familyId)
       .order('first_name'),
   ])
@@ -54,18 +55,24 @@ export default async function ParentOnboardingPage({
     | 'self_signup'
     | 'legacy_import'
 
-  const playerList = (players ?? []).map((p) => ({
-    id: p.id,
-    first_name: p.first_name,
-    last_name: p.last_name,
-    preferred_name: (p as { preferred_name?: string | null }).preferred_name ?? null,
-    dob: p.dob ?? null,
-    gender: (p.gender ?? null) as string | null,
-    level: (p.ball_color ?? p.level ?? null) as string | null,
-    school: (p as { school?: string | null }).school ?? null,
-    media_consent_coaching: !!p.media_consent_coaching,
-    media_consent_social: !!p.media_consent_social,
-  }))
+  // Plan 24 — `level` field surfaces the player's lowest classification
+  // for the wizard's "Step 2: Players" recap row. Single-string consumers
+  // (admin-invite recap chip) don't need to change shape.
+  const playerList = (players ?? []).map((p) => {
+    const classes = ((p as { classifications?: string[] | null }).classifications ?? []) as string[]
+    return {
+      id: p.id,
+      first_name: p.first_name,
+      last_name: p.last_name,
+      preferred_name: (p as { preferred_name?: string | null }).preferred_name ?? null,
+      dob: p.dob ?? null,
+      gender: (p.gender ?? null) as string | null,
+      level: getPrimaryClassification({ classifications: classes }),
+      school: (p as { school?: string | null }).school ?? null,
+      media_consent_coaching: !!p.media_consent_coaching,
+      media_consent_social: !!p.media_consent_social,
+    }
+  })
 
   if (signupSource === 'self_signup') {
     const requestedStep = parseInt(stepParam ?? '1', 10) || 1

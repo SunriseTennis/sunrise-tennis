@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react'
 import { ChevronDown, ChevronRight, LayoutGrid, Calendar, Sparkles, Trophy } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { isPerformanceOnly } from '@/lib/utils/eligibility'
+import { TennisBall, MultiBall } from '@/components/multi-ball'
 
 interface Program {
   id: string
@@ -139,47 +140,7 @@ function isGirlsOnly(name: string): boolean {
   return /\bgirls\b/i.test(name)
 }
 
-function TennisBall({ color, highlight, size = 64 }: { color: string; highlight: string; size?: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <circle cx="32" cy="32" r="30" fill={color} />
-      <circle cx="32" cy="32" r="30" fill="url(#ballShine)" />
-      <path d="M12 16C20 28 20 36 12 48" stroke={highlight} strokeWidth="2.5" strokeLinecap="round" opacity="0.6" />
-      <path d="M52 16C44 28 44 36 52 48" stroke={highlight} strokeWidth="2.5" strokeLinecap="round" opacity="0.6" />
-      <defs>
-        <radialGradient id="ballShine" cx="0.35" cy="0.3" r="0.65">
-          <stop offset="0%" stopColor="white" stopOpacity="0.3" />
-          <stop offset="100%" stopColor="white" stopOpacity="0" />
-        </radialGradient>
-      </defs>
-    </svg>
-  )
-}
-
-// Two-half-circle ball used by multi-classification cards (currently the
-// schools card). Falls back to the regular ball when fewer than two colours.
-function MultiBall({ colors, size = 56 }: { colors: string[]; size?: number }) {
-  if (colors.length < 2) {
-    return <TennisBall color={colors[0] ?? '#2B5EA7'} highlight="#FFFFFF" size={size} />
-  }
-  const [left, right] = colors
-  return (
-    <svg width={size} height={size} viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <defs>
-        <clipPath id="leftHalf"><rect x="0" y="0" width="32" height="64" /></clipPath>
-        <clipPath id="rightHalf"><rect x="32" y="0" width="32" height="64" /></clipPath>
-        <radialGradient id="multiBallShine" cx="0.35" cy="0.3" r="0.65">
-          <stop offset="0%" stopColor="white" stopOpacity="0.3" />
-          <stop offset="100%" stopColor="white" stopOpacity="0" />
-        </radialGradient>
-      </defs>
-      <circle cx="32" cy="32" r="30" fill={left} clipPath="url(#leftHalf)" />
-      <circle cx="32" cy="32" r="30" fill={right} clipPath="url(#rightHalf)" />
-      <circle cx="32" cy="32" r="30" fill="url(#multiBallShine)" />
-      <path d="M32 2 L32 62" stroke="white" strokeWidth="1.5" opacity="0.45" />
-    </svg>
-  )
-}
+// TennisBall + MultiBall lifted to src/components/multi-ball.tsx (Plan 24).
 
 function GirlsPill() {
   return (

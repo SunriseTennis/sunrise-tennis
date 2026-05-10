@@ -20,7 +20,7 @@ type RosterPlayer = {
   playerId: string
   firstName: string
   lastName: string
-  ballColor: string | null
+  classifications: string[]
   currentFocus: string[] | null
   familyDisplayId: string | null
   familyName: string | null
@@ -98,7 +98,9 @@ export function RosterTable({
                   <TableCell className="text-muted-foreground">
                     {r.familyDisplayId} ({r.familyName})
                   </TableCell>
-                  <TableCell className="capitalize text-muted-foreground">{r.ballColor ?? '-'}</TableCell>
+                  <TableCell className="capitalize text-muted-foreground">
+                    {r.classifications.length > 0 ? r.classifications.join(' / ') : '-'}
+                  </TableCell>
                   <TableCell>
                     <StatusBadge status={r.rosterStatus} />
                   </TableCell>

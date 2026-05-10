@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Check, X, AlertTriangle } from 'lucide-react'
 
-type Player = { id: string; first_name: string; last_name: string; ball_color: string | null }
+type Player = { id: string; first_name: string; last_name: string; classifications: string[] | null }
 
 const STATUS_OPTIONS = [
   { value: 'present', label: 'Present', icon: Check, style: 'bg-success/15 text-success border-success/30', activeStyle: 'bg-success text-white border-success shadow-sm' },
@@ -42,9 +42,9 @@ export function CoachAttendanceForm({
               <div key={player.id} className="flex items-center justify-between gap-2 border-b border-border py-2.5 last:border-0">
                 <span className="text-sm text-foreground min-w-0">
                   {player.first_name} {player.last_name}
-                  {player.ball_color && (
+                  {(player.classifications ?? []).length > 0 && (
                     <span className="ml-2 rounded-full bg-primary/10 px-2 py-0.5 text-xs text-primary capitalize">
-                      {player.ball_color}
+                      {(player.classifications ?? []).join(' / ')}
                     </span>
                   )}
                 </span>

@@ -12,22 +12,10 @@ interface PlayerRow {
   family_id: string
   family_display_id: string
   family_name: string
-  ball_color: string | null
   classifications: string[]
   track: string | null
   /** All allowed coaches for the player. Empty array = no restriction. */
   allowed: { coach_id: string; coach_name: string; auto_approve: boolean }[]
-}
-
-const BALL_COLOR_TINT: Record<string, string> = {
-  blue: 'bg-blue-100 text-blue-800',
-  red: 'bg-red-100 text-red-800',
-  orange: 'bg-orange-100 text-orange-800',
-  green: 'bg-green-100 text-green-800',
-  yellow: 'bg-yellow-100 text-yellow-800',
-  advanced: 'bg-purple-100 text-purple-800',
-  elite: 'bg-amber-100 text-amber-800',
-  competitive: 'bg-indigo-100 text-indigo-800',
 }
 
 function titleCase(s: string): string {
@@ -53,7 +41,6 @@ export function AllowedCoachesOverview({
       r.player_name.toLowerCase().includes(q) ||
       r.family_name.toLowerCase().includes(q) ||
       r.family_display_id.toLowerCase().includes(q) ||
-      (r.ball_color ?? '').toLowerCase().includes(q) ||
       (r.track ?? '').toLowerCase().includes(q) ||
       r.classifications.some(c => c.toLowerCase().includes(q)) ||
       r.allowed.some(a => a.coach_name.toLowerCase().includes(q)) ||
@@ -91,8 +78,7 @@ export function AllowedCoachesOverview({
           <div className="grid grid-cols-12 gap-2 border-b border-border bg-muted/40 px-3 py-2 text-xs font-medium text-muted-foreground">
             <div className="col-span-3">Player</div>
             <div className="col-span-2">Family</div>
-            <div className="col-span-2">Class / Track</div>
-            <div className="col-span-1">Ball</div>
+            <div className="col-span-3">Class / Track</div>
             <div className="col-span-4">Allowed coaches</div>
           </div>
           <div className="divide-y divide-border/60">
@@ -110,7 +96,7 @@ export function AllowedCoachesOverview({
                   </Link>
                   <span className="ml-1 text-[11px] text-muted-foreground/70">{r.family_display_id}</span>
                 </div>
-                <div className="col-span-2">
+                <div className="col-span-3">
                   <div className="flex flex-wrap gap-1">
                     {r.classifications.length > 0 ? r.classifications.map(c => (
                       <span key={c} className="inline-flex items-center rounded-full bg-muted px-1.5 py-0.5 text-[11px] text-foreground">
@@ -123,15 +109,6 @@ export function AllowedCoachesOverview({
                       </span>
                     )}
                   </div>
-                </div>
-                <div className="col-span-1">
-                  {r.ball_color ? (
-                    <span className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[11px] ${BALL_COLOR_TINT[r.ball_color] ?? 'bg-muted text-foreground'}`}>
-                      {titleCase(r.ball_color)}
-                    </span>
-                  ) : (
-                    <span className="text-[11px] text-muted-foreground italic">—</span>
-                  )}
                 </div>
                 <div className="col-span-4">
                   {(() => {

@@ -7,7 +7,7 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Card, CardContent } from '@/components/ui/card'
 
-type Player = { id: string; first_name: string; last_name: string; ball_color: string | null }
+type Player = { id: string; first_name: string; last_name: string; classifications: string[] | null }
 
 export function LessonNoteForm({
   sessionId,

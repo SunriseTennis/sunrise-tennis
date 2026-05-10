@@ -50,7 +50,7 @@ export default async function ParentBookingsPage({
   ] = await Promise.all([
     supabase
       .from('players')
-      .select('id, first_name, last_name, ball_color')
+      .select('id, first_name, last_name')
       .eq('family_id', familyId)
       .eq('status', 'active')
       .order('first_name'),
@@ -241,7 +241,7 @@ export default async function ParentBookingsPage({
       {/* Calendar — default "Your Privates", coach tabs for availability */}
       <div className="animate-fade-up" style={{ animationDelay: '80ms' }}>
       <AvailabilityCalendar
-        players={(players ?? []).map(p => ({ id: p.id, first_name: p.first_name, last_name: p.last_name, ball_color: p.ball_color }))}
+        players={(players ?? []).map(p => ({ id: p.id, first_name: p.first_name, last_name: p.last_name }))}
         coaches={coachData}
         allowedCoaches={(allowedCoaches ?? []).map(a => ({
           player_id: a.player_id,

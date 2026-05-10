@@ -15,7 +15,7 @@ interface Player {
   id: string
   firstName: string
   lastName: string
-  ballColor: string | null
+  classifications: string[]
 }
 
 interface Family {
@@ -71,9 +71,9 @@ export function BulkEnrolForm({
     return results
   }, [families, existingSet, search])
 
-  // Level-matched players (suggest these first)
-  const levelMatched = availablePlayers.filter(p => p.ballColor === programLevel)
-  const others = availablePlayers.filter(p => p.ballColor !== programLevel)
+  // Plan 24 — level-matched = at least one classification matches the program's level.
+  const levelMatched = availablePlayers.filter(p => p.classifications.includes(programLevel))
+  const others = availablePlayers.filter(p => !p.classifications.includes(programLevel))
 
   const togglePlayer = (id: string) => {
     setSelected(prev => {
@@ -234,8 +234,8 @@ export function BulkEnrolForm({
             {p.parentName ? ` - ${p.parentName}` : ''}
           </div>
         </div>
-        {p.ballColor && (
-          <span className="text-xs capitalize text-muted-foreground">{p.ballColor}</span>
+        {p.classifications.length > 0 && (
+          <span className="text-xs capitalize text-muted-foreground">{p.classifications.join(' / ')}</span>
         )}
       </button>
     )

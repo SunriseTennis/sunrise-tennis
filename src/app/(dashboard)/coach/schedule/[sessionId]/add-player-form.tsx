@@ -10,7 +10,7 @@ type PlayerResult = {
   id: string
   first_name: string
   last_name: string
-  ball_color: string | null
+  classifications: string[] | null
 }
 
 export function AddPlayerForm({
@@ -37,8 +37,11 @@ export function AddPlayerForm({
     try {
       const { searchPlayersForCoach } = await import('../../actions')
       const data = await searchPlayersForCoach(q)
+      // Plan 24 — RPC return shape changed (ball_color → classifications) but
+      // generated supabase types haven't been regenerated yet, so we cast.
+      const rows = (data ?? []) as unknown as PlayerResult[]
       // Filter out players already in the session
-      setResults((data ?? []).filter((p: PlayerResult) => !existingPlayerIds.includes(p.id)))
+      setResults(rows.filter((p) => !existingPlayerIds.includes(p.id)))
     } finally {
       setSearching(false)
     }
@@ -91,8 +94,8 @@ export function AddPlayerForm({
                 <span className="text-sm font-medium text-foreground">
                   {player.first_name} {player.last_name}
                 </span>
-                {player.ball_color && (
-                  <span className="ml-2 text-xs capitalize text-muted-foreground">{player.ball_color}</span>
+                {(player.classifications ?? []).length > 0 && (
+                  <span className="ml-2 text-xs capitalize text-muted-foreground">{(player.classifications ?? []).join(' / ')}</span>
                 )}
               </div>
               <Button

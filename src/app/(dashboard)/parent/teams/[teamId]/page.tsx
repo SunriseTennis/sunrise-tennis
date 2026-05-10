@@ -81,7 +81,7 @@ export default async function ParentTeamDetailPage({
   // Get all team members for roster display
   const { data: allMembers } = await supabase
     .from('team_members')
-    .select('*, players:player_id(first_name, last_name, ball_color)')
+    .select('*, players:player_id(first_name, last_name, classifications)')
     .eq('team_id', teamId)
     .order('role')
 
@@ -268,7 +268,7 @@ export default async function ParentTeamDetailPage({
           </div>
           <div className="divide-y divide-border/40">
             {allMembers.map((m) => {
-              const player = m.players as unknown as { first_name: string; last_name: string; ball_color: string | null }
+              const player = m.players as unknown as { first_name: string; last_name: string; classifications: string[] | null }
               const isFamily = familyPlayerIds.includes(m.player_id)
               return (
                 <div

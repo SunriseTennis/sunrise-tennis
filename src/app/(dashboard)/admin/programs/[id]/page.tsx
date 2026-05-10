@@ -57,11 +57,11 @@ export default async function ProgramDetailPage({
   const [{ data: program }, { data: roster }, { data: allFamilies }, { data: sessions }, { data: programCoaches }, { data: allCoaches }, { data: sessionCoachAttendances }] = await Promise.all([
     supabase.from('programs').select('*').eq('id', id).single(),
     supabase.from('program_roster')
-      .select('id, status, enrolled_at, players(id, first_name, last_name, ball_color, current_focus, families(display_id, family_name))')
+      .select('id, status, enrolled_at, players(id, first_name, last_name, classifications, current_focus, families(display_id, family_name))')
       .eq('program_id', id)
       .order('enrolled_at'),
     supabase.from('families')
-      .select('id, display_id, family_name, primary_contact, players(id, first_name, last_name, ball_color)')
+      .select('id, display_id, family_name, primary_contact, players(id, first_name, last_name, classifications)')
       .eq('status', 'active')
       .order('display_id'),
     // Sessions filtered by term
@@ -467,14 +467,14 @@ export default async function ProgramDetailPage({
               <RosterTable
                 programId={id}
                 roster={roster.map((r) => {
-                  const player = r.players as unknown as { id: string; first_name: string; last_name: string; ball_color: string | null; current_focus: string[] | null; families: { display_id: string; family_name: string } | null } | null
+                  const player = r.players as unknown as { id: string; first_name: string; last_name: string; classifications: string[] | null; current_focus: string[] | null; families: { display_id: string; family_name: string } | null } | null
                   return {
                     rosterId: r.id,
                     rosterStatus: r.status,
                     playerId: player?.id ?? '',
                     firstName: player?.first_name ?? '',
                     lastName: player?.last_name ?? '',
-                    ballColor: player?.ball_color ?? null,
+                    classifications: (player?.classifications ?? []) as string[],
                     currentFocus: player?.current_focus ?? null,
                     familyDisplayId: player?.families?.display_id ?? null,
                     familyName: player?.families?.family_name ?? null,
@@ -501,11 +501,11 @@ export default async function ProgramDetailPage({
               displayId: f.display_id,
               familyName: f.family_name,
               parentName: contact?.name ?? null,
-              players: ((f.players as unknown as { id: string; first_name: string; last_name: string; ball_color?: string | null }[]) ?? []).map(p => ({
+              players: ((f.players as unknown as { id: string; first_name: string; last_name: string; classifications?: string[] | null }[]) ?? []).map(p => ({
                 id: p.id,
                 firstName: p.first_name,
                 lastName: p.last_name,
-                ballColor: p.ball_color ?? null,
+                classifications: (p.classifications ?? []) as string[],
               })),
             }
           })}

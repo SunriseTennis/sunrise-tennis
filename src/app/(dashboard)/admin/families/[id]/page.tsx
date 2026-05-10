@@ -3,7 +3,7 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
 import { formatCurrency } from '@/lib/utils/currency'
 import { formatDate } from '@/lib/utils/dates'
-import { FamilyEditForm } from './family-edit-form'
+import { FamilyInlineCard } from './family-inline-card'
 import { AddPlayerForm } from './add-player-form'
 import { InviteParentForm } from './invite-parent-form'
 import { PricingForm } from './pricing-form'
@@ -11,6 +11,8 @@ import { PlayerCoachesForm } from './player-coaches-form'
 import { WaiveChargeSection } from './waive-charge-section'
 import { FamilyDangerZone } from './family-danger-zone'
 import { DeletePlayerButton } from '../../approvals/[familyId]/delete-player-button'
+import { DisclosureCard } from '@/components/inline-edit/disclosure-card'
+import { formatClassificationsLabel } from '@/lib/utils/player-display'
 import { Suspense } from 'react'
 import { PageHeader } from '@/components/page-header'
 import { StatusBadge } from '@/components/status-badge'
@@ -87,98 +89,17 @@ export default async function FamilyDetailPage({ params, searchParams }: PagePro
       )}
 
       <div className="mt-6 space-y-8">
-        {/* Family info card */}
-        <Card>
-          <CardContent className="pt-6">
-            <h2 className="text-lg font-semibold text-foreground">Contact Information</h2>
-            <dl className="mt-4 grid gap-3 sm:grid-cols-2">
-              <div>
-                <dt className="text-xs font-medium text-muted-foreground">Primary Contact</dt>
-                <dd className="text-sm text-foreground">{contact?.name ?? '-'}</dd>
-              </div>
-              <div>
-                <dt className="text-xs font-medium text-muted-foreground">Phone</dt>
-                <dd className="text-sm text-foreground">{contact?.phone ?? '-'}</dd>
-              </div>
-              <div>
-                <dt className="text-xs font-medium text-muted-foreground">Email</dt>
-                <dd className="text-sm text-foreground">{contact?.email ?? '-'}</dd>
-              </div>
-              <div>
-                <dt className="text-xs font-medium text-muted-foreground">Address</dt>
-                <dd className="text-sm text-foreground">{family.address ?? '-'}</dd>
-              </div>
-              {family.referred_by && (
-                <div>
-                  <dt className="text-xs font-medium text-muted-foreground">Referred By</dt>
-                  <dd className="text-sm text-foreground">{family.referred_by}</dd>
-                </div>
-              )}
-              <div>
-                <dt className="text-xs font-medium text-muted-foreground">Created</dt>
-                <dd className="text-sm text-foreground">{family.created_at ? formatDate(family.created_at) : '-'}</dd>
-              </div>
-            </dl>
-
-            {/* Secondary contact */}
-            {secondaryContact && (secondaryContact.name || secondaryContact.phone || secondaryContact.email) && (
-              <>
-                <h3 className="mt-6 text-sm font-semibold text-foreground">Secondary Contact</h3>
-                <dl className="mt-2 grid gap-3 sm:grid-cols-2">
-                  {secondaryContact.name && (
-                    <div>
-                      <dt className="text-xs font-medium text-muted-foreground">
-                        Name{secondaryContact.role ? ` (${secondaryContact.role})` : ''}
-                      </dt>
-                      <dd className="text-sm text-foreground">{secondaryContact.name}</dd>
-                    </div>
-                  )}
-                  {secondaryContact.phone && (
-                    <div>
-                      <dt className="text-xs font-medium text-muted-foreground">Phone</dt>
-                      <dd className="text-sm text-foreground">{secondaryContact.phone}</dd>
-                    </div>
-                  )}
-                  {secondaryContact.email && (
-                    <div>
-                      <dt className="text-xs font-medium text-muted-foreground">Email</dt>
-                      <dd className="text-sm text-foreground">{secondaryContact.email}</dd>
-                    </div>
-                  )}
-                </dl>
-              </>
-            )}
-
-            {/* Billing preferences */}
-            {billingPrefs && (billingPrefs.payment_method || billingPrefs.package_type) && (
-              <>
-                <h3 className="mt-6 text-sm font-semibold text-foreground">Billing Preferences</h3>
-                <dl className="mt-2 grid gap-3 sm:grid-cols-2">
-                  {billingPrefs.payment_method && (
-                    <div>
-                      <dt className="text-xs font-medium text-muted-foreground">Payment Method</dt>
-                      <dd className="text-sm capitalize text-foreground">{billingPrefs.payment_method}</dd>
-                    </div>
-                  )}
-                  {billingPrefs.package_type && (
-                    <div>
-                      <dt className="text-xs font-medium text-muted-foreground">Package Type</dt>
-                      <dd className="text-sm capitalize text-foreground">{billingPrefs.package_type}</dd>
-                    </div>
-                  )}
-                </dl>
-              </>
-            )}
-
-            {/* Notes */}
-            {family.notes && (
-              <>
-                <h3 className="mt-6 text-sm font-semibold text-foreground">Notes</h3>
-                <p className="mt-1 whitespace-pre-wrap text-sm text-muted-foreground">{family.notes}</p>
-              </>
-            )}
-          </CardContent>
-        </Card>
+        {/* Family info card — Plan 24 inline-edit */}
+        <FamilyInlineCard
+          familyId={id}
+          primaryContact={contact}
+          secondaryContact={secondaryContact}
+          address={family.address ?? null}
+          notes={family.notes ?? null}
+          referredBy={family.referred_by ?? null}
+          status={(family.status ?? 'active') as 'active' | 'inactive' | 'lead' | 'archived'}
+          billingPrefs={billingPrefs}
+        />
 
         {/* Players */}
         <Card>
@@ -198,8 +119,11 @@ export default async function FamilyDetailPage({ params, searchParams }: PagePro
                     >
                       <p className="font-medium text-foreground">{p.first_name} {p.last_name}</p>
                       <p className="mt-0.5 text-sm text-muted-foreground">
-                        {p.ball_color && <span className="capitalize">{p.ball_color} ball</span>}
-                        {p.ball_color && p.dob && ' - '}
+                        {(() => {
+                          const label = formatClassificationsLabel({ classifications: (p.classifications as string[] | null) ?? [] })
+                          return label ? <span>{label}</span> : null
+                        })()}
+                        {((p.classifications as string[] | null) ?? []).length > 0 && p.dob && ' - '}
                         {p.dob && <span>DOB: {formatDate(p.dob)}</span>}
                       </p>
                     </Link>
@@ -232,34 +156,35 @@ export default async function FamilyDetailPage({ params, searchParams }: PagePro
           />
         </Suspense>
 
-        {/* Custom pricing */}
-        <PricingForm
-          familyId={id}
-          overrides={pricingOverrides ?? []}
-          programs={(allPrograms ?? []).map(p => ({ id: p.id, name: p.name, type: p.type }))}
-          coaches={(coaches ?? []).map(c => ({ id: c.id, name: c.name }))}
-        />
+        {/* Custom pricing — Plan 24 collapsed by default */}
+        <DisclosureCard title="Custom pricing" hint="Per-family rate overrides for groups, squads, and privates.">
+          <PricingForm
+            familyId={id}
+            overrides={pricingOverrides ?? []}
+            programs={(allPrograms ?? []).map(p => ({ id: p.id, name: p.name, type: p.type }))}
+            coaches={(coaches ?? []).map(c => ({ id: c.id, name: c.name }))}
+          />
+        </DisclosureCard>
 
         {/* Outstanding Charges / Waive */}
         {outstandingCharges && outstandingCharges.length > 0 && (
           <WaiveChargeSection charges={outstandingCharges} />
         )}
 
-        {/* Private Lesson Coaches */}
+        {/* Private Lesson Coaches — Plan 24 collapsed by default */}
         {players && players.length > 0 && (
-          <PlayerCoachesForm
-            players={(players ?? []).filter(p => p.status === 'active').map(p => ({ id: p.id, first_name: p.first_name, last_name: p.last_name }))}
-            coaches={(coaches ?? []).map(c => ({
-              id: c.id,
-              name: c.name,
-              private_opt_in_required: c.private_opt_in_required ?? false,
-            }))}
-            allowedCoaches={(allowedCoaches ?? []).map(a => ({ player_id: a.player_id, coach_id: a.coach_id, auto_approve: a.auto_approve ?? false }))}
-          />
+          <DisclosureCard title="Private lesson coaches" hint="Per-player allowlist for which coaches can take privates.">
+            <PlayerCoachesForm
+              players={(players ?? []).filter(p => p.status === 'active').map(p => ({ id: p.id, first_name: p.first_name, last_name: p.last_name }))}
+              coaches={(coaches ?? []).map(c => ({
+                id: c.id,
+                name: c.name,
+                private_opt_in_required: c.private_opt_in_required ?? false,
+              }))}
+              allowedCoaches={(allowedCoaches ?? []).map(a => ({ player_id: a.player_id, coach_id: a.coach_id, auto_approve: a.auto_approve ?? false }))}
+            />
+          </DisclosureCard>
         )}
-
-        {/* Edit family */}
-        <FamilyEditForm family={family} />
 
         {/* Plan 21 — Danger zone: archive (soft, reversible) + delete
             (hard, only when no operational rows). Compute hasBlockers

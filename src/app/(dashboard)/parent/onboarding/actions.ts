@@ -287,6 +287,7 @@ export async function addOnboardingPlayer(formData: FormData) {
   // Plan 20 — two granular consent toggles default to false (opt-in).
   // Wizard step 3 (admin-invite) / step 4 (self-signup) is where the
   // parent grants per-player consent.
+  // Plan 24 — ball_color + level retired; classifications is the only signal.
   const { data: insertedPlayer, error } = await supabase
     .from('players')
     .insert({
@@ -296,8 +297,6 @@ export async function addOnboardingPlayer(formData: FormData) {
       preferred_name: preferred_name || null,
       dob: dob || null,
       gender: gender || null,
-      ball_color: ball_color || null,
-      level: ball_color || null,
       classifications: parsedClassifications,
       track: 'participation',
       medical_notes: medical_notes || null,

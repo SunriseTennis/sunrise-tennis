@@ -58,7 +58,7 @@ export default async function ParentProgramDetailPage({
     { data: balance },
   ] = await Promise.all([
     supabase.from('programs').select('*, venues:venue_id(name, address)').eq('id', programId).single(),
-    supabase.from('players').select('id, first_name, last_name, ball_color, level, status, gender, classifications, track').eq('family_id', familyId).eq('status', 'active').order('first_name'),
+    supabase.from('players').select('id, first_name, last_name, status, gender, classifications, track').eq('family_id', familyId).eq('status', 'active').order('first_name'),
     supabase.from('program_roster').select('id, player_id, status').eq('program_id', programId),
     supabase.from('sessions').select('id, date, start_time, end_time, status')
       .eq('program_id', programId)
@@ -274,7 +274,7 @@ export default async function ParentProgramDetailPage({
                 id: p.id,
                 name: `${p.first_name} ${p.last_name}`,
                 firstName: p.first_name,
-                level: p.ball_color,
+                classifications: (p.classifications as string[] | null) ?? [],
                 effectivePerSessionCents: b.effectivePerSessionCents,
                 basePerSessionCents: b.basePerSessionCents,
                 morningSquadPartnerApplied: b.morningSquadPartnerApplied,

@@ -17,6 +17,8 @@ import {
 } from 'lucide-react'
 import { ParentPlayerEditForm } from './player-edit-form'
 import { stripDayPrefix } from '@/lib/utils/program-display'
+import { formatClassificationsLabel, getPrimaryClassification } from '@/lib/utils/player-display'
+import { PlayerBall } from '@/components/player-ball'
 
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
@@ -28,14 +30,8 @@ const LEVEL_ACCENTS: Record<string, { bg: string; border: string; text: string }
   blue:   { bg: 'bg-ball-blue', border: 'border-ball-blue/80', text: 'text-white' },
 }
 
-function formatLevel(ballColor: string | null, level: string | null): string {
-  if (!ballColor && !level) return '-'
-  const bc = ballColor?.toLowerCase()
-  if (bc && ['red', 'orange', 'green', 'yellow', 'blue'].includes(bc)) {
-    return `${bc.charAt(0).toUpperCase() + bc.slice(1)} Ball`
-  }
-  return level ?? '-'
-}
+// Plan 24 — formatLevel removed; classifications drive parent-facing
+// display via formatClassificationsLabel().
 
 function calculateAge(dob: string | null): number | null {
   if (!dob) return null
@@ -96,7 +92,13 @@ export default async function ParentPlayerDetailPage({ params }: { params: Promi
   ])
 
   const age = calculateAge(player.dob)
-  const levelText = formatLevel(player.ball_color, player.level)
+  // Plan 24 — display via classifications. "Yellow / Advanced" or "Yellow Ball".
+  const classifications = (player.classifications as string[] | null) ?? []
+  const levelText = classifications.length === 0
+    ? '-'
+    : classifications.length === 1
+      ? `${classifications[0][0].toUpperCase()}${classifications[0].slice(1)} Ball`
+      : formatClassificationsLabel({ classifications })
   // Extract latest content for preview cards
   const latestNote = lessonNotes?.[0] ?? null
   const latestNoteDate = latestNote

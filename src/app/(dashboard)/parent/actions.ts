@@ -260,6 +260,7 @@ export async function createPlayerFromParent(formData: FormData) {
   const VALID_CLASSES = new Set(['blue', 'red', 'orange', 'green', 'yellow'])
   const parsedClassifications = ballColor && VALID_CLASSES.has(ballColor) ? [ballColor] : []
 
+  // Plan 24 — ball_color + level retired; classifications is the only signal.
   const { data: created, error } = await supabase
     .from('players')
     .insert({
@@ -269,8 +270,6 @@ export async function createPlayerFromParent(formData: FormData) {
       preferred_name: preferredName || null,
       dob: dob || null,
       gender: gender || null,
-      ball_color: ballColor || null,
-      level: ballColor || null,
       classifications: parsedClassifications,
       track: 'participation',
       medical_notes: medicalNotes || null,

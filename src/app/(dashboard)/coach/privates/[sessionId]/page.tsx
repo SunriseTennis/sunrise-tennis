@@ -51,7 +51,7 @@ export default async function CoachPrivateSessionPage({
     .from('bookings')
     .select(`
       id, player_id, family_id, price_cents, duration_minutes, status,
-      players:player_id(id, first_name, last_name, ball_color, dob),
+      players:player_id(id, first_name, last_name, classifications, dob),
       families:family_id(family_name, primary_contact)
     `)
     .eq('session_id', sessionId)
@@ -64,7 +64,7 @@ export default async function CoachPrivateSessionPage({
     price_cents: number | null
     duration_minutes: number | null
     status: string
-    players: { id: string; first_name: string; last_name: string; ball_color: string | null; dob: string | null } | null
+    players: { id: string; first_name: string; last_name: string; classifications: string[] | null; dob: string | null } | null
     families: { family_name: string; primary_contact: { name?: string; phone?: string } | null } | null
   }
   const bookings = (bookingsRaw ?? []) as unknown as BookingRow[]
@@ -156,8 +156,8 @@ export default async function CoachPrivateSessionPage({
                         <ConvertButton sessionId={sessionId} removingPlayerId={p.id} />
                       )}
                     </div>
-                    {p.ball_color && (
-                      <p className="text-xs capitalize text-muted-foreground">{p.ball_color} ball</p>
+                    {(p.classifications ?? []).length > 0 && (
+                      <p className="text-xs capitalize text-muted-foreground">{(p.classifications ?? []).join(' / ')}</p>
                     )}
                     {p.dob && (
                       <p className="text-xs text-muted-foreground">DOB: {formatDate(p.dob)}</p>

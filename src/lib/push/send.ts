@@ -165,11 +165,12 @@ export async function sendNotificationToTarget(params: {
       userIds = roles?.map((r) => r.user_id) ?? []
     }
   } else if (targetType === 'level' && targetLevel) {
-    // Find players with this ball color -> families -> parent users
+    // Plan 24 — `ball_color` retired; target level pushes by classification
+    // overlap (any player whose classifications array contains targetLevel).
     const { data: players } = await supabase
       .from('players')
       .select('family_id')
-      .eq('ball_color', targetLevel)
+      .contains('classifications', [targetLevel])
       .eq('status', 'active')
 
     const familyIds = [...new Set(players?.map((p) => p.family_id) ?? [])]

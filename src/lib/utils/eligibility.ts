@@ -138,24 +138,37 @@ export function isEligible(
 }
 
 /**
- * Returns true when a program should be hard-hidden from a family if no
- * player is eligible. Used so that morning squads + Thursday performance
- * squads stay invisible in "All" view for families they will never apply to,
- * while the rest of the catalogue stays browseable.
+ * Plan 24 — split the old `isStrictlyGated()` into two pure predicates so
+ * the call site can apply them with family context. The old single
+ * predicate over-hid Thursday performance squads from performance-track
+ * families whose classification didn't match (e.g. a yellow performance
+ * player couldn't even *see* Thursday Red Squad). Maxim's intent:
+ * performance-track families should browse all performance squads and
+ * be book-gated by `isEligible()` only.
  *
- * Two signals trip strict-hide:
- *   - `track_required` is set (covers Thursday performance squads)
- *   - `allowed_classifications` is set and contains only advanced/elite
- *     (covers morning squads after their `track_required` was dropped so
- *     elite players without a `performance` track flag can still enrol).
+ * `requiresPerformanceTrack` — program is performance-only (Thursday
+ * squads). Hide from family iff no family player has track='performance'.
+ *
+ * `isAdvancedEliteOnly` — program is restricted to advanced/elite
+ * classifications (morning squads). Hide from family iff no family
+ * player carries 'advanced' or 'elite' in their classifications.
+ *
+ * The OLD `isStrictlyGated()` is kept as a deprecated alias for any
+ * legacy caller; new code should use the two predicates above with
+ * family context.
  */
-export function isStrictlyGated(program: ProgramEligibilityFields): boolean {
-  if (program.track_required) return true
+export function requiresPerformanceTrack(program: ProgramEligibilityFields): boolean {
+  return program.track_required === 'performance'
+}
+
+export function isAdvancedEliteOnly(program: ProgramEligibilityFields): boolean {
   const classes = program.allowed_classifications ?? []
-  if (classes.length > 0 && classes.every(c => c === 'advanced' || c === 'elite')) {
-    return true
-  }
-  return false
+  return classes.length > 0 && classes.every(c => c === 'advanced' || c === 'elite')
+}
+
+/** @deprecated Plan 24 — use `requiresPerformanceTrack` + `isAdvancedEliteOnly` with family context. */
+export function isStrictlyGated(program: ProgramEligibilityFields): boolean {
+  return requiresPerformanceTrack(program) || isAdvancedEliteOnly(program)
 }
 
 /**

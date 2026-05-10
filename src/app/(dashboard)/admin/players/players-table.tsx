@@ -24,8 +24,6 @@ interface PlayerRow {
   lastName: string
   preferredName: string | null
   dob: string | null
-  ballColor: string | null
-  level: string | null
   gender: string | null
   status: 'active' | 'inactive' | 'archived'
   classifications: string[]
@@ -40,14 +38,12 @@ interface PlayerRow {
   utr: string | null
 }
 
-type SortKey = 'firstName' | 'lastName' | 'dob' | 'age' | 'ballColor' | 'family' | 'utr' | 'compStatus' | 'track' | 'status' | 'gender'
+type SortKey = 'firstName' | 'lastName' | 'dob' | 'age' | 'family' | 'utr' | 'compStatus' | 'track' | 'status' | 'gender'
 
 function calcAge(dob: string | null): number | null {
   if (!dob) return null
   return Math.floor((Date.now() - new Date(dob).getTime()) / (365.25 * 24 * 60 * 60 * 1000))
 }
-
-const BALL_ORDER: Record<string, number> = { blue: 0, red: 1, orange: 2, green: 3, yellow: 4, competitive: 5 }
 
 const ALL_CLASSIFICATIONS = ['blue', 'red', 'orange', 'green', 'yellow', 'advanced', 'elite'] as const
 type Classification = (typeof ALL_CLASSIFICATIONS)[number]
@@ -307,7 +303,6 @@ function EditableRow({ player }: { player: PlayerRow }) {
 
 export function PlayersTable({ players }: { players: PlayerRow[] }) {
   const [search, setSearch] = useState('')
-  const [ballFilter, setBallFilter] = useState('')
   const [classFilter, setClassFilter] = useState('')
   const [trackFilter, setTrackFilter] = useState<'all' | 'performance' | 'participation'>('all')
   const [statusFilter, setStatusFilter] = useState<'active' | 'all' | 'inactive' | 'archived'>('active')
@@ -343,10 +338,6 @@ export function PlayersTable({ players }: { players: PlayerRow[] }) {
       )
     }
 
-    if (ballFilter) {
-      list = list.filter(p => p.ballColor === ballFilter)
-    }
-
     if (classFilter) {
       list = list.filter(p => p.classifications.includes(classFilter))
     }
@@ -366,7 +357,7 @@ export function PlayersTable({ players }: { players: PlayerRow[] }) {
     }
 
     return list
-  }, [players, search, ballFilter, classFilter, trackFilter, statusFilter, genderFilter, compFilter])
+  }, [players, search, classFilter, trackFilter, statusFilter, genderFilter, compFilter])
 
   const sorted = useMemo(() => {
     const dir = sortAsc ? 1 : -1
@@ -385,11 +376,6 @@ export function PlayersTable({ players }: { players: PlayerRow[] }) {
           const aAge = calcAge(a.dob) ?? 999
           const bAge = calcAge(b.dob) ?? 999
           return dir * (aAge - bAge)
-        }
-        case 'ballColor': {
-          const aOrd = BALL_ORDER[a.ballColor ?? ''] ?? 99
-          const bOrd = BALL_ORDER[b.ballColor ?? ''] ?? 99
-          return dir * (aOrd - bOrd)
         }
         case 'family':
           return dir * a.familyDisplayId.localeCompare(b.familyDisplayId)
@@ -455,15 +441,6 @@ export function PlayersTable({ players }: { players: PlayerRow[] }) {
           <option value="performance">Performance</option>
           <option value="participation">Participation</option>
         </select>
-        <select value={ballFilter} onChange={(e) => setBallFilter(e.target.value)} className={selectClasses}>
-          <option value="">All ball colours</option>
-          <option value="blue">Blue</option>
-          <option value="red">Red</option>
-          <option value="orange">Orange</option>
-          <option value="green">Green</option>
-          <option value="yellow">Yellow</option>
-          <option value="competitive">Competitive</option>
-        </select>
         <select value={classFilter} onChange={(e) => setClassFilter(e.target.value)} className={selectClasses}>
           <option value="">All classifications</option>
           {ALL_CLASSIFICATIONS.map(c => (
@@ -505,8 +482,10 @@ export function PlayersTable({ players }: { players: PlayerRow[] }) {
                   <p className="font-medium text-foreground">{p.firstName} {p.lastName}</p>
                   <p className="text-xs text-muted-foreground">{p.familyDisplayId} - {p.familyName}</p>
                 </div>
-                {p.ballColor && (
-                  <span className="rounded-full bg-muted px-2 py-0.5 text-xs capitalize">{p.ballColor}</span>
+                {p.classifications.length > 0 && (
+                  <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs capitalize text-primary">
+                    {p.classifications.join(' / ')}
+                  </span>
                 )}
               </div>
               <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
@@ -515,11 +494,6 @@ export function PlayersTable({ players }: { players: PlayerRow[] }) {
                 <span className={cn('rounded-full px-2 py-0.5 capitalize border', GENDER_STYLES[genderUi])}>
                   {genderUi === 'non_binary' ? 'Non-binary' : genderUi}
                 </span>
-                {p.classifications.length > 0 && (
-                  <span className="rounded-full bg-primary/10 px-2 py-0.5 text-primary">
-                    {p.classifications.join(', ')}
-                  </span>
-                )}
                 <span className={cn('rounded-full px-2 py-0.5 capitalize border', TRACK_STYLES[p.track])}>{p.track}</span>
                 {p.status !== 'active' && (
                   <span className={cn('rounded-full px-2 py-0.5 capitalize border', STATUS_STYLES[p.status])}>{p.status}</span>

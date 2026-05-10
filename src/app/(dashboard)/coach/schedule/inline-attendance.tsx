@@ -6,7 +6,7 @@ import { Check, X, AlertTriangle, Loader2 } from 'lucide-react'
 import { StatusBadge } from '@/components/status-badge'
 import type { CalendarEvent } from '@/components/weekly-calendar'
 
-type Player = { id: string; first_name: string; last_name: string; ball_color: string | null }
+type Player = { id: string; first_name: string; last_name: string; classifications: string[] | null }
 
 const STATUS_OPTIONS = [
   { value: 'present', icon: Check, activeStyle: 'bg-success text-white border-success', inactiveStyle: 'bg-muted/50 text-muted-foreground border-border' },

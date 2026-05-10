@@ -1,8 +1,7 @@
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { createClient, decryptMedicalNotes } from '@/lib/supabase/server'
-import { formatDate } from '@/lib/utils/dates'
-import { PlayerEditForm } from './player-edit-form'
+import { PlayerInlineCard } from './player-inline-card'
 import { PlayerDangerZone } from './player-danger-zone'
 import { Card, CardContent } from '@/components/ui/card'
 import { StatusBadge } from '@/components/status-badge'
@@ -12,27 +11,16 @@ interface PageProps {
   searchParams: Promise<{ success?: string; error?: string }>
 }
 
-function ConsentLine({ label, on }: { label: string; on: boolean }) {
-  return (
-    <div className="flex items-center gap-1.5">
-      <span className={`inline-block size-1.5 rounded-full ${on ? 'bg-emerald-500' : 'bg-red-400'}`} />
-      <span className="text-xs text-muted-foreground">{label}:</span>
-      <span className={`text-xs font-medium ${on ? 'text-emerald-700' : 'text-muted-foreground'}`}>{on ? 'Yes' : 'No'}</span>
-    </div>
-  )
-}
-
 export default async function PlayerDetailPage({ params, searchParams }: PageProps) {
   const { id: familyId, playerId } = await params
   const { success, error } = await searchParams
   const supabase = await createClient()
 
-  const [{ data: player }, { data: family }, { data: roster }, { data: compPlayers }, { data: coaches }] = await Promise.all([
+  const [{ data: player }, { data: family }, { data: roster }, { data: compPlayers }] = await Promise.all([
     supabase.from('players').select('*').eq('id', playerId).single(),
     supabase.from('families').select('display_id, family_name').eq('id', familyId).single(),
     supabase.from('program_roster').select('status, enrolled_at, programs:program_id(id, name, type, term)').eq('player_id', playerId),
     supabase.from('competition_players').select('id, first_name, role, registration_status, teams:team_id(id, name, competitions:competition_id(id, name, short_name))').eq('player_id', playerId),
-    supabase.from('coaches').select('id, name').eq('status', 'active'),
   ])
 
   if (!player || !family) notFound()
@@ -70,92 +58,28 @@ export default async function PlayerDetailPage({ params, searchParams }: PagePro
       )}
 
       <div className="mt-6 space-y-6">
-        {/* Current state */}
-        <Card>
-          <CardContent className="pt-6">
-            <h2 className="text-lg font-semibold text-foreground">Player Profile</h2>
-            <dl className="mt-4 grid gap-3 sm:grid-cols-2">
-              {player.preferred_name && player.preferred_name !== player.first_name && (
-                <div>
-                  <dt className="text-xs font-medium text-muted-foreground">Preferred Name</dt>
-                  <dd className="text-sm text-foreground">{player.preferred_name}</dd>
-                </div>
-              )}
-              <div>
-                <dt className="text-xs font-medium text-muted-foreground">Ball Colour</dt>
-                <dd className="text-sm text-foreground capitalize">{player.ball_color ?? '-'}</dd>
-              </div>
-              <div>
-                <dt className="text-xs font-medium text-muted-foreground">Level</dt>
-                <dd className="text-sm text-foreground capitalize">{player.level ?? '-'}</dd>
-              </div>
-              <div>
-                <dt className="text-xs font-medium text-muted-foreground">Date of Birth</dt>
-                <dd className="text-sm text-foreground">
-                  {player.dob ? (
-                    <>
-                      {formatDate(player.dob)}
-                      <span className="ml-1 text-muted-foreground">
-                        ({Math.floor((Date.now() - new Date(player.dob).getTime()) / (365.25 * 24 * 60 * 60 * 1000))} yrs)
-                      </span>
-                    </>
-                  ) : '-'}
-                </dd>
-              </div>
-              {player.gender && (
-                <div>
-                  <dt className="text-xs font-medium text-muted-foreground">Gender</dt>
-                  <dd className="text-sm text-foreground capitalize">{player.gender.replace('_', ' ')}</dd>
-                </div>
-              )}
-              <div>
-                <dt className="text-xs font-medium text-muted-foreground">Status</dt>
-                <dd className="text-sm text-foreground capitalize">{player.status}</dd>
-              </div>
-              <div>
-                <dt className="text-xs font-medium text-muted-foreground">Media Consent</dt>
-                <dd className="text-sm space-y-0.5">
-                  <ConsentLine label="Coaching" on={!!player.media_consent_coaching} />
-                  <ConsentLine label="Social media" on={!!player.media_consent_social} />
-                </dd>
-              </div>
-              <div>
-                <dt className="text-xs font-medium text-muted-foreground">Competition Interest</dt>
-                <dd className="text-sm text-foreground capitalize">{player.comp_interest ?? '-'}</dd>
-              </div>
-              {player.school && (
-                <div className="sm:col-span-2">
-                  <dt className="text-xs font-medium text-muted-foreground">School</dt>
-                  <dd className="text-sm text-foreground">{player.school}</dd>
-                </div>
-              )}
-              {player.coach_id && coaches && (
-                <div>
-                  <dt className="text-xs font-medium text-muted-foreground">Assigned Coach</dt>
-                  <dd className="text-sm text-foreground">{coaches.find(c => c.id === player.coach_id)?.name ?? '-'}</dd>
-                </div>
-              )}
-              <div className="sm:col-span-2">
-                <dt className="text-xs font-medium text-muted-foreground">Current Focus</dt>
-                <dd className="text-sm text-foreground">{player.current_focus?.join(', ') ?? '-'}</dd>
-              </div>
-              <div>
-                <dt className="text-xs font-medium text-muted-foreground">Short-term Goal</dt>
-                <dd className="text-sm text-foreground">{player.short_term_goal ?? '-'}</dd>
-              </div>
-              <div>
-                <dt className="text-xs font-medium text-muted-foreground">Long-term Goal</dt>
-                <dd className="text-sm text-foreground">{player.long_term_goal ?? '-'}</dd>
-              </div>
-              {player.medical_notes && (
-                <div className="sm:col-span-2">
-                  <dt className="text-xs font-medium text-muted-foreground">Medical Notes</dt>
-                  <dd className="text-sm text-foreground">{player.medical_notes}</dd>
-                </div>
-              )}
-            </dl>
-          </CardContent>
-        </Card>
+        {/* Player profile — Plan 24 inline-edit */}
+        <PlayerInlineCard
+          player={{
+            id: playerId,
+            first_name: player.first_name,
+            last_name: player.last_name,
+            preferred_name: player.preferred_name ?? null,
+            dob: player.dob ?? null,
+            gender: (player.gender ?? null) as 'male' | 'female' | 'non_binary' | null,
+            classifications: (player.classifications as string[] | null) ?? [],
+            track: (player.track ?? null) as 'performance' | 'participation' | null,
+            status: (player.status ?? 'active') as 'active' | 'inactive' | 'archived',
+            school: player.school ?? null,
+            current_focus: (player.current_focus ?? null) as string[] | null,
+            short_term_goal: player.short_term_goal ?? null,
+            long_term_goal: player.long_term_goal ?? null,
+            comp_interest: (player.comp_interest ?? null) as 'yes' | 'no' | 'future' | null,
+            medical_notes: player.medical_notes ?? null,
+            media_consent_coaching: player.media_consent_coaching ?? false,
+            media_consent_social: player.media_consent_social ?? false,
+          }}
+        />
 
         {/* Programs */}
         <Card>
@@ -231,9 +155,6 @@ export default async function PlayerDetailPage({ params, searchParams }: PagePro
             </CardContent>
           </Card>
         )}
-
-        {/* Edit form */}
-        <PlayerEditForm player={player} familyId={familyId} />
 
         {/* Plan 21 — Danger zone */}
         <PlayerDangerZone

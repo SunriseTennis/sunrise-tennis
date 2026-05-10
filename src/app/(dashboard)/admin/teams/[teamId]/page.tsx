@@ -46,7 +46,7 @@ export default async function AdminTeamDetailPage({
       .single(),
     supabase
       .from('team_members')
-      .select('*, players:player_id(first_name, last_name, ball_color, family_id)')
+      .select('*, players:player_id(first_name, last_name, classifications, family_id)')
       .eq('team_id', teamId)
       .order('role'),
     supabase
@@ -56,7 +56,7 @@ export default async function AdminTeamDetailPage({
       .order('match_date', { ascending: false }),
     supabase
       .from('players')
-      .select('id, first_name, last_name, ball_color')
+      .select('id, first_name, last_name, classifications')
       .eq('status', 'active')
       .order('first_name'),
   ])
@@ -157,11 +157,13 @@ export default async function AdminTeamDetailPage({
                   </TableHeader>
                   <TableBody>
                     {members.map((m) => {
-                      const player = m.players as unknown as { first_name: string; last_name: string; ball_color: string | null }
+                      const player = m.players as unknown as { first_name: string; last_name: string; classifications: string[] | null }
                       return (
                         <TableRow key={m.id}>
                           <TableCell>{player?.first_name} {player?.last_name}</TableCell>
-                          <TableCell className="capitalize text-muted-foreground">{player?.ball_color ?? '-'}</TableCell>
+                          <TableCell className="capitalize text-muted-foreground">
+                            {(player?.classifications ?? []).length > 0 ? (player?.classifications ?? []).join(' / ') : '-'}
+                          </TableCell>
                           <TableCell>
                             <Badge
                               variant="outline"

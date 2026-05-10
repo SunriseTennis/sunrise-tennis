@@ -204,8 +204,6 @@ export async function createPlayer(familyId: string, formData: FormData) {
     last_name: lastName,
     dob,
     gender,
-    ball_color: ballColor,
-    level,
     classifications,
     track,
     medical_notes: medicalNotes,
@@ -220,6 +218,7 @@ export async function createPlayer(familyId: string, formData: FormData) {
     ? classifications.split(',').map((s) => s.trim()).filter((s) => VALID_CLASSES.has(s))
     : []
 
+  // Plan 24 — ball_color + level retired; classifications is the only signal.
   const { error } = await supabase
     .from('players')
     .insert({
@@ -228,8 +227,6 @@ export async function createPlayer(familyId: string, formData: FormData) {
       last_name: lastName,
       dob: dob || null,
       gender: gender || null,
-      ball_color: ballColor || null,
-      level: level || null,
       classifications: parsedClassifications,
       track: track || 'participation',
       medical_notes: medicalNotes || null,
@@ -255,7 +252,7 @@ export async function updatePlayer(playerId: string, familyId: string, formData:
     redirect(`/admin/families/${familyId}/players/${playerId}?error=${encodeURIComponent(parsed.error)}`)
   }
 
-  const { first_name: firstName, last_name: lastName, preferred_name: preferredName, gender, dob, ball_color: ballColor, level, classifications, track, status, medical_notes: medicalNotes, current_focus: currentFocus, short_term_goal: shortTermGoal, long_term_goal: longTermGoal, comp_interest: compInterest, school } = parsed.data
+  const { first_name: firstName, last_name: lastName, preferred_name: preferredName, gender, dob, classifications, track, status, medical_notes: medicalNotes, current_focus: currentFocus, short_term_goal: shortTermGoal, long_term_goal: longTermGoal, comp_interest: compInterest, school } = parsed.data
 
   // Plan 20 — two granular consent toggles parsed from FormData.
   const coaching = formData.get('media_consent_coaching') === 'on'
@@ -267,6 +264,7 @@ export async function updatePlayer(playerId: string, familyId: string, formData:
     ? classifications.split(',').map(s => s.trim()).filter(s => VALID_CLASSES.has(s))
     : []
 
+  // Plan 24 — ball_color + level retired; classifications is the only signal.
   const { error } = await supabase
     .from('players')
     .update({
@@ -275,8 +273,6 @@ export async function updatePlayer(playerId: string, familyId: string, formData:
       preferred_name: preferredName || null,
       gender: gender || null,
       dob: dob || null,
-      ball_color: ballColor || null,
-      level: level || null,
       classifications: parsedClassifications,
       track: track || 'participation',
       status: status || 'active',
@@ -301,38 +297,60 @@ export async function updatePlayer(playerId: string, familyId: string, formData:
 }
 
 /**
- * Inline-edit a single player from the admin players table. Accepts a partial
- * patch — only fields present in the payload are written. Auths admin and
- * filters classifications + track + status to known values.
+ * Inline-edit a single player. Accepts a partial patch — only fields
+ * present in the payload are written. Auths admin and filters constrained
+ * fields to known values.
  *
- * Used by `/admin/players` table cells that auto-save on change.
+ * Plan 24 — ball_color removed from accepted patch (column retired);
+ * patch shape extended to cover every editable field on the per-family
+ * player profile so click-to-edit replaces the bottom <PlayerEditForm>.
+ *
+ * Used by `/admin/players` table cells AND `/admin/families/[id]/players/[id]` profile.
  */
 export async function updatePlayerInline(
   playerId: string,
   patch: {
+    first_name?: string
+    last_name?: string
+    preferred_name?: string | null
     classifications?: string[]
     track?: 'performance' | 'participation'
     status?: 'active' | 'inactive' | 'archived'
-    ball_color?: string | null
     gender?: 'male' | 'female' | 'non_binary' | null
+    dob?: string | null
+    school?: string | null
+    medical_notes?: string | null
+    current_focus?: string[]
+    short_term_goal?: string | null
+    long_term_goal?: string | null
+    comp_interest?: 'yes' | 'no' | 'future' | null
+    media_consent_coaching?: boolean
+    media_consent_social?: boolean
   },
 ): Promise<{ error?: string }> {
   await requireAdmin()
   const supabase = await createClient()
 
   const VALID_CLASSES = new Set(['blue', 'red', 'orange', 'green', 'yellow', 'advanced', 'elite'])
-  const VALID_BALL = new Set(['blue', 'red', 'orange', 'green', 'yellow', 'competitive'])
   const VALID_GENDER = new Set(['male', 'female', 'non_binary'])
+  const VALID_COMP = new Set(['yes', 'no', 'future'])
 
-  type PlayerUpdate = {
-    classifications?: string[]
-    track?: string
-    status?: string
-    ball_color?: string | null
-    gender?: string | null
-  }
+  type PlayerUpdate = Record<string, unknown>
   const update: PlayerUpdate = {}
 
+  if (patch.first_name !== undefined) {
+    const v = patch.first_name.trim()
+    if (!v) return { error: 'First name is required' }
+    update.first_name = v
+  }
+  if (patch.last_name !== undefined) {
+    const v = patch.last_name.trim()
+    if (!v) return { error: 'Last name is required' }
+    update.last_name = v
+  }
+  if (patch.preferred_name !== undefined) {
+    update.preferred_name = patch.preferred_name?.trim() || null
+  }
   if (patch.classifications !== undefined) {
     update.classifications = patch.classifications.filter(c => VALID_CLASSES.has(c))
   }
@@ -348,28 +366,188 @@ export async function updatePlayerInline(
     }
     update.status = patch.status
   }
-  if (patch.ball_color !== undefined) {
-    if (patch.ball_color !== null && !VALID_BALL.has(patch.ball_color)) {
-      return { error: 'Invalid ball colour' }
-    }
-    update.ball_color = patch.ball_color
-  }
   if (patch.gender !== undefined) {
     if (patch.gender !== null && !VALID_GENDER.has(patch.gender)) {
       return { error: 'Invalid gender' }
     }
     update.gender = patch.gender
   }
+  if (patch.dob !== undefined) {
+    update.dob = patch.dob || null
+  }
+  if (patch.school !== undefined) {
+    update.school = patch.school?.trim() || null
+  }
+  if (patch.medical_notes !== undefined) {
+    // Plain string write — `encrypt_medical_on_write` trigger encrypts at DB layer.
+    update.medical_notes = patch.medical_notes?.trim() || null
+  }
+  if (patch.current_focus !== undefined) {
+    update.current_focus = patch.current_focus.map(s => s.trim()).filter(Boolean)
+  }
+  if (patch.short_term_goal !== undefined) {
+    update.short_term_goal = patch.short_term_goal?.trim() || null
+  }
+  if (patch.long_term_goal !== undefined) {
+    update.long_term_goal = patch.long_term_goal?.trim() || null
+  }
+  if (patch.comp_interest !== undefined) {
+    if (patch.comp_interest !== null && !VALID_COMP.has(patch.comp_interest)) {
+      return { error: 'Invalid competition interest' }
+    }
+    update.comp_interest = patch.comp_interest
+  }
+  if (patch.media_consent_coaching !== undefined) {
+    update.media_consent_coaching = !!patch.media_consent_coaching
+  }
+  if (patch.media_consent_social !== undefined) {
+    update.media_consent_social = !!patch.media_consent_social
+  }
 
   if (Object.keys(update).length === 0) return {}
 
-  const { error } = await supabase.from('players').update(update).eq('id', playerId)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await (supabase.from('players') as any).update(update).eq('id', playerId)
   if (error) {
     console.error('updatePlayerInline failed:', error.message)
     return { error: 'Update failed' }
   }
 
   revalidatePath('/admin/players')
+  // Per-family + player detail revalidation — find the family_id so the
+  // family page (player chip subtitle) also refreshes.
+  const { data: row } = await supabase.from('players').select('family_id').eq('id', playerId).single()
+  if (row?.family_id) {
+    revalidatePath(`/admin/families/${row.family_id}`)
+    revalidatePath(`/admin/families/${row.family_id}/players/${playerId}`)
+  }
+  return {}
+}
+
+// ── Families inline-edit ──────────────────────────────────────────────
+
+type ContactPatch = {
+  name?: string | null
+  role?: string | null
+  phone?: string | null
+  email?: string | null
+}
+
+type BillingPrefsPatch = {
+  payment_method?: string | null
+  invoice_pref?: string | null
+  rate?: string | null
+  package_type?: string | null
+}
+
+/**
+ * Inline-edit a single family from the family detail page. Patches a
+ * single field at a time. Auths admin. JSONB sub-objects (primary_contact,
+ * secondary_contact, billing_prefs) merge with existing — pass `null` on
+ * a sub-key to clear it.
+ *
+ * Plan 24 — added to replace the page-bottom <FamilyEditForm> with
+ * click-to-edit cells.
+ */
+export async function updateFamilyInline(
+  familyId: string,
+  patch: {
+    family_name?: string
+    preferred_name?: string | null
+    address?: string | null
+    notes?: string | null
+    referred_by?: string | null
+    status?: 'active' | 'inactive' | 'archived' | 'lead'
+    primary_contact?: ContactPatch
+    secondary_contact?: ContactPatch
+    billing_prefs?: BillingPrefsPatch
+  },
+): Promise<{ error?: string }> {
+  await requireAdmin()
+  const supabase = await createClient()
+
+  type FamilyUpdate = Record<string, unknown>
+  const update: FamilyUpdate = {}
+
+  if (patch.family_name !== undefined) {
+    const v = patch.family_name.trim()
+    if (!v) return { error: 'Family name is required' }
+    update.family_name = v
+  }
+  if (patch.preferred_name !== undefined) update.preferred_name = patch.preferred_name?.trim() || null
+  if (patch.address !== undefined) update.address = patch.address?.trim() || null
+  if (patch.notes !== undefined) update.notes = patch.notes?.trim() || null
+  if (patch.referred_by !== undefined) update.referred_by = patch.referred_by?.trim() || null
+  if (patch.status !== undefined) {
+    if (!['active', 'inactive', 'archived', 'lead'].includes(patch.status)) {
+      return { error: 'Invalid status' }
+    }
+    update.status = patch.status
+  }
+
+  // JSONB merge for contact + billing_prefs. Read current row, splice
+  // patch keys into the sub-object, write back. Trim strings; empty →
+  // remove the key.
+  if (patch.primary_contact || patch.secondary_contact || patch.billing_prefs) {
+    const { data: current, error: fetchErr } = await supabase
+      .from('families')
+      .select('primary_contact, secondary_contact, billing_prefs')
+      .eq('id', familyId)
+      .single()
+    if (fetchErr || !current) {
+      return { error: 'Family not found' }
+    }
+
+    function mergeContact(existing: unknown, p: ContactPatch | undefined): Record<string, string> | null {
+      if (!p) return (existing as Record<string, string> | null) ?? null
+      const base = (existing as Record<string, string> | null) ?? {}
+      const next = { ...base }
+      for (const k of ['name', 'role', 'phone', 'email'] as const) {
+        if (p[k] !== undefined) {
+          const v = p[k]?.trim() ?? ''
+          if (v) next[k] = v
+          else delete next[k]
+        }
+      }
+      return Object.keys(next).length > 0 ? next : null
+    }
+
+    function mergePrefs(existing: unknown, p: BillingPrefsPatch | undefined): Record<string, string> | null {
+      if (!p) return (existing as Record<string, string> | null) ?? null
+      const base = (existing as Record<string, string> | null) ?? {}
+      const next = { ...base }
+      for (const k of ['payment_method', 'invoice_pref', 'rate', 'package_type'] as const) {
+        if (p[k] !== undefined) {
+          const v = p[k]?.trim() ?? ''
+          if (v) next[k] = v
+          else delete next[k]
+        }
+      }
+      return Object.keys(next).length > 0 ? next : null
+    }
+
+    if (patch.primary_contact) {
+      update.primary_contact = mergeContact(current.primary_contact, patch.primary_contact)
+    }
+    if (patch.secondary_contact) {
+      update.secondary_contact = mergeContact(current.secondary_contact, patch.secondary_contact)
+    }
+    if (patch.billing_prefs) {
+      update.billing_prefs = mergePrefs(current.billing_prefs, patch.billing_prefs)
+    }
+  }
+
+  if (Object.keys(update).length === 0) return {}
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await (supabase.from('families') as any).update(update).eq('id', familyId)
+  if (error) {
+    console.error('updateFamilyInline failed:', error.message)
+    return { error: 'Update failed' }
+  }
+
+  revalidatePath(`/admin/families/${familyId}`)
+  revalidatePath('/admin/families')
   return {}
 }
 

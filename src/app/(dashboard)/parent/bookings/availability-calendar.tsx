@@ -25,7 +25,6 @@ interface Player {
   id: string
   first_name: string
   last_name: string
-  ball_color: string | null
 }
 
 interface Coach {

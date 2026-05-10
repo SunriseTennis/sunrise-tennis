@@ -19,7 +19,8 @@ type PlayerOption = {
   id: string
   name: string
   firstName: string
-  level: string | null
+  /** Plan 24 — sourced from `players.classifications` (sorted lowest→highest). */
+  classifications: string[]
   /** Effective per-session price after partner-rate replacement + multi-group. */
   effectivePerSessionCents: number
   /** Pre-multi-group base — equals effective when no multi-group; equals partner-rate $15 when partner-rate fires. */
@@ -157,8 +158,12 @@ export function EnrolForm({
                       {isSelected && <Check className="size-3" />}
                     </div>
                     <span className="text-sm font-medium text-foreground">{player.name}</span>
-                    {player.level && player.level !== programLevel && (
-                      <span className="text-xs text-muted-foreground">({player.level} ball)</span>
+                    {/* Plan 24 — show classification hint when none of the
+                        player's classifications match the program level. */}
+                    {player.classifications.length > 0 && !player.classifications.includes(programLevel) && (
+                      <span className="text-xs text-muted-foreground">
+                        ({player.classifications.map(c => c[0].toUpperCase() + c.slice(1)).join(' / ')})
+                      </span>
                     )}
                   </button>
                 )

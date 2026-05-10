@@ -60,20 +60,24 @@ export async function GET(request: Request) {
       }
 
       case 'players': {
+        // Plan 24 — `level` and `ball_color` columns retired; classifications
+        // is the single source of truth. Export joins the array as " / "
+        // for readability in spreadsheets.
         const { data } = await supabase
           .from('players')
-          .select('first_name, last_name, dob, level, ball_color, status, comp_interest, families:family_id(display_id, family_name)')
+          .select('first_name, last_name, dob, classifications, track, status, comp_interest, families:family_id(display_id, family_name)')
           .order('last_name')
 
-        const headers = ['First Name', 'Last Name', 'DOB', 'Level', 'Ball Color', 'Status', 'Comp Interest', 'Family ID', 'Family Name']
+        const headers = ['First Name', 'Last Name', 'DOB', 'Classifications', 'Track', 'Status', 'Comp Interest', 'Family ID', 'Family Name']
         const rows = (data ?? []).map(p => {
           const fam = p.families as unknown as { display_id: string; family_name: string } | null
+          const classes = (p.classifications as string[] | null) ?? []
           return [
             p.first_name,
             p.last_name,
             p.dob || '',
-            p.level || '',
-            p.ball_color || '',
+            classes.join(' / '),
+            p.track || '',
             p.status,
             p.comp_interest || '',
             fam?.display_id || '',

@@ -178,13 +178,13 @@ export const updateFamilyFormSchema = z.object({
 // Plan 17 Block A: media consent is three granular checkboxes
 // (media_consent_coaching / _family / _social) parsed directly from
 // FormData in the server actions, not validated through Zod here.
+// Plan 24 — ball_color + level dropped (columns retired). Classifications
+// is the only signal; track is admin-only.
 export const createPlayerFormSchema = z.object({
   first_name: requiredString('First name is required'),
   last_name: requiredString('Last name is required'),
   dob: optionalString(),
   gender: genderSchema.optional().or(z.literal('')),
-  ball_color: ballColorSchema.optional().or(z.literal('')),
-  level: ballColorSchema.optional().or(z.literal('')),
   /** Comma-separated list of classifications (e.g. "red,advanced"). Server splits + filters. */
   classifications: optionalString(500),
   track: trackSchema.optional().or(z.literal('')),
@@ -197,8 +197,6 @@ export const updatePlayerFormSchema = z.object({
   preferred_name: optionalString(),
   gender: genderSchema.optional().or(z.literal('')),
   dob: optionalString(),
-  ball_color: ballColorSchema.optional().or(z.literal('')),
-  level: ballColorSchema.optional().or(z.literal('')),
   /** Comma-separated list of classifications (e.g. "red,orange,advanced"). Server splits + filters. */
   classifications: optionalString(500),
   track: trackSchema.optional().or(z.literal('')),

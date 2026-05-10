@@ -9,8 +9,6 @@ import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils/cn'
 import { ConsentToggle, CONSENT_LABELS } from '@/components/consent-toggle'
 
-const BALL_COLORS = ['blue', 'red', 'orange', 'green', 'yellow', 'advanced', 'elite', 'competitive']
-
 const CLASSIFICATIONS: { value: string; label: string }[] = [
   { value: 'blue', label: 'Blue' },
   { value: 'red', label: 'Red' },
@@ -63,25 +61,6 @@ export function AddPlayerForm({ familyId }: { familyId: string }) {
             <option value="non_binary">Non-binary</option>
           </select>
         </div>
-        <div>
-          <Label htmlFor="ball_color">Ball colour</Label>
-          <select id="ball_color" name="ball_color" className="mt-1 block w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary">
-            <option value="">Select...</option>
-            {BALL_COLORS.map((c) => (
-              <option key={c} value={c} className="capitalize">{c}</option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <Label htmlFor="level">Level</Label>
-          <select id="level" name="level" className="mt-1 block w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary">
-            <option value="">Select...</option>
-            {BALL_COLORS.map((c) => (
-              <option key={c} value={c} className="capitalize">{c}</option>
-            ))}
-          </select>
-        </div>
-
         <div className="sm:col-span-2">
           <Label>Classifications</Label>
           <p className="mt-0.5 text-xs text-muted-foreground">
