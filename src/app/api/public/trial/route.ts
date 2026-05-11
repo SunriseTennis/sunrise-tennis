@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { createClient } from '@supabase/supabase-js'
 import { checkRateLimitAsync } from '@/lib/utils/rate-limit'
 import { sendPushToAdmins } from '@/lib/push/send'
+import { sendBrandedEmail } from '@/lib/notifications/send-email'
 
 const programInterest = z.object({
   interestType: z.literal('program'),
@@ -174,6 +175,26 @@ export async function POST(request: NextRequest) {
     body: `${childName} (age ${childAge})${interestLine} — parent: ${parentName}`,
     url: `/admin/families/${family.id}`,
   }).catch((err) => console.error('Trial push notification failed:', err))
+
+  // Email admin (fire-and-forget) — push alone is too fragile to rely on for leads.
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://sunrisetennis.com.au'
+  const interestBlock = interestSummary ?? 'No specific interest selected'
+  const emailBody = [
+    `New trial enquiry from the website (${displayId}).`,
+    `Child: ${childName} — age ${childAge} — ${childGender}`,
+    `Parent: ${parentName}\nEmail: ${email}\nPhone: ${phone}`,
+    interestBlock,
+    message ? `Message from parent:\n${message}` : null,
+  ].filter(Boolean).join('\n\n')
+
+  sendBrandedEmail({
+    to: 'admin@sunrisetennis.com.au',
+    subject: `New trial booking — ${childName} (age ${childAge})`,
+    preheader: `${parentName} — ${interestLine.replace(/^ — /, '') || 'enquiry'}`,
+    bodyMarkdown: emailBody,
+    ctaLabel: 'Open in admin',
+    ctaUrl: `${siteUrl}/admin/families/${family.id}`,
+  }).catch((err) => console.error('Trial admin email failed:', err))
 
   return NextResponse.json({ success: true })
 }
