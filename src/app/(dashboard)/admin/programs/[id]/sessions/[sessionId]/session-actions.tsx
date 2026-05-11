@@ -2,12 +2,12 @@
 
 import { useState, useTransition, useEffect } from 'react'
 import { createPortal } from 'react-dom'
-import { CheckCircle2, XCircle, Loader2, X } from 'lucide-react'
+import { CheckCircle2, XCircle, Loader2, X, RotateCcw } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import { adminCompleteSession, cancelSession } from '../../../../actions'
+import { adminCompleteSession, adminReopenSession, cancelSession } from '../../../../actions'
 
 export function SessionActions({
   sessionId,
@@ -22,7 +22,8 @@ export function SessionActions({
   const [reason, setReason] = useState('')
   const [isPending, startTransition] = useTransition()
 
-  if (status === 'completed' || status === 'cancelled') {
+  // Cancelled stays final (use existing un-cancel via direct DB if needed).
+  if (status === 'cancelled') {
     return null
   }
 
@@ -37,6 +38,21 @@ export function SessionActions({
         }
       }
       setConfirmComplete(false)
+      router.refresh()
+    })
+  }
+
+  function doReopen() {
+    if (!confirm('Reopen this session for edits? Status flips back to scheduled. Attendance + charges stay as-is.')) return
+    startTransition(async () => {
+      try {
+        await adminReopenSession(sessionId)
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : ''
+        if (!msg.includes('NEXT_REDIRECT')) {
+          console.error('reopen failed', e)
+        }
+      }
       router.refresh()
     })
   }
@@ -58,6 +74,24 @@ export function SessionActions({
       setReason('')
       router.refresh()
     })
+  }
+
+  if (status === 'completed') {
+    return (
+      <div className="flex flex-wrap items-center gap-2">
+        <Button
+          type="button"
+          onClick={doReopen}
+          variant="outline"
+          disabled={isPending}
+          className="gap-2"
+          title="Flip back to scheduled so you can edit attendance / coach attendance / charges"
+        >
+          {isPending ? <Loader2 className="size-4 animate-spin" /> : <RotateCcw className="size-4" />}
+          Reopen for edits
+        </Button>
+      </div>
+    )
   }
 
   return (

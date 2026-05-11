@@ -156,54 +156,89 @@ export async function gatherTermEnrolSessions(
   supabase: Supabase,
   programId: string,
   playerId: string,
+  options?: {
+    /**
+     * Admin-explicit "include this session and every later one" override.
+     * When set (typically the date of a session admin enrolled FROM, e.g.
+     * `/admin/programs/[id]/sessions/[sid]/page.tsx`), the gatherer returns
+     * every scheduled+completed session in the program from that date
+     * onwards, regardless of past/future or attendance state. Past sessions
+     * in the range get billed even if the player never attended — this is
+     * the retroactive-enrol path.
+     *
+     * When NOT set (parent enrol, BulkEnrolForm on program detail), current
+     * behaviour: future-scheduled + past-attended-Present (Adelaide-aware).
+     */
+    fromDate?: string
+  },
 ): Promise<TermEnrolSessions> {
-  // 1) Future-scheduled sessions for this program (Adelaide-aware).
-  const { data: futureRows } = await supabase
-    .from('sessions')
-    .select('id, date, start_time')
-    .eq('program_id', programId)
-    .eq('status', 'scheduled')
-    .gte('date', adelaideTodayString())
-    .order('date', { ascending: true })
+  let combinedSessions: { id: string; date: string; start_time: string | null }[] = []
 
-  const futureSessions = filterFutureSessions(
-    (futureRows ?? []) as { id: string; date: string; start_time: string | null }[],
-  )
+  if (options?.fromDate) {
+    // ── Admin retroactive path ────────────────────────────────────────────
+    const { data: rows } = await supabase
+      .from('sessions')
+      .select('id, date, start_time')
+      .eq('program_id', programId)
+      .in('status', ['scheduled', 'completed'])
+      .gte('date', options.fromDate)
+      .order('date', { ascending: true })
 
-  // 2) Past-attended sessions: this player's 'present' attendances joined
-  //    to their sessions, filtered to this program AND past-or-already-started.
-  const { data: attendedRows } = await supabase
-    .from('attendances')
-    .select('session_id, sessions:session_id(id, date, start_time, program_id, status)')
-    .eq('player_id', playerId)
-    .eq('status', 'present')
+    combinedSessions = (rows ?? []).map(s => ({
+      id: s.id,
+      date: s.date,
+      start_time: s.start_time,
+    }))
+  } else {
+    // ── Default path: future-scheduled + past-attended-Present ───────────
+    // 1) Future-scheduled sessions for this program (Adelaide-aware).
+    const { data: futureRows } = await supabase
+      .from('sessions')
+      .select('id, date, start_time')
+      .eq('program_id', programId)
+      .eq('status', 'scheduled')
+      .gte('date', adelaideTodayString())
+      .order('date', { ascending: true })
 
-  type AttendedSession = {
-    id: string
-    date: string
-    start_time: string | null
-    program_id: string | null
-    status: string | null
-  }
-
-  const pastAttended = (attendedRows ?? [])
-    .map(r => r.sessions as unknown as AttendedSession | null)
-    .filter((s): s is AttendedSession =>
-      !!s && s.program_id === programId && s.status !== 'cancelled' && !isSessionFuture(s),
+    const futureSessions = filterFutureSessions(
+      (futureRows ?? []) as { id: string; date: string; start_time: string | null }[],
     )
-    .map(s => ({ id: s.id, date: s.date, start_time: s.start_time }))
 
-  // 3) Combine + dedupe by session id (a session is normally either past
-  //    or future, but a 'present' marked on a not-yet-started session would
-  //    appear in both — keep the future-list version which is canonical).
-  const seen = new Set<string>()
-  const combinedSessions: { id: string; date: string; start_time: string | null }[] = []
-  for (const s of [...pastAttended, ...futureSessions]) {
-    if (!seen.has(s.id)) {
-      seen.add(s.id)
-      combinedSessions.push(s)
+    // 2) Past-attended sessions: this player's 'present' attendances joined
+    //    to their sessions, filtered to this program AND past-or-already-started.
+    const { data: attendedRows } = await supabase
+      .from('attendances')
+      .select('session_id, sessions:session_id(id, date, start_time, program_id, status)')
+      .eq('player_id', playerId)
+      .eq('status', 'present')
+
+    type AttendedSession = {
+      id: string
+      date: string
+      start_time: string | null
+      program_id: string | null
+      status: string | null
+    }
+
+    const pastAttended = (attendedRows ?? [])
+      .map(r => r.sessions as unknown as AttendedSession | null)
+      .filter((s): s is AttendedSession =>
+        !!s && s.program_id === programId && s.status !== 'cancelled' && !isSessionFuture(s),
+      )
+      .map(s => ({ id: s.id, date: s.date, start_time: s.start_time }))
+
+    // 3) Combine + dedupe by session id (a session is normally either past
+    //    or future, but a 'present' marked on a not-yet-started session would
+    //    appear in both — keep the future-list version which is canonical).
+    const seen = new Set<string>()
+    for (const s of [...pastAttended, ...futureSessions]) {
+      if (!seen.has(s.id)) {
+        seen.add(s.id)
+        combinedSessions.push(s)
+      }
     }
   }
+
   combinedSessions.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0))
 
   if (combinedSessions.length === 0) {

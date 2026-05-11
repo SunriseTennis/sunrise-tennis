@@ -8,7 +8,6 @@ import {
   deriveSessionCoachPay,
   sessionDurationMin,
 } from '@/lib/utils/coach-pay'
-import { isSessionFuture } from '@/lib/utils/sessions-filter'
 import { AttendanceForm } from './attendance-form'
 import { AddPlayersCard } from './add-players-card'
 import { CoachAttendanceCard } from './coach-attendance-card'
@@ -122,19 +121,19 @@ export default async function SessionDetailPage({
     }
   })
 
-  // ── Future-session count for the term-enrol preview ────────────────────
+  // ── Session count for the term-enrol preview ───────────────────────────
+  // AddPlayersCard term-enrol passes `from_session_id: <this session>`, so the
+  // gatherer returns every scheduled+completed session in the program from
+  // THIS session's date onwards. Match that count for the preview line.
   let futureSessionCount = 0
-  if (program?.id) {
-    const todayStr = new Date().toISOString().split('T')[0]
-    const { data: futureRaw } = await supabase
+  if (program?.id && session.date) {
+    const { data: rangeRaw } = await supabase
       .from('sessions')
-      .select('id, date, start_time, status')
+      .select('id')
       .eq('program_id', program.id)
-      .eq('status', 'scheduled')
-      .gte('date', todayStr)
-      .order('date')
-    const future = (futureRaw ?? []).filter(s => isSessionFuture(s as { date: string; start_time: string | null }))
-    futureSessionCount = future.length
+      .in('status', ['scheduled', 'completed'])
+      .gte('date', session.date)
+    futureSessionCount = (rangeRaw ?? []).length
   }
 
   // ── Charges + bookings + program coaches + lesson notes + coach attendance ─
@@ -300,14 +299,16 @@ export default async function SessionDetailPage({
       )}
 
       {/* 1. Session actions (top — most-used) */}
-      {!isCancelled && session.status !== 'completed' && (
+      {!isCancelled && (
         <Card>
           <CardContent className="pt-6">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <h2 className="text-base font-semibold text-foreground">Session actions</h2>
                 <p className="mt-0.5 text-xs text-muted-foreground">
-                  Mark complete locks the session. Cancel adjusts charges + notifies enrolled families.
+                  {session.status === 'completed'
+                    ? 'Session is complete. Attendance + coach attendance are still editable below; Mark Complete auto-marked any unmarked roster players Present. Reopen if you need to undo and re-confirm.'
+                    : 'Mark complete locks the session and persists all on-screen attendance defaults (any unmarked roster player becomes Present). Cancel adjusts charges + notifies enrolled families.'}
                 </p>
               </div>
               <SessionActions sessionId={sessionId} status={session.status ?? 'scheduled'} />

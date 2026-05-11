@@ -83,11 +83,18 @@ export function AddPlayersCard({
         // gatherTermEnrolSessions inside that action absorbs today's walk-in
         // charges into the new term math. return_to_session_id keeps admin on
         // this session page after success (instead of redirecting to program).
+        // from_session_id signals the retroactive path: charge from THIS
+        // session forward (regardless of past/future), so enroling mid-term
+        // from May 4 includes May 4 + every later session, not just
+        // future-only. Default behaviour (parent enrol, BulkEnrolForm on the
+        // program detail page) doesn't pass from_session_id, so it stays
+        // future-only.
         const fd = new FormData()
         fd.set('program_id', programId)
         fd.set('player_ids', JSON.stringify(playerIds))
         fd.set('booking_type', 'term')
         fd.set('return_to_session_id', sessionId)
+        fd.set('from_session_id', sessionId)
         if (notes.trim()) fd.set('notes', notes.trim())
         try {
           await bulkEnrolPlayers(fd)

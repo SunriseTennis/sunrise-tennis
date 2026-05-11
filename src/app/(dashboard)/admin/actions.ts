@@ -1587,6 +1587,42 @@ export async function adminCompleteSession(sessionId: string) {
     redirect('/admin/programs?error=Session+is+already+' + session.status)
   }
 
+  // UX: the segmented attendance buttons default to "Present" visually for
+  // every roster player who has no row yet. Confirming the session = persist
+  // that default. Players the admin explicitly marked Absent / No-show
+  // already have a row and are skipped here.
+  if (session.program_id) {
+    const [{ data: rosterRows }, { data: existingAtt }] = await Promise.all([
+      supabase
+        .from('program_roster')
+        .select('player_id')
+        .eq('program_id', session.program_id)
+        .eq('status', 'enrolled'),
+      supabase
+        .from('attendances')
+        .select('player_id')
+        .eq('session_id', sessionId),
+    ])
+    const existingIds = new Set((existingAtt ?? []).map(a => a.player_id))
+    const missingIds = (rosterRows ?? [])
+      .map(r => r.player_id)
+      .filter((id): id is string => !!id && !existingIds.has(id))
+
+    if (missingIds.length > 0) {
+      const { error: insertError } = await supabase
+        .from('attendances')
+        .insert(missingIds.map(playerId => ({
+          session_id: sessionId,
+          player_id: playerId,
+          status: 'present',
+        })))
+      if (insertError) {
+        console.error('[adminCompleteSession] default-Present insert failed:', insertError.message)
+        // Don't block the complete — admin can mark attendance manually after.
+      }
+    }
+  }
+
   const { error } = await supabase
     .from('sessions')
     .update({ status: 'completed', completed_by: user.id })
@@ -1609,6 +1645,59 @@ export async function adminCompleteSession(sessionId: string) {
   redirect('/admin/programs')
 }
 
+// ── Reopen a completed session ─────────────────────────────────────────
+//
+// Admin escape hatch: flip status from 'completed' back to 'scheduled' so
+// admin can correct attendance / coach attendance / charges after a
+// premature Mark Complete. Doesn't touch attendance rows or charges —
+// they stay as-is, ready for further edits.
+//
+// Refuses if the session is cancelled (use createSession or restoreSession
+// path for that — out of scope here).
+export async function adminReopenSession(sessionId: string) {
+  await requireAdmin()
+  const supabase = await createClient()
+
+  const { data: session } = await supabase
+    .from('sessions')
+    .select('id, program_id, status')
+    .eq('id', sessionId)
+    .single()
+
+  if (!session) {
+    redirect('/admin/programs?error=Session+not+found')
+  }
+
+  if (session.status !== 'completed') {
+    const pid = session.program_id
+    if (pid) {
+      redirect(`/admin/programs/${pid}/sessions/${sessionId}?error=Only+completed+sessions+can+be+reopened`)
+    }
+    redirect('/admin/programs?error=Only+completed+sessions+can+be+reopened')
+  }
+
+  const { error } = await supabase
+    .from('sessions')
+    .update({ status: 'scheduled' })
+    .eq('id', sessionId)
+
+  if (error) {
+    const pid = session.program_id
+    if (pid) {
+      redirect(`/admin/programs/${pid}/sessions/${sessionId}?error=${encodeURIComponent(error.message)}`)
+    }
+    redirect(`/admin/programs?error=${encodeURIComponent(error.message)}`)
+  }
+
+  const pid = session.program_id
+  if (pid) {
+    revalidatePath(`/admin/programs/${pid}/sessions/${sessionId}`)
+    redirect(`/admin/programs/${pid}/sessions/${sessionId}?success=Session+reopened`)
+  }
+  revalidatePath('/admin/programs')
+  redirect('/admin/programs')
+}
+
 // ── Bulk Enrol Players ─────────────────────────────────────────────────
 
 export async function bulkEnrolPlayers(formData: FormData) {
@@ -1619,6 +1708,11 @@ export async function bulkEnrolPlayers(formData: FormData) {
   const playerIdsRaw = formData.get('player_ids') as string
   const bookingType = (formData.get('booking_type') as string) || 'term'
   const notes = ((formData.get('notes') as string) || '').trim() || null
+  // Optional: when admin enrols FROM a specific session page, the term
+  // charge fan-out should include that session and every later one
+  // (regardless of past/future / attendance state). Default behaviour
+  // (no field) is unchanged: future-scheduled + past-attended-Present.
+  const fromSessionId = (formData.get('from_session_id') as string) || ''
 
   if (!programId || !playerIdsRaw) {
     redirect(`/admin/programs/${programId || ''}?error=${encodeURIComponent('Missing required fields')}`)
@@ -1725,13 +1819,31 @@ export async function bulkEnrolPlayers(formData: FormData) {
       }
     : null
 
-  // Per-player: gather combined sessions (past-attended + future-scheduled),
-  // void absorbable per-session charges, insert booking with financial
-  // fields, then per-session charges (term) or single charge (casual).
-  // Trial = free, no charges. Sessions are gathered per-player because
-  // different players may have attended different past sessions; the
-  // future-session query is the same per-player but the helper keeps the
-  // logic in one place.
+  // Optional retroactive-from-session-date: resolve the from_session_id
+  // form field to a date once. When set, gatherTermEnrolSessions returns
+  // every scheduled+completed session in the program from that date
+  // onwards (regardless of past/future or attendance state) — used by the
+  // session-page <AddPlayersCard> in term-enrol mode so admin enroling
+  // mid-term from a specific session bills back to that session.
+  let fromDate: string | undefined
+  if (isTermEnrollment && fromSessionId) {
+    const { data: fromSessionRow } = await supabase
+      .from('sessions')
+      .select('date, program_id')
+      .eq('id', fromSessionId)
+      .single()
+    if (fromSessionRow?.program_id === programId && fromSessionRow.date) {
+      fromDate = fromSessionRow.date
+    }
+  }
+
+  // Per-player: gather combined sessions (past-attended + future-scheduled,
+  // OR retroactive-from-date when fromDate is set), void absorbable
+  // per-session charges, insert booking with financial fields, then
+  // per-session charges (term) or single charge (casual). Trial = free,
+  // no charges. Sessions are gathered per-player because different players
+  // may have attended different past sessions; the future-session query
+  // is the same per-player but the helper keeps the logic in one place.
   for (const p of enrolledPlayers ?? []) {
     let priceCents = 0
     let casualBreakdown: ReturnType<typeof buildPricingBreakdown> | null = null
@@ -1740,7 +1852,7 @@ export async function bulkEnrolPlayers(formData: FormData) {
     let perPlayerAbsorbableIds: string[] = []
 
     if (isTermEnrollment) {
-      const gathered = await gatherTermEnrolSessions(supabase, programId, p.id)
+      const gathered = await gatherTermEnrolSessions(supabase, programId, p.id, fromDate ? { fromDate } : undefined)
       perPlayerSessions = gathered.combinedSessions
       perPlayerAbsorbableIds = gathered.absorbableChargeIds
 
