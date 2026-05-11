@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
 import { formatCurrency } from '@/lib/utils/currency'
-import { calculateGroupCoachPay } from '@/lib/utils/billing'
+import { deriveSessionCoachPay, attendanceMapForSessions, keyForSessionCoach, sessionDurationMin } from '@/lib/utils/coach-pay'
 import { getCurrentTermRange, getCurrentOrNextTermEnd } from '@/lib/utils/school-terms'
 import { StatCard } from '@/components/stat-card'
 import { Card, CardContent } from '@/components/ui/card'
@@ -74,11 +74,22 @@ export default async function AdminDashboard({
       .select('program_id, coach_id, role, coaches:coach_id(name)'),
   ])
 
+  // Coach attendance rows for this term's completed sessions — drives partial-pay derivation.
+  type SessionCoachAttRow = { session_id: string; coach_id: string; status: string; actual_minutes: number | null; note: string | null }
+  const completedSessionIds = (completedSessions ?? []).map(s => s.id)
+  const { data: sessionCoachAttRowsRaw } = completedSessionIds.length > 0
+    ? await supabase
+        .from('session_coach_attendances')
+        .select('session_id, coach_id, status, actual_minutes, note')
+        .in('session_id', completedSessionIds)
+    : { data: [] }
+  const coachAttByKey = attendanceMapForSessions((sessionCoachAttRowsRaw as unknown as SessionCoachAttRow[] | null) ?? [])
+
   const totalOutstanding = balances?.reduce((sum, b) => {
     return b.balance_cents < 0 ? sum + b.balance_cents : sum
   }, 0) ?? 0
 
-  // ── Coach Pay Calculation ──
+  // ── Coach Pay Calculation (partial-attendance aware) ──
   type CoachPaySummary = { name: string; groupPay: number; privatePay: number }
   const coachPayMap = new Map<string, CoachPaySummary>()
 
@@ -87,34 +98,30 @@ export default async function AdminDashboard({
   }
 
   for (const s of completedSessions ?? []) {
-    let durationMin = 60
-    if (s.start_time && s.end_time) {
-      const [sh, sm] = s.start_time.split(':').map(Number)
-      const [eh, em] = s.end_time.split(':').map(Number)
-      durationMin = (eh * 60 + em) - (sh * 60 + sm)
-    }
-
+    const durationMin = sessionDurationMin(s.start_time, s.end_time)
     const sessionCoaches = (allProgramCoaches ?? []).filter(pc => pc.program_id === s.program_id)
 
     for (const pc of sessionCoaches) {
       const coach = (coaches ?? []).find(c => c.id === pc.coach_id)
       if (!coach) continue
-      const rate = (coach.hourly_rate as { group_rate_cents?: number } | null)?.group_rate_cents
-      if (rate) {
-        const pay = calculateGroupCoachPay(rate, durationMin)
+      const rate = (coach.hourly_rate as { group_rate_cents?: number } | null)?.group_rate_cents ?? null
+      const att = coachAttByKey.get(keyForSessionCoach(s.id, coach.id))
+      const { payCents } = deriveSessionCoachPay({ rateCents: rate, durationMin, attendance: att })
+      if (payCents > 0) {
         const entry = coachPayMap.get(coach.id)
-        if (entry) entry.groupPay += pay
+        if (entry) entry.groupPay += payCents
       }
     }
 
     if (s.coach_id && !sessionCoaches.some(pc => pc.coach_id === s.coach_id)) {
       const coach = (coaches ?? []).find(c => c.id === s.coach_id)
       if (coach) {
-        const rate = (coach.hourly_rate as { group_rate_cents?: number } | null)?.group_rate_cents
-        if (rate) {
-          const pay = calculateGroupCoachPay(rate, durationMin)
+        const rate = (coach.hourly_rate as { group_rate_cents?: number } | null)?.group_rate_cents ?? null
+        const att = coachAttByKey.get(keyForSessionCoach(s.id, coach.id))
+        const { payCents } = deriveSessionCoachPay({ rateCents: rate, durationMin, attendance: att })
+        if (payCents > 0) {
           const entry = coachPayMap.get(coach.id)
-          if (entry) entry.groupPay += pay
+          if (entry) entry.groupPay += payCents
         }
       }
     }

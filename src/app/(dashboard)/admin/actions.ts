@@ -2318,3 +2318,234 @@ export async function setFamilyStatus(
   revalidatePath(`/admin/families/${familyId}`)
   redirect(`/admin/families/${familyId}?success=${encodeURIComponent(`Family ${status === 'archived' ? 'archived' : status === 'inactive' ? 'set to inactive' : 'reactivated'}`)}`)
 }
+
+// ── Bulk walk-in attendance (multi-player from session detail page) ─────
+
+/**
+ * Insert N walk-in attendances + per-session walk-in charges in one batch.
+ * Mirrors `adminAddWalkInAttendance` per player but tolerates per-row
+ * failure — collects skipped/failed reasons. Returns a structured summary
+ * for the client to render. Used by <AddPlayersCard> on the admin session
+ * detail page.
+ */
+export async function bulkAddWalkInAttendance(args: {
+  sessionId: string
+  programId: string
+  playerIds: string[]
+}): Promise<{ error?: string; summary?: { added: number; skipped: number; failed: string[] } }> {
+  const user = await requireAdmin()
+  const supabase = await createClient()
+
+  const { sessionId, programId, playerIds } = args
+
+  if (!sessionId || !programId) return { error: 'Missing session or program' }
+  if (!Array.isArray(playerIds) || playerIds.length === 0) return { error: 'No players selected' }
+
+  const { data: session } = await supabase
+    .from('sessions')
+    .select('id, date, program_id, programs:program_id(name, type)')
+    .eq('id', sessionId)
+    .single()
+
+  if (!session) return { error: 'Session not found' }
+
+  const program = session.programs as unknown as { name: string; type: string | null } | null
+  const effectiveProgramId = session.program_id ?? programId
+
+  const { data: playerRows } = await supabase
+    .from('players')
+    .select('id, first_name, family_id')
+    .in('id', playerIds)
+
+  const { data: existingAtt } = await supabase
+    .from('attendances')
+    .select('player_id')
+    .eq('session_id', sessionId)
+    .in('player_id', playerIds)
+  const alreadyMarked = new Set((existingAtt ?? []).map(a => a.player_id))
+
+  let added = 0
+  let skipped = 0
+  const failed: string[] = []
+
+  for (const player of playerRows ?? []) {
+    if (alreadyMarked.has(player.id)) {
+      skipped += 1
+      continue
+    }
+
+    const { error: attError } = await supabase
+      .from('attendances')
+      .insert({
+        session_id: sessionId,
+        player_id: player.id,
+        status: 'present',
+      })
+
+    if (attError) {
+      failed.push(`${player.first_name}: ${attError.message}`)
+      continue
+    }
+
+    const breakdown = await getPlayerSessionPriceBreakdown(
+      supabase, player.family_id, effectiveProgramId, program?.type, player.id,
+    )
+
+    if (breakdown.priceCents > 0) {
+      await createCharge(supabase, {
+        familyId: player.family_id,
+        playerId: player.id,
+        type: 'session',
+        sourceType: 'attendance',
+        sourceId: sessionId,
+        sessionId,
+        programId: effectiveProgramId,
+        description: formatChargeDescription({
+          playerName: player.first_name,
+          label: `${program?.name ?? 'Session'} (walk-in)`,
+          suffix: formatDiscountSuffix({ multiGroupApplied: breakdown.multiGroupApplied, earlyPayPct: 0 }),
+          term: getTermLabel(session.date),
+          date: session.date,
+        }),
+        amountCents: breakdown.priceCents,
+        status: 'confirmed',
+        createdBy: user.id,
+        pricingBreakdown: buildPricingBreakdown({
+          basePriceCents: breakdown.basePriceCents,
+          perSessionPriceCents: breakdown.priceCents,
+          morningSquadPartnerApplied: breakdown.morningSquadPartnerApplied,
+          multiGroupApplied: breakdown.multiGroupApplied,
+          sessions: 1,
+        }) as never,
+      })
+    }
+
+    added += 1
+  }
+
+  revalidatePath(`/admin/programs/${programId}/sessions/${sessionId}`)
+  revalidatePath(`/admin/programs/${programId}`)
+
+  return { summary: { added, skipped, failed } }
+}
+
+// ── Coach attendance (per-session, captures partial minutes) ────────────
+
+/**
+ * Upsert one coach's attendance for a session. Enables marking a coach as
+ * Present / Partial (with actual_minutes) / Absent. Drives the group-pay
+ * derivation in `deriveSessionCoachPay` — every reader page (admin
+ * overview, /admin/coaches, /admin/coaches/[coachId], program detail,
+ * session detail) sees the recomputed pay on next render.
+ *
+ * Returns `{ error }` so client components can roll back optimistic state.
+ */
+export async function setSessionCoachAttendance(args: {
+  sessionId: string
+  coachId: string
+  programId: string
+  status: 'present' | 'absent' | 'partial'
+  actualMinutes?: number | null
+  note?: string | null
+}): Promise<{ error?: string }> {
+  const user = await requireAdmin()
+  const supabase = await createClient()
+
+  const { sessionId, coachId, programId, status, actualMinutes: rawMinutes, note: rawNote } = args
+
+  if (!sessionId || !coachId) return { error: 'Missing fields' }
+  if (!['present', 'absent', 'partial'].includes(status)) return { error: 'Invalid coach status' }
+
+  const { data: session } = await supabase
+    .from('sessions')
+    .select('start_time, end_time')
+    .eq('id', sessionId)
+    .single()
+
+  let durationMin = 60
+  if (session?.start_time && session?.end_time) {
+    const [sh, sm] = session.start_time.split(':').map(Number)
+    const [eh, em] = session.end_time.split(':').map(Number)
+    const calc = (eh * 60 + (em || 0)) - (sh * 60 + (sm || 0))
+    if (calc > 0) durationMin = calc
+  }
+
+  let actualMinutes: number | null = null
+  if (status === 'partial') {
+    if (rawMinutes != null && Number.isFinite(rawMinutes)) {
+      actualMinutes = Math.max(0, Math.min(Math.round(rawMinutes), durationMin))
+    } else {
+      actualMinutes = durationMin
+    }
+  } else if (status === 'absent') {
+    actualMinutes = 0
+  } else {
+    actualMinutes = null
+  }
+
+  const note = rawNote && rawNote.trim().length > 0 ? rawNote.trim().slice(0, 500) : null
+
+  // Cast covers `actual_minutes` + `note` columns added in 20260519000001
+  // (Supabase types not yet regenerated on this branch).
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await (supabase.from('session_coach_attendances') as any)
+    .upsert(
+      {
+        session_id: sessionId,
+        coach_id: coachId,
+        status,
+        actual_minutes: actualMinutes,
+        note,
+        marked_by: user.id,
+      },
+      { onConflict: 'session_id,coach_id' }
+    )
+
+  if (error) {
+    console.error('[admin/setSessionCoachAttendance]:', error.message)
+    return { error: 'Could not save coach attendance' }
+  }
+
+  revalidatePath(`/admin/programs/${programId}/sessions/${sessionId}`)
+  revalidatePath(`/admin/programs/${programId}`)
+  revalidatePath(`/admin/coaches/${coachId}`)
+  revalidatePath('/admin/coaches')
+  revalidatePath('/admin')
+  return {}
+}
+
+/**
+ * Remove a coach attendance row entirely. Used to "un-add" a one-off sub
+ * coach that admin added by mistake. For program-assigned coaches, set
+ * status='absent' instead — the attendance row is the signal that the
+ * coach was tracked at all.
+ */
+export async function removeSessionCoachAttendance(args: {
+  sessionId: string
+  coachId: string
+  programId: string
+}): Promise<{ error?: string }> {
+  await requireAdmin()
+  const supabase = await createClient()
+
+  const { sessionId, coachId, programId } = args
+  if (!sessionId || !coachId) return { error: 'Missing fields' }
+
+  const { error } = await supabase
+    .from('session_coach_attendances')
+    .delete()
+    .eq('session_id', sessionId)
+    .eq('coach_id', coachId)
+
+  if (error) {
+    console.error('[admin/removeSessionCoachAttendance]:', error.message)
+    return { error: 'Could not remove coach' }
+  }
+
+  revalidatePath(`/admin/programs/${programId}/sessions/${sessionId}`)
+  revalidatePath(`/admin/programs/${programId}`)
+  revalidatePath(`/admin/coaches/${coachId}`)
+  revalidatePath('/admin/coaches')
+  revalidatePath('/admin')
+  return {}
+}

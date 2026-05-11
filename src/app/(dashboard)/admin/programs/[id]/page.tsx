@@ -4,7 +4,7 @@ import { Suspense } from 'react'
 import { createClient } from '@/lib/supabase/server'
 import { formatCurrency } from '@/lib/utils/currency'
 import { formatTime, formatDate } from '@/lib/utils/dates'
-import { calculateGroupCoachPay } from '@/lib/utils/billing'
+import { deriveSessionCoachPay, attendanceMapForSessions, keyForSessionCoach, sessionDurationMin } from '@/lib/utils/coach-pay'
 import { getCurrentOrNextTerm, getTermFromParams } from '@/lib/utils/school-terms'
 import { ProgramEditForm } from './program-edit-form'
 import { BulkEnrolForm } from './bulk-enrol-form'
@@ -127,6 +127,17 @@ export default async function ProgramDetailPage({
     allCharges = data ?? []
   }
 
+  // Coach attendance for this term's sessions — drives partial-pay derivation
+  type SessionCoachAttRow = { session_id: string; coach_id: string; status: string; actual_minutes: number | null; note: string | null }
+  const completedTermSessionIds = (sessions ?? []).filter(s => s.status === 'completed').map(s => s.id)
+  const { data: coachAttRowsRaw } = completedTermSessionIds.length > 0
+    ? await supabase
+        .from('session_coach_attendances')
+        .select('session_id, coach_id, status, actual_minutes, note')
+        .in('session_id', completedTermSessionIds)
+    : { data: [] }
+  const coachAttByKey = attendanceMapForSessions((coachAttRowsRaw as unknown as SessionCoachAttRow[] | null) ?? [])
+
   // ── Session status summary ──
   const sessionStatusCounts = {
     total: (sessions ?? []).length,
@@ -186,18 +197,14 @@ export default async function ProgramDetailPage({
   let totalCoachPay = 0
   const completedSessions = (sessions ?? []).filter(s => s.status === 'completed')
   for (const s of completedSessions) {
-    let durationMin = 60
-    if (s.start_time && s.end_time) {
-      const [sh, sm] = s.start_time.split(':').map(Number)
-      const [eh, em] = s.end_time.split(':').map(Number)
-      durationMin = (eh * 60 + em) - (sh * 60 + sm)
-    }
+    const durationMin = sessionDurationMin(s.start_time, s.end_time)
     for (const pc of programCoaches ?? []) {
-      const coach = pc.coaches as unknown as { name: string; hourly_rate: { group_rate_cents?: number } | null } | null
-      const rate = coach?.hourly_rate?.group_rate_cents
-      if (rate) {
-        totalCoachPay += calculateGroupCoachPay(rate, durationMin)
-      }
+      const coach = pc.coaches as unknown as { id: string; name: string; hourly_rate: { group_rate_cents?: number } | null } | null
+      const rate = coach?.hourly_rate?.group_rate_cents ?? null
+      if (!coach?.id) continue
+      const att = coachAttByKey.get(keyForSessionCoach(s.id, coach.id))
+      const { payCents } = deriveSessionCoachPay({ rateCents: rate, durationMin, attendance: att })
+      totalCoachPay += payCents
     }
   }
 

@@ -3,7 +3,7 @@ import { notFound } from 'next/navigation'
 import { createClient, requireAdmin } from '@/lib/supabase/server'
 import { formatCurrency } from '@/lib/utils/currency'
 import { formatTime } from '@/lib/utils/dates'
-import { calculateGroupCoachPay } from '@/lib/utils/billing'
+import { deriveSessionCoachPay, attendanceMapForSessions, keyForSessionCoach, sessionDurationMin } from '@/lib/utils/coach-pay'
 import { getCurrentTermRange } from '@/lib/utils/school-terms'
 import { PageHeader } from '@/components/page-header'
 import { Card, CardContent } from '@/components/ui/card'
@@ -47,10 +47,11 @@ export default async function CoachDetailPage({
     supabase.from('program_coaches').select('program_id, role, programs:program_id(name, type, level, day_of_week, start_time, end_time, status)').eq('coach_id', coachId),
     supabase.from('coach_earnings').select('amount_cents, status, session_type, created_at').eq('coach_id', coachId),
     supabase.from('sessions')
-      .select('id, program_id, coach_id, start_time, end_time')
+      .select('id, program_id, coach_id, date, start_time, end_time, programs:program_id(name)')
       .eq('status', 'completed')
       .gte('date', termStart)
-      .lte('date', termEnd),
+      .lte('date', termEnd)
+      .order('date', { ascending: false }),
     supabase.from('sessions')
       .select('id, coach_id')
       .eq('status', 'scheduled')
@@ -71,19 +72,28 @@ export default async function CoachDetailPage({
   const clientPrivateRate = rateJson.client_private_rate_cents ?? null
   const parentRateMissing = clientPrivateRate == null && coach.delivers_privates !== false && !coach.is_owner
 
-  // Calculate group pay this term
+  // Coach attendance rows for this term — drives partial-pay derivation.
+  type SessionCoachAttRow = { session_id: string; coach_id: string; status: string; actual_minutes: number | null; note: string | null }
+  const completedSessionIds = (completedSessions ?? []).map(s => s.id)
+  const { data: sessionCoachAttRowsRaw } = completedSessionIds.length > 0
+    ? await supabase
+        .from('session_coach_attendances')
+        .select('session_id, coach_id, status, actual_minutes, note')
+        .eq('coach_id', coachId)
+        .in('session_id', completedSessionIds)
+    : { data: [] }
+  const coachAttByKey = attendanceMapForSessions((sessionCoachAttRowsRaw as unknown as SessionCoachAttRow[] | null) ?? [])
+
+  // Calculate group pay this term — partial-attendance aware
   let groupPay = 0
   for (const s of completedSessions ?? []) {
     const isAssigned = (allProgramCoaches ?? []).some(pc => pc.program_id === s.program_id && pc.coach_id === coachId)
     const isDirect = s.coach_id === coachId
     if (!isAssigned && !isDirect) continue
-    let durationMin = 60
-    if (s.start_time && s.end_time) {
-      const [sh, sm] = s.start_time.split(':').map(Number)
-      const [eh, em] = s.end_time.split(':').map(Number)
-      durationMin = (eh * 60 + em) - (sh * 60 + sm)
-    }
-    if (groupRate) groupPay += calculateGroupCoachPay(groupRate, durationMin)
+    const durationMin = sessionDurationMin(s.start_time, s.end_time)
+    const att = coachAttByKey.get(keyForSessionCoach(s.id, coachId))
+    const { payCents } = deriveSessionCoachPay({ rateCents: groupRate || null, durationMin, attendance: att })
+    groupPay += payCents
   }
 
   const completedCount = (completedSessions ?? []).filter(s =>
@@ -94,6 +104,42 @@ export default async function CoachDetailPage({
   const coachEarnings = earnings ?? []
   const owed = coachEarnings.filter(e => e.status === 'owed').reduce((s, e) => s + e.amount_cents, 0)
   const paid = coachEarnings.filter(e => e.status === 'paid').reduce((s, e) => s + e.amount_cents, 0)
+
+  // Partial / absent sessions this term (for the panel below)
+  type PartialRow = {
+    sessionId: string
+    programId: string | null
+    programName: string
+    date: string
+    durationMin: number
+    status: 'partial' | 'absent'
+    actualMinutes: number | null
+    note: string | null
+    fullPayCents: number
+    payCents: number
+  }
+  const partialRows: PartialRow[] = []
+  for (const s of completedSessions ?? []) {
+    const att = coachAttByKey.get(keyForSessionCoach(s.id, coachId))
+    if (!att || att.status === 'present') continue
+    const durationMin = sessionDurationMin(s.start_time, s.end_time)
+    const { payCents } = deriveSessionCoachPay({ rateCents: groupRate || null, durationMin, attendance: att })
+    const fullPayCents = groupRate ? Math.round(groupRate * durationMin / 60) : 0
+    const programInfo = (s as { programs?: { name: string } | null }).programs ?? null
+    partialRows.push({
+      sessionId: s.id,
+      programId: s.program_id,
+      programName: programInfo?.name ?? 'Session',
+      date: (s as { date: string }).date,
+      durationMin,
+      status: att.status as 'partial' | 'absent',
+      actualMinutes: att.actual_minutes,
+      note: att.note ?? null,
+      fullPayCents,
+      payCents,
+    })
+  }
+  const partialReductionCents = partialRows.reduce((sum, r) => sum + (r.fullPayCents - r.payCents), 0)
 
   return (
     <div className="space-y-6">
@@ -275,6 +321,52 @@ export default async function CoachDetailPage({
           </div>
         </CardContent>
       </Card>
+
+      {/* Partial / absent sessions this term */}
+      {partialRows.length > 0 && (
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-sm font-semibold text-foreground flex items-center gap-2">
+                <Clock className="size-4 text-warning" /> Partial / absent sessions
+              </h2>
+              <span className="text-xs text-muted-foreground">
+                Pay reduction: <span className="font-semibold text-warning">{formatCurrency(partialReductionCents)}</span>
+              </span>
+            </div>
+            <div className="divide-y divide-border rounded-lg border border-border overflow-hidden">
+              {partialRows.slice(0, 12).map((r) => (
+                <Link
+                  key={r.sessionId}
+                  href={r.programId ? `/admin/programs/${r.programId}/sessions/${r.sessionId}` : '#'}
+                  className="flex items-center justify-between gap-3 px-3 py-2 text-sm hover:bg-muted/40 transition-colors"
+                >
+                  <div className="min-w-0 flex-1">
+                    <p className="font-medium text-foreground truncate">
+                      {r.programName} <span className="font-normal text-muted-foreground">· {new Date(r.date).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })}</span>
+                    </p>
+                    {r.note && <p className="text-xs text-muted-foreground italic truncate">{r.note}</p>}
+                  </div>
+                  <div className="text-right shrink-0">
+                    <p className="text-xs">
+                      <span className={r.status === 'absent' ? 'text-danger font-medium' : 'text-warning font-medium'}>
+                        {r.status === 'absent' ? 'Absent' : `${r.actualMinutes ?? r.durationMin} of ${r.durationMin} min`}
+                      </span>
+                    </p>
+                    <p className="text-xs text-muted-foreground tabular-nums">
+                      <span className="line-through mr-1">{formatCurrency(r.fullPayCents)}</span>
+                      <span className="text-foreground font-medium">{formatCurrency(r.payCents)}</span>
+                    </p>
+                  </div>
+                </Link>
+              ))}
+            </div>
+            {partialRows.length > 12 && (
+              <p className="mt-2 text-xs text-muted-foreground">+ {partialRows.length - 12} more this term</p>
+            )}
+          </CardContent>
+        </Card>
+      )}
     </div>
   )
 }

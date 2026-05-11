@@ -7,7 +7,7 @@ import { StatusBadge } from '@/components/status-badge'
 import { ChevronLeft, Clock, Users, User, DollarSign } from 'lucide-react'
 import { formatDate, formatTime } from '@/lib/utils/dates'
 import { formatCurrency } from '@/lib/utils/currency'
-import { CancelSessionForm } from '../../programs/[id]/sessions/[sessionId]/cancel-session-form'
+import { SessionActions } from '../../programs/[id]/sessions/[sessionId]/session-actions'
 
 export default async function AdminSessionLandingPage({
   params,
@@ -207,13 +207,15 @@ export default async function AdminSessionLandingPage({
       {session.status === 'scheduled' && (
         <Card>
           <CardContent className="p-4">
-            <h2 className="text-sm font-semibold">Cancel Session</h2>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Cancels for ALL families on this session. For single-family cancel on a shared private,
-              ask the parent to cancel from their portal, or use the Series accordion on /admin/privates.
-            </p>
-            <div className="mt-3">
-              <CancelSessionForm sessionId={sessionId} />
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h2 className="text-sm font-semibold">Session actions</h2>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Cancel hits ALL families on this session. For single-family cancel on a shared
+                  private, ask the parent or use the Series accordion on /admin/privates.
+                </p>
+              </div>
+              <SessionActions sessionId={sessionId} status={session.status ?? 'scheduled'} />
             </div>
           </CardContent>
         </Card>

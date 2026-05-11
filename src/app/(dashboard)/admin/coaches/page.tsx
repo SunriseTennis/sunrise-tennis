@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { createClient, requireAdmin } from '@/lib/supabase/server'
 import { formatCurrency } from '@/lib/utils/currency'
-import { calculateGroupCoachPay } from '@/lib/utils/billing'
+import { deriveSessionCoachPay, attendanceMapForSessions, keyForSessionCoach, sessionDurationMin } from '@/lib/utils/coach-pay'
 import { getCurrentTermRange } from '@/lib/utils/school-terms'
 import { formatTime } from '@/lib/utils/dates'
 import { Card, CardContent } from '@/components/ui/card'
@@ -50,6 +50,17 @@ export default async function CoachesPage({
       .limit(20),
   ])
 
+  // Coach attendance rows for this term's completed sessions
+  type SessionCoachAttRow = { session_id: string; coach_id: string; status: string; actual_minutes: number | null; note: string | null }
+  const completedSessionIds = (completedSessions ?? []).map(s => s.id)
+  const { data: sessionCoachAttRowsRaw } = completedSessionIds.length > 0
+    ? await supabase
+        .from('session_coach_attendances')
+        .select('session_id, coach_id, status, actual_minutes, note')
+        .in('session_id', completedSessionIds)
+    : { data: [] }
+  const coachAttByKey = attendanceMapForSessions((sessionCoachAttRowsRaw as unknown as SessionCoachAttRow[] | null) ?? [])
+
   // Group availability by coach
   const coachAvailability = new Map<string, typeof availability>()
   for (const a of availability ?? []) {
@@ -85,19 +96,16 @@ export default async function CoachesPage({
     const owed = coachEarnings.filter(e => e.status === 'owed').reduce((s, e) => s + e.amount_cents, 0)
     const paid = coachEarnings.filter(e => e.status === 'paid').reduce((s, e) => s + e.amount_cents, 0)
 
-    // Session counts this term
+    // Session counts this term — partial-attendance aware via deriveSessionCoachPay
     let groupPay = 0
     for (const s of completedSessions ?? []) {
       const isAssigned = allProgramCoaches.some(pc => pc.program_id === s.program_id && pc.coach_id === coach.id)
       const isDirect = s.coach_id === coach.id
       if (!isAssigned && !isDirect) continue
-      let durationMin = 60
-      if (s.start_time && s.end_time) {
-        const [sh, sm] = s.start_time.split(':').map(Number)
-        const [eh, em] = s.end_time.split(':').map(Number)
-        durationMin = (eh * 60 + em) - (sh * 60 + sm)
-      }
-      if (groupRate) groupPay += calculateGroupCoachPay(groupRate, durationMin)
+      const durationMin = sessionDurationMin(s.start_time, s.end_time)
+      const att = coachAttByKey.get(keyForSessionCoach(s.id, coach.id))
+      const { payCents } = deriveSessionCoachPay({ rateCents: groupRate || null, durationMin, attendance: att })
+      groupPay += payCents
     }
 
     const completedCount = (completedSessions ?? []).filter(s =>
