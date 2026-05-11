@@ -54,10 +54,14 @@ export default async function ProgramDetailPage({
         }
       })()
 
-  const [{ data: program }, { data: roster }, { data: allFamilies }, { data: sessions }, { data: programCoaches }, { data: allCoaches }, { data: sessionCoachAttendances }] = await Promise.all([
+  const [{ data: program }, { data: roster }, { data: allFamilies }, { data: sessions }, { data: programCoaches }, { data: allCoaches }, { data: sessionCoachAttendances }, { data: nonTermBookings }] = await Promise.all([
     supabase.from('programs').select('*').eq('id', id).single(),
     supabase.from('program_roster')
-      .select('id, status, enrolled_at, players(id, first_name, last_name, classifications, current_focus, families(display_id, family_name))')
+      .select(`id, status, enrolled_at,
+        players(
+          id, first_name, last_name, classifications, current_focus,
+          families(id, display_id, family_name, primary_contact, secondary_contact)
+        )`)
       .eq('program_id', id)
       .order('enrolled_at'),
     supabase.from('families')
@@ -78,6 +82,17 @@ export default async function ProgramDetailPage({
     // Session-level coach attendances for this program's sessions
     supabase.from('session_coach_attendances')
       .select('session_id, coach_id, status, coaches:coach_id(name)'),
+    // Casual + trial bookings for this program (non-term — no roster row)
+    supabase.from('bookings')
+      .select(`id, player_id, booking_type, status, booked_at, session_id,
+        players(
+          id, first_name, last_name, classifications,
+          families(id, display_id, family_name, primary_contact, secondary_contact)
+        )`)
+      .eq('program_id', id)
+      .in('booking_type', ['casual', 'trial'])
+      .neq('status', 'cancelled')
+      .order('booked_at', { ascending: false }),
   ])
 
   if (!program) notFound()
@@ -208,7 +223,7 @@ export default async function ProgramDetailPage({
     }
   }
 
-  const enrolledCount = roster?.length ?? 0
+  const enrolledCount = (roster ?? []).filter(r => r.status === 'enrolled').length
   const leadCoach = (programCoaches ?? []).find(pc => pc.role === 'primary')
   const leadCoachData = leadCoach?.coaches as unknown as { id: string; name: string } | null
   const assistantCoaches = (programCoaches ?? []).filter(pc => pc.role === 'assistant')
@@ -218,6 +233,122 @@ export default async function ProgramDetailPage({
   const termPrice = program.per_session_cents && scheduledSessionCount > 0
     ? program.per_session_cents * scheduledSessionCount
     : null
+
+  // ── Merge program_roster + non-term bookings into one display list ─────
+  // Term enrollments take precedence (one row per player, type='term'/'withdrawn').
+  // Casual / trial bookings without a roster row appear with type='casual'/'trial'.
+  type Contact = { name?: string | null; phone?: string | null; email?: string | null } | null
+  type RosterFamily = { id: string; display_id: string; family_name: string; primary_contact: Contact; secondary_contact: Contact } | null
+  type RosterPlayerJoin = { id: string; first_name: string; last_name: string; classifications: string[] | null; current_focus?: string[] | null; families: RosterFamily } | null
+
+  type MergedRosterEntry = {
+    rosterId: string | null  // null when player is casual/trial-only
+    type: 'term' | 'withdrawn' | 'casual' | 'trial'
+    playerId: string
+    firstName: string
+    lastName: string
+    classifications: string[]
+    currentFocus: string[] | null
+    familyId: string | null
+    familyDisplayId: string | null
+    familyName: string | null
+    primaryContact: { name: string | null; phone: string | null; email: string | null }
+    secondaryContact: { name: string | null; phone: string | null; email: string | null } | null
+    nonTermBookingCount?: number  // for term-enrolled players who ALSO booked casually
+  }
+
+  const seenPlayerIds = new Set<string>()
+  const mergedRosterEntries: MergedRosterEntry[] = []
+
+  // Term entries first (enrolled + withdrawn from program_roster)
+  for (const r of roster ?? []) {
+    const player = r.players as unknown as RosterPlayerJoin
+    if (!player?.id) continue
+    if (seenPlayerIds.has(player.id)) continue
+    seenPlayerIds.add(player.id)
+    const fam = player.families
+    const primary = (fam?.primary_contact ?? null) as Contact
+    const secondary = (fam?.secondary_contact ?? null) as Contact
+    mergedRosterEntries.push({
+      rosterId: r.id,
+      type: r.status === 'enrolled' ? 'term' : 'withdrawn',
+      playerId: player.id,
+      firstName: player.first_name,
+      lastName: player.last_name,
+      classifications: (player.classifications ?? []) as string[],
+      currentFocus: player.current_focus ?? null,
+      familyId: fam?.id ?? null,
+      familyDisplayId: fam?.display_id ?? null,
+      familyName: fam?.family_name ?? null,
+      primaryContact: {
+        name: primary?.name ?? null,
+        phone: primary?.phone ?? null,
+        email: primary?.email ?? null,
+      },
+      secondaryContact: secondary
+        ? { name: secondary.name ?? null, phone: secondary.phone ?? null, email: secondary.email ?? null }
+        : null,
+    })
+  }
+
+  // Non-term: count bookings per player, then add players not yet seen.
+  const nonTermBookingsByPlayer = new Map<string, { type: 'casual' | 'trial'; count: number; player: RosterPlayerJoin }>()
+  for (const b of nonTermBookings ?? []) {
+    const player = b.players as unknown as RosterPlayerJoin
+    if (!player?.id) continue
+    const existing = nonTermBookingsByPlayer.get(player.id)
+    if (existing) {
+      existing.count += 1
+      // 'trial' wins as the displayed type if present (it's the rarer signal)
+      if (b.booking_type === 'trial') existing.type = 'trial'
+    } else {
+      nonTermBookingsByPlayer.set(player.id, {
+        type: b.booking_type as 'casual' | 'trial',
+        count: 1,
+        player,
+      })
+    }
+  }
+
+  // Decorate term-enrolled rows that also have non-term bookings (rare but informative)
+  for (const entry of mergedRosterEntries) {
+    const nt = nonTermBookingsByPlayer.get(entry.playerId)
+    if (nt) entry.nonTermBookingCount = nt.count
+  }
+
+  // Add casual/trial-only players not in the term list
+  let nonTermPlayerCount = 0
+  for (const [playerId, nt] of nonTermBookingsByPlayer) {
+    if (seenPlayerIds.has(playerId)) continue
+    seenPlayerIds.add(playerId)
+    nonTermPlayerCount += 1
+    const player = nt.player
+    if (!player) continue
+    const fam = player.families
+    const primary = (fam?.primary_contact ?? null) as Contact
+    const secondary = (fam?.secondary_contact ?? null) as Contact
+    mergedRosterEntries.push({
+      rosterId: null,
+      type: nt.type,
+      playerId: player.id,
+      firstName: player.first_name,
+      lastName: player.last_name,
+      classifications: (player.classifications ?? []) as string[],
+      currentFocus: null,
+      familyId: fam?.id ?? null,
+      familyDisplayId: fam?.display_id ?? null,
+      familyName: fam?.family_name ?? null,
+      primaryContact: {
+        name: primary?.name ?? null,
+        phone: primary?.phone ?? null,
+        email: primary?.email ?? null,
+      },
+      secondaryContact: secondary
+        ? { name: secondary.name ?? null, phone: secondary.phone ?? null, email: secondary.email ?? null }
+        : null,
+      nonTermBookingCount: nt.count,
+    })
+  }
 
   return (
     <div className="max-w-4xl">
@@ -468,25 +599,12 @@ export default async function ProgramDetailPage({
         <Card>
           <CardContent className="pt-6">
             <h2 className="text-lg font-semibold text-foreground">
-              Roster ({enrolledCount}{program.max_capacity ? `/${program.max_capacity}` : ''})
+              Roster ({enrolledCount}{program.max_capacity ? `/${program.max_capacity}` : ''}{nonTermPlayerCount > 0 ? ` + ${nonTermPlayerCount} casual/trial` : ''})
             </h2>
-            {roster && roster.length > 0 ? (
+            {mergedRosterEntries.length > 0 ? (
               <RosterTable
                 programId={id}
-                roster={roster.map((r) => {
-                  const player = r.players as unknown as { id: string; first_name: string; last_name: string; classifications: string[] | null; current_focus: string[] | null; families: { display_id: string; family_name: string } | null } | null
-                  return {
-                    rosterId: r.id,
-                    rosterStatus: r.status,
-                    playerId: player?.id ?? '',
-                    firstName: player?.first_name ?? '',
-                    lastName: player?.last_name ?? '',
-                    classifications: (player?.classifications ?? []) as string[],
-                    currentFocus: player?.current_focus ?? null,
-                    familyDisplayId: player?.families?.display_id ?? null,
-                    familyName: player?.families?.family_name ?? null,
-                  }
-                })}
+                roster={mergedRosterEntries}
                 maxCapacity={program.max_capacity}
                 attendanceTotals={playerAttendanceTotals}
                 completedCount={sortedCompleted.length}

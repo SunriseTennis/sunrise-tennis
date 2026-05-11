@@ -2558,3 +2558,215 @@ export async function removeSessionCoachAttendance(args: {
   revalidatePath('/admin')
   return {}
 }
+
+// ── Admin program detail cleanup (Plan 25 follow-up) ────────────────────
+
+/**
+ * Hard-delete a (player, program) pair via the `admin_delete_program_player_data`
+ * RPC. cascade=false (default) refuses if any FK dependents exist and returns
+ * a structured `blockers` map; cascade=true voids all charges + deletes
+ * attendances + bookings + lesson_notes + roster row + recalculates
+ * family_balance.
+ */
+export async function deleteProgramRosterEntry(args: {
+  programId: string
+  playerId: string
+  cascade?: boolean
+}): Promise<{
+  error?: string
+  blocked?: boolean
+  blockers?: Record<string, number>
+  deleted?: boolean
+  cascade?: boolean
+  rosterDeleted?: number
+  cascadeStats?: {
+    charges_voided?: number
+    attendances_deleted?: number
+    bookings_deleted?: number
+    lesson_notes_deleted?: number
+    roster_deleted?: number
+  }
+}> {
+  await requireAdmin()
+  const supabase = await createClient()
+
+  const { programId, playerId, cascade = false } = args
+  if (!programId || !playerId) return { error: 'Missing fields' }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase as any).rpc('admin_delete_program_player_data', {
+    p_player_id: playerId,
+    p_program_id: programId,
+    p_cascade: cascade,
+  })
+
+  if (error) {
+    console.error('[admin/deleteProgramRosterEntry]:', error.message)
+    return { error: 'Delete failed' }
+  }
+
+  const result = data as {
+    success: boolean
+    blocked?: boolean
+    deleted?: boolean
+    cascade?: boolean
+    blockers?: Record<string, number>
+    error?: string
+    charges_voided?: number
+    attendances_deleted?: number
+    bookings_deleted?: number
+    lesson_notes_deleted?: number
+    roster_deleted?: number
+  } | null
+
+  if (!result || result.success === false) {
+    if (result?.blocked && result.blockers) {
+      return { blocked: true, blockers: result.blockers }
+    }
+    return { error: result?.error ?? 'Delete failed' }
+  }
+
+  revalidatePath(`/admin/programs/${programId}`)
+  revalidatePath('/admin/programs')
+  return {
+    deleted: true,
+    cascade: !!result.cascade,
+    rosterDeleted: result.roster_deleted ?? 0,
+    cascadeStats: result.cascade ? {
+      charges_voided: result.charges_voided,
+      attendances_deleted: result.attendances_deleted,
+      bookings_deleted: result.bookings_deleted,
+      lesson_notes_deleted: result.lesson_notes_deleted,
+      roster_deleted: result.roster_deleted,
+    } : undefined,
+  }
+}
+
+/**
+ * Bulk hard-delete N (player, program) pairs. Calls the RPC per-player and
+ * collects per-row results. Tolerates per-row blockers/errors so one bad
+ * row doesn't kill the batch.
+ */
+export async function bulkDeleteProgramRosterEntries(args: {
+  programId: string
+  playerIds: string[]
+  cascade?: boolean
+}): Promise<{
+  error?: string
+  results: Array<{
+    playerId: string
+    deleted?: boolean
+    blocked?: boolean
+    blockers?: Record<string, number>
+    error?: string
+  }>
+}> {
+  await requireAdmin()
+
+  const { programId, playerIds, cascade = false } = args
+  if (!programId) return { error: 'Missing program', results: [] }
+  if (!Array.isArray(playerIds) || playerIds.length === 0) return { error: 'No players selected', results: [] }
+
+  const results: Array<{
+    playerId: string
+    deleted?: boolean
+    blocked?: boolean
+    blockers?: Record<string, number>
+    error?: string
+  }> = []
+
+  for (const playerId of playerIds) {
+    const r = await deleteProgramRosterEntry({ programId, playerId, cascade })
+    results.push({
+      playerId,
+      deleted: r.deleted,
+      blocked: r.blocked,
+      blockers: r.blockers,
+      error: r.error,
+    })
+  }
+
+  revalidatePath(`/admin/programs/${programId}`)
+  return { results }
+}
+
+/**
+ * Bulk soft-unenrol (status -> withdrawn). Loops the per-player path
+ * inline (mirrors `adminUnenrolFromProgram` minus the redirect) so we can
+ * collect a structured summary instead of relying on NEXT_REDIRECT.
+ *
+ * Voids future-only pending charges per player (Adelaide-aware via
+ * `isSessionFuture`). Past + paid charges are untouched.
+ */
+export async function bulkUnenrolPlayersFromProgram(args: {
+  programId: string
+  playerIds: string[]
+}): Promise<{
+  error?: string
+  summary?: {
+    unenrolled: number
+    skipped: number
+    chargesVoided: number
+    failed: string[]
+  }
+}> {
+  await requireAdmin()
+  const supabase = await createClient()
+
+  const { programId, playerIds } = args
+  if (!programId) return { error: 'Missing program' }
+  if (!Array.isArray(playerIds) || playerIds.length === 0) return { error: 'No players selected' }
+
+  const { voidCharge } = await import('@/lib/utils/billing')
+  const { isSessionFuture } = await import('@/lib/utils/sessions-filter')
+
+  let unenrolled = 0
+  let skipped = 0
+  let chargesVoided = 0
+  const failed: string[] = []
+
+  for (const playerId of playerIds) {
+    const { data: rosterRow } = await supabase
+      .from('program_roster')
+      .select('id')
+      .eq('program_id', programId)
+      .eq('player_id', playerId)
+      .eq('status', 'enrolled')
+      .maybeSingle()
+
+    if (!rosterRow) {
+      skipped += 1
+      continue
+    }
+
+    const { error: rosterError } = await supabase
+      .from('program_roster')
+      .update({ status: 'withdrawn' })
+      .eq('id', rosterRow.id)
+
+    if (rosterError) {
+      failed.push(`${playerId}: ${rosterError.message}`)
+      continue
+    }
+
+    const { data: futureCharges } = await supabase
+      .from('charges')
+      .select('id, family_id, session_id, sessions:session_id(date, start_time)')
+      .eq('player_id', playerId)
+      .eq('program_id', programId)
+      .eq('status', 'pending')
+
+    for (const c of futureCharges ?? []) {
+      const session = c.sessions as unknown as { date: string; start_time: string | null } | null
+      if (session && isSessionFuture(session)) {
+        await voidCharge(supabase, c.id, c.family_id)
+        chargesVoided += 1
+      }
+    }
+
+    unenrolled += 1
+  }
+
+  revalidatePath(`/admin/programs/${programId}`)
+  return { summary: { unenrolled, skipped, chargesVoided, failed } }
+}
