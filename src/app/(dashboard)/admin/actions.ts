@@ -45,17 +45,20 @@ export async function createFamily(formData: FormData) {
     redirect(`/admin/families/new?error=${encodeURIComponent(parsed.error)}`)
   }
 
-  // Generate next display_id (C001, C002, etc.)
+  // Generate next display_id in the C### namespace (admin-invite + lead).
+  // Self-signups use S### (Plan 15 Phase D); test families have used T-prefixed
+  // strings. Filtering to C% so neither namespace can collide-poison this counter.
   const { data: lastFamily } = await supabase
     .from('families')
     .select('display_id')
+    .like('display_id', 'C%')
     .order('display_id', { ascending: false })
     .limit(1)
-    .single()
+    .maybeSingle()
 
   let nextNum = 1
   if (lastFamily?.display_id) {
-    const match = lastFamily.display_id.match(/C(\d+)/)
+    const match = lastFamily.display_id.match(/^C(\d+)$/)
     if (match) nextNum = parseInt(match[1], 10) + 1
   }
   const displayId = `C${String(nextNum).padStart(3, '0')}`
