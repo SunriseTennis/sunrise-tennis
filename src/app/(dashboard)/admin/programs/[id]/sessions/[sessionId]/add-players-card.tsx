@@ -81,11 +81,13 @@ export function AddPlayersCard({
       } else {
         // Term enrol uses bulkEnrolPlayers — same path as the program detail page.
         // gatherTermEnrolSessions inside that action absorbs today's walk-in
-        // charges into the new term math.
+        // charges into the new term math. return_to_session_id keeps admin on
+        // this session page after success (instead of redirecting to program).
         const fd = new FormData()
         fd.set('program_id', programId)
         fd.set('player_ids', JSON.stringify(playerIds))
         fd.set('booking_type', 'term')
+        fd.set('return_to_session_id', sessionId)
         if (notes.trim()) fd.set('notes', notes.trim())
         try {
           await bulkEnrolPlayers(fd)

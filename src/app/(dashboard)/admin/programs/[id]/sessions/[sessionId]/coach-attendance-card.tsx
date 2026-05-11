@@ -1,7 +1,6 @@
 'use client'
 
 import { useState, useTransition, useMemo } from 'react'
-import { useRouter } from 'next/navigation'
 import { Loader2, Plus, X, GraduationCap } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -61,7 +60,6 @@ export function CoachAttendanceCard({
   /** All active coaches NOT already on the session — for the sub picker. */
   candidateSubCoaches: { id: string; name: string }[]
 }) {
-  const router = useRouter()
   const [coaches, setCoaches] = useState<CoachRow[]>(initialCoaches)
   const [att, setAtt] = useState<AttendanceMap>(initialAttendance)
   const [pickerOpen, setPickerOpen] = useState(false)
@@ -110,6 +108,11 @@ export function CoachAttendanceCard({
     })
   }
 
+  // Per-row updates avoid router.refresh() — the client already reflects the
+  // change via local state, and a full server re-render of this heavy page
+  // (families + players + charges + coach attendance) on every click locks
+  // the UI. Server data comes back on the next natural navigation.
+
   function persist(coachId: string) {
     const r = rowFor(coachId)
     setError(null)
@@ -123,7 +126,6 @@ export function CoachAttendanceCard({
         note: r.note || null,
       })
       if (res.error) setError(res.error)
-      router.refresh()
     })
   }
 
@@ -132,25 +134,34 @@ export function CoachAttendanceCard({
     const minutes = next === 'partial' && cur.status !== 'partial'
       ? Math.max(0, durationMin - 30)
       : cur.actual_minutes
-    patchAtt(coach.id, { status: next, actual_minutes: minutes })
-    setAtt(prev => {
-      const updated: AttendanceMap = {
-        ...prev,
-        [coach.id]: { status: next, actual_minutes: next === 'partial' ? minutes : (next === 'absent' ? 0 : null), note: prev[coach.id]?.note ?? null },
-      }
-      startTransition(async () => {
-        const res = await setSessionCoachAttendance({
-          sessionId,
-          coachId: coach.id,
-          programId,
-          status: next,
-          actualMinutes: next === 'partial' ? minutes : null,
-          note: prev[coach.id]?.note ?? null,
-        })
-        if (res.error) setError(res.error)
-        router.refresh()
+    const persistMinutes = next === 'partial' ? minutes : null
+    const noteForPersist = att[coach.id]?.note ?? null
+
+    // One state update — actual_minutes encoded so display matches what we'll persist.
+    setAtt(prev => ({
+      ...prev,
+      [coach.id]: {
+        status: next,
+        actual_minutes: next === 'partial' ? minutes : (next === 'absent' ? 0 : null),
+        note: prev[coach.id]?.note ?? null,
+      },
+    }))
+
+    // Fire the action OUTSIDE the setState updater. Putting startTransition
+    // inside the updater causes duplicate fires under React 18 strict/concurrent
+    // mode + the action's revalidatePath compounds with router.refresh() to
+    // jam the page.
+    setError(null)
+    startTransition(async () => {
+      const res = await setSessionCoachAttendance({
+        sessionId,
+        coachId: coach.id,
+        programId,
+        status: next,
+        actualMinutes: persistMinutes,
+        note: noteForPersist,
       })
-      return updated
+      if (res.error) setError(res.error)
     })
   }
 
@@ -169,6 +180,7 @@ export function CoachAttendanceCard({
     setCoaches(prev => [...prev, { id: sub.id, name: sub.name, role: 'sub', isSub: true, rateCents: null, isOwner: false }])
     setPickerSearch('')
     setPickerOpen(false)
+    setError(null)
     startTransition(async () => {
       const res = await setSessionCoachAttendance({
         sessionId,
@@ -179,7 +191,6 @@ export function CoachAttendanceCard({
         note: null,
       })
       if (res.error) setError(res.error)
-      router.refresh()
     })
   }
 
@@ -191,10 +202,10 @@ export function CoachAttendanceCard({
       delete next[coach.id]
       return next
     })
+    setError(null)
     startTransition(async () => {
       const res = await removeSessionCoachAttendance({ sessionId, coachId: coach.id, programId })
       if (res.error) setError(res.error)
-      router.refresh()
     })
   }
 

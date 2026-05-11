@@ -1877,7 +1877,16 @@ export async function bulkEnrolPlayers(formData: FormData) {
 
   revalidatePath(`/admin/programs/${programId}`)
   revalidatePath('/admin/sessions')
-  redirect(`/admin/programs/${programId}?success=${encodeURIComponent(`Enrolled ${newPlayerIds.length} player(s)`)}`)
+
+  // Optional: stay on the originating session page when admin enrolled
+  // from /admin/programs/[id]/sessions/[sessionId]. Defaults to program page.
+  const returnToSessionId = (formData.get('return_to_session_id') as string) || ''
+  const successMsg = `Enrolled ${newPlayerIds.length} player(s)`
+  if (returnToSessionId) {
+    revalidatePath(`/admin/programs/${programId}/sessions/${returnToSessionId}`)
+    redirect(`/admin/programs/${programId}/sessions/${returnToSessionId}?success=${encodeURIComponent(successMsg)}`)
+  }
+  redirect(`/admin/programs/${programId}?success=${encodeURIComponent(successMsg)}`)
 }
 
 // ── Program Coach Management ─────────────────────────────────────────────
