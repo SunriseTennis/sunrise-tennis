@@ -15,7 +15,7 @@ import {
 } from '@/components/ui/table'
 import { Users, UserCheck, GraduationCap, DollarSign, ChevronRight } from 'lucide-react'
 import { OverviewCalendar } from './overview-calendar'
-import { RainOutButton } from './rain-out-button'
+import { CancelTodayButton } from './cancel-today-button'
 
 export default async function AdminDashboard({
   searchParams,
@@ -280,7 +280,7 @@ export default async function AdminDashboard({
       {/* ── Quick Actions ── */}
       {todayScheduledCount > 0 && (
         <div className="animate-fade-up" style={{ animationDelay: '120ms' }}>
-          <RainOutButton todaySessionCount={todayScheduledCount} />
+          <CancelTodayButton todaySessionCount={todayScheduledCount} />
         </div>
       )}
 

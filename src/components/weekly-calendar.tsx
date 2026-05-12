@@ -967,8 +967,9 @@ export function WeeklyCalendar({
                         event.color ?? 'border-primary/30 bg-primary/5',
                         event.isEnrolled && 'ring-2 ring-white/70 shadow-md border-l-4',
                         popupEvent?.id === event.id && 'ring-2 ring-primary',
-                        event.sessionStatus === 'cancelled' && 'opacity-30 grayscale',
+                        event.sessionStatus === 'cancelled' && 'opacity-30 grayscale [&_p:first-child]:line-through',
                         event.sessionStatus === 'rained_out' && 'opacity-50 grayscale',
+                        event.sessionStatus === 'completed' && 'opacity-70',
                       )}
                       style={event.colorStyle}
                     >
@@ -1132,6 +1133,7 @@ export function WeeklyCalendar({
                             event.isEnrolled && 'ring-2 ring-white/70 shadow-md',
                             event.sessionStatus === 'cancelled' && 'opacity-25 grayscale line-through',
                             event.sessionStatus === 'rained_out' && 'opacity-40 grayscale',
+                            event.sessionStatus === 'completed' && 'opacity-60',
                           )}
                           style={{
                             top,

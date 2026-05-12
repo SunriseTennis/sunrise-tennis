@@ -348,10 +348,19 @@ export default async function SessionDetailPage({
                 </Link>
               </DetailRow>
             )}
-            {session.cancellation_reason && (
+            {(session.cancellation_reason || session.cancellation_category) && (
               <div className="sm:col-span-2 rounded-md border border-danger/20 bg-danger/5 px-3 py-2">
-                <dt className="text-xs font-medium text-danger">Cancellation reason</dt>
-                <dd className="mt-0.5 text-sm text-foreground">{session.cancellation_reason}</dd>
+                <dt className="text-xs font-medium text-danger flex items-center gap-2">
+                  <span>Cancellation reason</span>
+                  {session.cancellation_category && (
+                    <span className="rounded-full bg-danger/15 px-1.5 py-0.5 text-[10px] font-semibold capitalize text-danger">
+                      {session.cancellation_category.replace('_', ' ')}
+                    </span>
+                  )}
+                </dt>
+                {session.cancellation_reason && (
+                  <dd className="mt-0.5 text-sm text-foreground">{session.cancellation_reason}</dd>
+                )}
               </div>
             )}
           </dl>

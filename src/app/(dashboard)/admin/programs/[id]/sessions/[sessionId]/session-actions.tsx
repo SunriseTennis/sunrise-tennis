@@ -5,9 +5,8 @@ import { createPortal } from 'react-dom'
 import { CheckCircle2, XCircle, Loader2, X, RotateCcw } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
-import { Label } from '@/components/ui/label'
-import { Textarea } from '@/components/ui/textarea'
 import { adminCompleteSession, adminReopenSession, cancelSession } from '../../../../actions'
+import { CancelSessionModal } from '@/components/admin/cancel-session-modal'
 
 export function SessionActions({
   sessionId,
@@ -19,7 +18,6 @@ export function SessionActions({
   const router = useRouter()
   const [confirmComplete, setConfirmComplete] = useState(false)
   const [confirmCancel, setConfirmCancel] = useState(false)
-  const [reason, setReason] = useState('')
   const [isPending, startTransition] = useTransition()
 
   // Cancelled stays final (use existing un-cancel via direct DB if needed).
@@ -57,10 +55,10 @@ export function SessionActions({
     })
   }
 
-  function doCancel() {
-    if (!reason.trim()) return
+  function handleConfirmCancel(payload: { category: 'rain_out' | 'heat_out' | 'other'; reason: string }) {
     const fd = new FormData()
-    fd.set('reason', reason.trim())
+    fd.set('cancellation_category', payload.category)
+    if (payload.reason) fd.set('cancellation_reason', payload.reason)
     startTransition(async () => {
       try {
         await cancelSession(sessionId, fd)
@@ -71,7 +69,6 @@ export function SessionActions({
         }
       }
       setConfirmCancel(false)
-      setReason('')
       router.refresh()
     })
   }
@@ -132,34 +129,14 @@ export function SessionActions({
         </PortalModal>
       )}
 
-      {confirmCancel && (
-        <PortalModal onClose={() => setConfirmCancel(false)} title="Cancel this session?" tone="danger">
-          <p className="text-sm text-muted-foreground">
-            Notifies enrolled families and adjusts charges. Pay-now bookings get credits; pay-later bookings have upcoming charges removed.
-          </p>
-          <div className="mt-4">
-            <Label htmlFor="cancel-reason">Cancellation reason</Label>
-            <Textarea
-              id="cancel-reason"
-              rows={2}
-              value={reason}
-              onChange={(e) => setReason(e.target.value)}
-              placeholder="e.g. Rain, coach unavailable…"
-              className="mt-1"
-              autoFocus
-            />
-          </div>
-          <div className="mt-5 flex justify-end gap-2">
-            <Button type="button" variant="outline" onClick={() => setConfirmCancel(false)} disabled={isPending}>
-              Keep session
-            </Button>
-            <Button type="button" onClick={doCancel} disabled={isPending || !reason.trim()} variant="destructive" className="gap-2">
-              {isPending ? <Loader2 className="size-4 animate-spin" /> : <XCircle className="size-4" />}
-              Confirm cancellation
-            </Button>
-          </div>
-        </PortalModal>
-      )}
+      <CancelSessionModal
+        open={confirmCancel}
+        onClose={() => setConfirmCancel(false)}
+        title="Cancel this session?"
+        description="Notifies enrolled families and adjusts charges. Pay-now bookings get credits; pay-later bookings have upcoming charges removed."
+        isPending={isPending}
+        onConfirm={handleConfirmCancel}
+      />
     </>
   )
 }

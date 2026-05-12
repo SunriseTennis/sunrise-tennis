@@ -2134,6 +2134,7 @@ export type Database = {
       }
       sessions: {
         Row: {
+          cancellation_category: 'rain_out' | 'heat_out' | 'other' | null
           cancellation_reason: string | null
           coach_id: string | null
           completed_by: string | null
@@ -2150,6 +2151,7 @@ export type Database = {
           venue_id: string | null
         }
         Insert: {
+          cancellation_category?: 'rain_out' | 'heat_out' | 'other' | null
           cancellation_reason?: string | null
           coach_id?: string | null
           completed_by?: string | null
@@ -2166,6 +2168,7 @@ export type Database = {
           venue_id?: string | null
         }
         Update: {
+          cancellation_category?: 'rain_out' | 'heat_out' | 'other' | null
           cancellation_reason?: string | null
           coach_id?: string | null
           completed_by?: string | null

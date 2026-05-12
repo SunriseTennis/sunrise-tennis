@@ -3,8 +3,6 @@
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { createClient, getSessionUser, requireAdmin } from '@/lib/supabase/server'
-import { sendNotificationToTarget } from '@/lib/push/send'
-import { createClient as createServiceClient } from '@supabase/supabase-js'
 import {
   validateFormData,
   createFamilyFormSchema,
@@ -33,6 +31,212 @@ import { getActiveEarlyBird } from '@/lib/utils/eligibility'
 import { formatDate, formatTime } from '@/lib/utils/dates'
 import { dispatchNotification } from '@/lib/notifications/dispatch'
 import { createTermSessionCharges, gatherTermEnrolSessions, voidAbsorbableCharges } from '@/lib/utils/term-charges'
+
+// ── Cancellation helpers ────────────────────────────────────────────────
+
+export type CancellationCategory = 'rain_out' | 'heat_out' | 'other'
+
+const CANCELLATION_CATEGORIES: readonly CancellationCategory[] = ['rain_out', 'heat_out', 'other']
+
+function isCancellationCategory(v: unknown): v is CancellationCategory {
+  return typeof v === 'string' && (CANCELLATION_CATEGORIES as readonly string[]).includes(v)
+}
+
+/** Human-friendly label rendered in the notification body via {reasonLabel}. */
+function cancellationReasonLabel(category: CancellationCategory, reason: string | null): string {
+  if (category === 'rain_out') return 'rain'
+  if (category === 'heat_out') return 'extreme heat'
+  const trimmed = (reason ?? '').trim()
+  return trimmed.length > 0 ? trimmed : 'an unexpected reason'
+}
+
+/** Server-side parse + normalise of cancellation FormData fields. */
+function parseCancellationFormData(formData: FormData): { category: CancellationCategory; reason: string | null } | { error: string } {
+  const rawCategory = formData.get('cancellation_category')
+  if (!isCancellationCategory(rawCategory)) {
+    return { error: 'Cancellation reason is required (rain_out, heat_out, other).' }
+  }
+  const rawReason = (formData.get('cancellation_reason') as string | null) ?? (formData.get('reason') as string | null) ?? null
+  const reason = rawReason ? rawReason.trim() : null
+  if (rawCategory === 'other' && (!reason || reason.length === 0)) {
+    return { error: 'A reason is required when cancellation type is Other.' }
+  }
+  // Persist a human-readable reason string alongside the category. For
+  // rain_out / heat_out without a custom note, default to a sensible label.
+  const persistReason =
+    rawCategory === 'other'
+      ? reason!
+      : reason && reason.length > 0
+        ? reason
+        : rawCategory === 'rain_out'
+          ? 'Rained out'
+          : 'Heat cancelled'
+  return { category: rawCategory, reason: persistReason }
+}
+
+/**
+ * Cancel a single session and apply per-family financial side-effects + notify
+ * each affected family via the rule-driven dispatcher.
+ *
+ * Shared by `cancelSession` (admin clicks Cancel on one session) and
+ * `cancelTodaySessions` (bulk "Cancel today's sessions" from /admin overview).
+ * Caller is responsible for the redirect + revalidatePath.
+ *
+ * Pre-conditions: session exists; `requireAdmin()` has been called by the
+ * caller; `supabase` is the JWT-scoped admin client.
+ */
+async function _cancelSingleSessionInternal(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+  sessionId: string,
+  opts: { category: CancellationCategory; reason: string },
+): Promise<{ error?: string; familyIdsNotified?: string[] }> {
+  const { category, reason } = opts
+
+  const { data: session } = await supabase
+    .from('sessions')
+    .select('id, program_id, date, start_time, session_type')
+    .eq('id', sessionId)
+    .single()
+
+  if (!session) return { error: 'Session not found' }
+
+  const { error } = await supabase
+    .from('sessions')
+    .update({
+      status: 'cancelled',
+      cancellation_reason: reason,
+      cancellation_category: category,
+    })
+    .eq('id', sessionId)
+
+  if (error) return { error: error.message }
+
+  // Private sessions: mask the coach slot so it doesn't auto-reappear, and
+  // flip any active bookings to cancelled with type='admin'.
+  if (session.session_type === 'private') {
+    const { maskCoachSlotOnAdminOrCoachCancel } = await import('@/lib/private-cancel')
+    await maskCoachSlotOnAdminOrCoachCancel(supabase, sessionId, reason)
+    await supabase
+      .from('bookings')
+      .update({ status: 'cancelled', cancellation_type: 'admin' })
+      .eq('session_id', sessionId)
+      .neq('status', 'cancelled')
+  }
+
+  if (!session.program_id) {
+    // Non-program standalone session — nothing further to credit / dispatch.
+    return { familyIdsNotified: [] }
+  }
+
+  const programId = session.program_id
+  const { data: program } = await supabase
+    .from('programs')
+    .select('name, type')
+    .eq('id', programId)
+    .single()
+
+  const { data: roster } = await supabase
+    .from('program_roster')
+    .select('player_id')
+    .eq('program_id', programId)
+    .eq('status', 'enrolled')
+
+  type FamilyImpact = { hadPayNow: boolean; hadPayLater: boolean }
+  const familyImpact = new Map<string, FamilyImpact>()
+
+  for (const rosterEntry of roster ?? []) {
+    const playerId = rosterEntry.player_id
+
+    const { data: booking } = await supabase
+      .from('bookings')
+      .select('id, family_id, payment_option')
+      .eq('player_id', playerId)
+      .eq('program_id', programId)
+      .eq('status', 'confirmed')
+      .order('booked_at', { ascending: false })
+      .limit(1)
+      .single()
+
+    if (!booking) continue
+
+    const familyId = booking.family_id
+    const impact = familyImpact.get(familyId) ?? { hadPayNow: false, hadPayLater: false }
+
+    const existingCharge = await getExistingSessionCharge(supabase, sessionId, playerId)
+
+    if (booking.payment_option === 'pay_later' && existingCharge) {
+      await voidCharge(supabase, existingCharge.id, familyId)
+      impact.hadPayLater = true
+    } else if (booking.payment_option === 'pay_now') {
+      const { priceCents: sessionPrice } = await getPlayerSessionPriceBreakdown(
+        supabase, familyId, programId, program?.type, playerId,
+      )
+      if (!existingCharge) {
+        await createCharge(supabase, {
+          familyId,
+          playerId,
+          type: 'credit',
+          sourceType: 'cancellation',
+          sourceId: sessionId,
+          sessionId,
+          programId,
+          bookingId: booking.id,
+          description: formatChargeDescription({
+            label: program?.name ?? 'Session',
+            suffix: `Cancelled - ${reason}`,
+            term: session?.date ? getTermLabel(session.date) : null,
+            date: session?.date ?? null,
+          }),
+          amountCents: -sessionPrice,
+          status: 'confirmed',
+          createdBy: userId,
+        })
+        impact.hadPayNow = true
+      }
+    }
+
+    familyImpact.set(familyId, impact)
+  }
+
+  for (const fid of familyImpact.keys()) {
+    await recalculateBalance(supabase, fid)
+  }
+
+  const dateStr = session?.date ? formatDate(session.date) : ''
+  const timeStr = session?.start_time ? formatTime(session.start_time) : ''
+  const programName = program?.name ?? 'A session'
+  const reasonLabel = cancellationReasonLabel(category, reason)
+
+  const familyIdsNotified: string[] = []
+  for (const [familyId, impact] of familyImpact) {
+    const creditNote =
+      impact.hadPayNow && impact.hadPayLater
+        ? "We've adjusted your account accordingly."
+        : impact.hadPayNow
+          ? 'A credit has been added to your account.'
+          : impact.hadPayLater
+            ? "We've removed the upcoming charge from your account."
+            : ''
+
+    try {
+      await dispatchNotification('admin.session.cancelled', {
+        familyId,
+        programName,
+        date: dateStr,
+        time: timeStr,
+        creditNote,
+        reasonLabel,
+        category,
+      })
+      familyIdsNotified.push(familyId)
+    } catch (e) {
+      console.error('dispatch admin.session.cancelled failed for', familyId, e instanceof Error ? e.message : e)
+    }
+  }
+
+  return { familyIdsNotified }
+}
 
 // ── Families ────────────────────────────────────────────────────────────
 
@@ -1349,184 +1553,70 @@ export async function updateAttendance(sessionId: string, formData: FormData) {
 export async function cancelSession(sessionId: string, formData: FormData) {
   const user = await requireAdmin()
   const supabase = await createClient()
-  const reason = (formData.get('reason') as string)?.trim() || null
 
-  // Get session details
-  const { data: session } = await supabase
-    .from('sessions')
-    .select('id, program_id, date, start_time, session_type')
-    .eq('id', sessionId)
-    .single()
-
-  const { error } = await supabase
-    .from('sessions')
-    .update({
-      status: 'cancelled',
-      cancellation_reason: reason,
-    })
-    .eq('id', sessionId)
-
-  if (error) {
+  const parsed = parseCancellationFormData(formData)
+  if ('error' in parsed) {
+    // Try to figure out where to redirect with the validation error.
+    const { data: session } = await supabase
+      .from('sessions')
+      .select('program_id')
+      .eq('id', sessionId)
+      .single()
     const pid = session?.program_id
     if (pid) {
-      redirect(`/admin/programs/${pid}/sessions/${sessionId}?error=${encodeURIComponent(error.message)}`)
+      redirect(`/admin/programs/${pid}/sessions/${sessionId}?error=${encodeURIComponent(parsed.error)}`)
     }
-    redirect(`/admin/programs?error=${encodeURIComponent(error.message)}`)
+    redirect(`/admin/programs?error=${encodeURIComponent(parsed.error)}`)
   }
 
-  // Private sessions: mask the coach slot so it doesn't auto-reappear as
-  // available coach availability (group sessions don't use that machinery).
-  if (session?.session_type === 'private') {
-    const { maskCoachSlotOnAdminOrCoachCancel } = await import('@/lib/private-cancel')
-    await maskCoachSlotOnAdminOrCoachCancel(supabase, sessionId, reason ?? 'Admin cancelled session')
+  const result = await _cancelSingleSessionInternal(supabase, user.id, sessionId, {
+    category: parsed.category,
+    reason: parsed.reason!,
+  })
 
-    // Also flip any active bookings to cancelled with type='admin' so the
-    // parent UI shows them correctly. Group bookings don't follow this path.
-    await supabase
-      .from('bookings')
-      .update({ status: 'cancelled', cancellation_type: 'admin' })
-      .eq('session_id', sessionId)
-      .neq('status', 'cancelled')
-  }
-
-  // ── Create credits for all enrolled families ─────────────────────────
-  if (session?.program_id) {
-    const programId = session.program_id
-
-    const { data: program } = await supabase
-      .from('programs')
-      .select('name, type')
-      .eq('id', programId)
+  if (result.error) {
+    const { data: session } = await supabase
+      .from('sessions')
+      .select('program_id')
+      .eq('id', sessionId)
       .single()
-
-    // Get all enrolled players
-    const { data: roster } = await supabase
-      .from('program_roster')
-      .select('player_id')
-      .eq('program_id', programId)
-      .eq('status', 'enrolled')
-
-    if (roster) {
-      // Track per-family which payment options were touched so we can
-      // render an accurate creditNote for each family in the dispatched
-      // notification (pay-now → credit added; pay-later → charge removed).
-      type FamilyImpact = { hadPayNow: boolean; hadPayLater: boolean }
-      const familyImpact = new Map<string, FamilyImpact>()
-
-      for (const rosterEntry of roster) {
-        const playerId = rosterEntry.player_id
-
-        // Find their booking
-        const { data: booking } = await supabase
-          .from('bookings')
-          .select('id, family_id, payment_option')
-          .eq('player_id', playerId)
-          .eq('program_id', programId)
-          .eq('status', 'confirmed')
-          .order('booked_at', { ascending: false })
-          .limit(1)
-          .single()
-
-        if (!booking) continue
-
-        const familyId = booking.family_id
-        const impact = familyImpact.get(familyId) ?? { hadPayNow: false, hadPayLater: false }
-
-        // Check for existing charges on this session
-        const existingCharge = await getExistingSessionCharge(supabase, sessionId, playerId)
-
-        if (booking.payment_option === 'pay_later' && existingCharge) {
-          // Void the existing charge
-          await voidCharge(supabase, existingCharge.id, familyId)
-          impact.hadPayLater = true
-        } else if (booking.payment_option === 'pay_now') {
-          // Create credit for pre-paid session — at the player's current per-session
-          // rate (multi-group + morning-squad partner aware) so credit reflects
-          // what they're effectively paying per session, not the full program price.
-          const { priceCents: sessionPrice } = await getPlayerSessionPriceBreakdown(
-            supabase, familyId, programId, program?.type, playerId,
-          )
-          if (!existingCharge) {
-            await createCharge(supabase, {
-              familyId,
-              playerId,
-              type: 'credit',
-              sourceType: 'cancellation',
-              sourceId: sessionId,
-              sessionId,
-              programId,
-              bookingId: booking.id,
-              description: formatChargeDescription({
-                label: program?.name ?? 'Session',
-                suffix: reason ? `Cancelled - ${reason}` : 'Cancelled',
-                term: session?.date ? getTermLabel(session.date) : null,
-                date: session?.date ?? null,
-              }),
-              amountCents: -sessionPrice,
-              status: 'confirmed',
-              createdBy: user.id,
-            })
-            impact.hadPayNow = true
-          }
-        }
-
-        familyImpact.set(familyId, impact)
-      }
-
-      // Recalculate balance for all affected families
-      for (const fid of familyImpact.keys()) {
-        await recalculateBalance(supabase, fid)
-      }
-
-      // Notify each affected family via the rule-driven dispatcher so
-      // push + in_app + email all fan out per the admin.session.cancelled
-      // rule, gated by each parent's notification preferences.
-      const dateStr = session?.date ? formatDate(session.date) : ''
-      const timeStr = session?.start_time ? formatTime(session.start_time) : ''
-      const programName = program?.name ?? 'A session'
-
-      for (const [familyId, impact] of familyImpact) {
-        const creditNote =
-          impact.hadPayNow && impact.hadPayLater
-            ? "We've adjusted your account accordingly."
-            : impact.hadPayNow
-              ? "A credit has been added to your account."
-              : impact.hadPayLater
-                ? "We've removed the upcoming charge from your account."
-                : ''
-
-        try {
-          await dispatchNotification('admin.session.cancelled', {
-            familyId,
-            programName,
-            date: dateStr,
-            time: timeStr,
-            creditNote,
-          })
-        } catch (e) {
-          console.error('dispatch admin.session.cancelled failed for', familyId, e instanceof Error ? e.message : e)
-        }
-      }
+    const pid = session?.program_id
+    if (pid) {
+      redirect(`/admin/programs/${pid}/sessions/${sessionId}?error=${encodeURIComponent(result.error)}`)
     }
+    redirect(`/admin/programs?error=${encodeURIComponent(result.error)}`)
   }
 
   revalidatePath(`/admin/sessions/${sessionId}`)
   revalidatePath('/admin/programs')
+  revalidatePath('/admin')
   redirect('/admin/programs')
 }
 
-// ── Rain-Out: Cancel All Today's Sessions ─────────────────────────────
+// ── Cancel All Today's Sessions (formerly rainOutToday) ────────────────
 
-export async function rainOutToday() {
+/**
+ * Cancel every scheduled session for today with a structured cancellation
+ * reason. Replaces the legacy `rainOutToday()` — now category-aware and
+ * routes notifications through the `admin.session.cancelled` dispatcher
+ * rule (per family) instead of the legacy `sendNotificationToTarget`
+ * direct-push helper. Per-user opt-out gating + email channel come along
+ * for free.
+ */
+export async function cancelTodaySessions(formData: FormData) {
   const user = await requireAdmin()
   const supabase = await createClient()
 
+  const parsed = parseCancellationFormData(formData)
+  if ('error' in parsed) {
+    redirect(`/admin?error=${encodeURIComponent(parsed.error)}`)
+  }
+
   const today = new Date().toLocaleDateString('en-CA') // YYYY-MM-DD
 
-  // Find all scheduled sessions for today
   const { data: sessions } = await supabase
     .from('sessions')
-    .select('id, program_id')
+    .select('id')
     .eq('date', today)
     .eq('status', 'scheduled')
 
@@ -1534,131 +1624,281 @@ export async function rainOutToday() {
     redirect('/admin?error=No+scheduled+sessions+today+to+cancel')
   }
 
-  const reason = 'Rained out'
-  const affectedProgramIds = new Set<string>()
-  const allAffectedFamilies = new Set<string>()
-
+  let cancelled = 0
+  const failedIds: string[] = []
   for (const session of sessions) {
-    // Cancel the session
-    await supabase
-      .from('sessions')
-      .update({ status: 'cancelled', cancellation_reason: reason })
-      .eq('id', session.id)
-
-    // Handle credits for enrolled families
-    if (session.program_id) {
-      affectedProgramIds.add(session.program_id)
-
-      const { data: roster } = await supabase
-        .from('program_roster')
-        .select('player_id')
-        .eq('program_id', session.program_id)
-        .eq('status', 'enrolled')
-
-      if (roster) {
-        for (const rosterEntry of roster) {
-          const { data: booking } = await supabase
-            .from('bookings')
-            .select('id, family_id, payment_option')
-            .eq('player_id', rosterEntry.player_id)
-            .eq('program_id', session.program_id)
-            .eq('status', 'confirmed')
-            .order('booked_at', { ascending: false })
-            .limit(1)
-            .single()
-
-          if (!booking) continue
-
-          allAffectedFamilies.add(booking.family_id)
-
-          const existingCharge = await getExistingSessionCharge(supabase, session.id, rosterEntry.player_id)
-
-          if (booking.payment_option === 'pay_later' && existingCharge) {
-            await voidCharge(supabase, existingCharge.id, booking.family_id)
-          } else if (booking.payment_option === 'pay_now') {
-            const { data: program } = await supabase
-              .from('programs')
-              .select('name, type')
-              .eq('id', session.program_id)
-              .single()
-
-            const { priceCents: sessionPrice } = await getPlayerSessionPriceBreakdown(
-              supabase, booking.family_id, session.program_id, program?.type, rosterEntry.player_id,
-            )
-            if (!existingCharge) {
-              await createCharge(supabase, {
-                familyId: booking.family_id,
-                playerId: rosterEntry.player_id,
-                type: 'credit',
-                sourceType: 'cancellation',
-                sourceId: session.id,
-                sessionId: session.id,
-                programId: session.program_id,
-                bookingId: booking.id,
-                description: formatChargeDescription({
-                  label: program?.name ?? 'Session',
-                  suffix: 'Rained out',
-                  term: getTermLabel(today),
-                  date: today,
-                }),
-                amountCents: -sessionPrice,
-                status: 'confirmed',
-                createdBy: user.id,
-              })
-            }
-          }
-        }
-      }
+    const res = await _cancelSingleSessionInternal(supabase, user.id, session.id, {
+      category: parsed.category,
+      reason: parsed.reason!,
+    })
+    if (res.error) {
+      console.error('cancelTodaySessions: failed for session', session.id, res.error)
+      failedIds.push(session.id)
+    } else {
+      cancelled += 1
     }
-  }
-
-  // Recalculate balances
-  for (const fid of allAffectedFamilies) {
-    await recalculateBalance(supabase, fid)
-  }
-
-  // Send notifications per affected program
-  try {
-    const serviceClient = createServiceClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    )
-
-    for (const programId of affectedProgramIds) {
-      const { data: program } = await supabase
-        .from('programs')
-        .select('name')
-        .eq('id', programId)
-        .single()
-
-      await serviceClient.from('notifications').insert({
-        type: 'rain_cancel',
-        title: 'Session Cancelled - Weather',
-        body: `${program?.name ?? 'Today\'s session'} has been cancelled due to weather. No charge for this session.`,
-        url: '/parent',
-        target_type: 'program',
-        target_id: programId,
-        created_by: user.id,
-      })
-
-      await sendNotificationToTarget({
-        title: 'Session Cancelled - Weather',
-        body: `${program?.name ?? 'Today\'s session'} has been cancelled due to weather. No charge for this session.`,
-        url: '/parent',
-        targetType: 'program',
-        targetId: programId,
-      })
-    }
-  } catch (e) {
-    console.error('Rain-out notification failed:', e instanceof Error ? e.message : 'Unknown error')
   }
 
   revalidatePath('/admin')
   revalidatePath('/admin/programs')
-  redirect(`/admin?success=${encodeURIComponent(`Rained out ${sessions.length} session${sessions.length !== 1 ? 's' : ''}. All families notified.`)}`)
+
+  if (cancelled === 0) {
+    redirect(`/admin?error=${encodeURIComponent('Failed to cancel any sessions; see logs.')}`)
+  }
+  const msg = failedIds.length > 0
+    ? `Cancelled ${cancelled} session${cancelled !== 1 ? 's' : ''}. ${failedIds.length} failed.`
+    : `Cancelled ${cancelled} session${cancelled !== 1 ? 's' : ''}. All families notified.`
+  redirect(`/admin?success=${encodeURIComponent(msg)}`)
 }
 
 // ── Admin Booking on Behalf ────────────────────────────────────────────
+
+// ── Inline session-management data loader for calendar modal ───────────
+
+export type ManageSessionData = {
+  sessionId: string
+  programId: string | null
+  programName: string | null
+  programLevel: string | null
+  durationMin: number
+  date: string
+  startTime: string | null
+  endTime: string | null
+  attendanceFormPlayers: Array<{ id: string; first_name: string; last_name: string; family_id: string; isWalkIn?: boolean }>
+  attendanceMap: Record<string, 'present' | 'absent' | 'noshow'>
+  families: import('@/components/admin/multi-player-picker').PickerFamily[]
+  walkInExcludedIds: string[]
+  termExcludedIds: string[]
+  futureSessionCount: number
+  earlyBirdTier1Pct: number | null
+  earlyBirdTier2Pct: number | null
+  initialCoaches: Array<{ id: string; name: string; role: string; isSub: boolean; rateCents: number | null; isOwner: boolean }>
+  initialAttendance: Record<string, { status: 'present' | 'absent' | 'partial'; actual_minutes: number | null; note: string | null }>
+  candidateSubCoaches: Array<{ id: string; name: string }>
+}
+
+/**
+ * Server action that returns the same data shape the per-session detail page
+ * (`/admin/programs/[id]/sessions/[sessionId]/page.tsx`) loads, so the
+ * calendar's <ManageSessionModal> can render the same attendance / add-players
+ * / coach-attendance UI without navigating off /admin.
+ *
+ * Admin-only. Returns `{ error }` on failure (modal renders inline banner).
+ */
+export async function getManageSessionData(sessionId: string): Promise<
+  { data: ManageSessionData; error?: undefined } | { error: string; data?: undefined }
+> {
+  await requireAdmin()
+  const supabase = await createClient()
+
+  try {
+    const { sessionDurationMin, attendanceMapForSession, deriveSessionCoachPay } = await import('@/lib/utils/coach-pay')
+
+    const { data: session, error: sessionErr } = await supabase
+      .from('sessions')
+      .select('id, program_id, date, start_time, end_time, coach_id, session_type, programs:program_id(id, name, level, early_pay_discount_pct, early_pay_discount_pct_tier2), coaches:coach_id(id, name, hourly_rate, is_owner)')
+      .eq('id', sessionId)
+      .single()
+
+    if (sessionErr || !session) return { error: sessionErr?.message ?? 'Session not found' }
+
+    const program = session.programs as unknown as { id: string; name: string; level: string; early_pay_discount_pct: number | null; early_pay_discount_pct_tier2: number | null } | null
+    const sessionCoach = session.coaches as unknown as { id: string; name: string; hourly_rate: { group_rate_cents?: number } | null; is_owner: boolean } | null
+
+    const durationMin = sessionDurationMin(session.start_time, session.end_time)
+    const programId = program?.id ?? null
+
+    // ── Roster + attendances ─────────────────────────────────────────────
+    let rosterPlayers: { id: string; first_name: string; last_name: string; family_id: string }[] = []
+    if (programId) {
+      const { data: roster } = await supabase
+        .from('program_roster')
+        .select('players:player_id(id, first_name, last_name, family_id)')
+        .eq('program_id', programId)
+        .eq('status', 'enrolled')
+      rosterPlayers = roster?.map(r => r.players as unknown as { id: string; first_name: string; last_name: string; family_id: string }).filter(Boolean) ?? []
+    }
+
+    const { data: attendances } = await supabase
+      .from('attendances')
+      .select('player_id, status, players:player_id(id, first_name, last_name, family_id)')
+      .eq('session_id', sessionId)
+
+    const rosterIds = new Set(rosterPlayers.map(p => p.id))
+    const walkInPlayers = (attendances ?? [])
+      .map(a => a.players as unknown as { id: string; first_name: string; last_name: string; family_id: string } | null)
+      .filter((p): p is { id: string; first_name: string; last_name: string; family_id: string } => !!p && !rosterIds.has(p.id))
+
+    const attendanceFormPlayers = [
+      ...rosterPlayers.map(p => ({ ...p, isWalkIn: false })),
+      ...walkInPlayers.map(p => ({ ...p, isWalkIn: true })),
+    ]
+    const attendanceMap = Object.fromEntries(
+      (attendances ?? []).map(a => [a.player_id, a.status]),
+    ) as Record<string, 'present' | 'absent' | 'noshow'>
+    const presentInSession = attendanceFormPlayers.map(p => p.id)
+    const enrolledInProgram = Array.from(rosterIds)
+
+    // ── Active families + their players for the picker ───────────────────
+    const { data: familyRows } = await supabase
+      .from('families')
+      .select(`
+        id, display_id, family_name, primary_contact,
+        players(id, first_name, last_name, classifications, status)
+      `)
+      .eq('status', 'active')
+      .order('display_id')
+
+    type RawFam = {
+      id: string
+      display_id: string
+      family_name: string
+      primary_contact: { name?: string } | null
+      players: { id: string; first_name: string; last_name: string; classifications: string[] | null; status: string }[]
+    }
+
+    const families = (familyRows ?? []).map((row) => {
+      const f = row as unknown as RawFam
+      return {
+        id: f.id,
+        displayId: f.display_id,
+        familyName: f.family_name,
+        parentName: f.primary_contact?.name ?? null,
+        players: (f.players ?? [])
+          .filter(p => p.status === 'active')
+          .map(p => ({
+            id: p.id,
+            firstName: p.first_name,
+            lastName: p.last_name,
+            classifications: p.classifications ?? [],
+          })),
+      }
+    })
+
+    // ── Session count for retroactive term-enrol preview ─────────────────
+    let futureSessionCount = 0
+    if (programId && session.date) {
+      const { data: rangeRaw } = await supabase
+        .from('sessions')
+        .select('id')
+        .eq('program_id', programId)
+        .in('status', ['scheduled', 'completed'])
+        .gte('date', session.date)
+      futureSessionCount = (rangeRaw ?? []).length
+    }
+
+    // ── Program coaches + coach attendance ───────────────────────────────
+    const [{ data: programCoaches }, { data: coachAtt }, { data: allActiveCoaches }] = await Promise.all([
+      programId
+        ? supabase
+            .from('program_coaches')
+            .select('coach_id, role, coaches:coach_id(id, name, hourly_rate, is_owner)')
+            .eq('program_id', programId)
+        : Promise.resolve({ data: [] as Array<{ coach_id: string; role: string; coaches: unknown }> }),
+      supabase
+        .from('session_coach_attendances')
+        .select('coach_id, status, actual_minutes, note')
+        .eq('session_id', sessionId),
+      supabase
+        .from('coaches')
+        .select('id, name, status, hourly_rate, is_owner')
+        .eq('status', 'active')
+        .order('name'),
+    ])
+
+    type SessionCoachAttRow = { coach_id: string; status: string; actual_minutes: number | null; note: string | null }
+    const coachAttMap = attendanceMapForSession(
+      ((coachAtt as unknown as SessionCoachAttRow[] | null) ?? []).map(r => ({
+        coach_id: r.coach_id,
+        status: r.status,
+        actual_minutes: r.actual_minutes,
+        note: r.note,
+      })),
+    )
+
+    type CoachRow = { id: string; name: string; role: string; isSub: boolean; rateCents: number | null; isOwner: boolean }
+    const initialCoachRows: CoachRow[] = []
+    const knownCoachIds = new Set<string>()
+
+    function pushCoach(coach: { id: string; name: string; hourly_rate: { group_rate_cents?: number } | null; is_owner: boolean }, role: string, isSub: boolean) {
+      if (knownCoachIds.has(coach.id)) return
+      knownCoachIds.add(coach.id)
+      initialCoachRows.push({
+        id: coach.id,
+        name: coach.name,
+        role,
+        isSub,
+        rateCents: coach.hourly_rate?.group_rate_cents ?? null,
+        isOwner: !!coach.is_owner,
+      })
+    }
+
+    for (const pc of programCoaches ?? []) {
+      const coach = pc.coaches as unknown as { id: string; name: string; hourly_rate: { group_rate_cents?: number } | null; is_owner: boolean } | null
+      if (coach) pushCoach(coach, pc.role, false)
+    }
+    if (sessionCoach) {
+      pushCoach(sessionCoach, 'primary', false)
+    }
+    // Subs = coaches with attendance rows that aren't program/session coaches
+    for (const [coachId] of coachAttMap) {
+      if (knownCoachIds.has(coachId)) continue
+      const subCoach = (allActiveCoaches ?? []).find(c => c.id === coachId)
+      if (!subCoach) continue
+      pushCoach(
+        { id: subCoach.id, name: subCoach.name, hourly_rate: subCoach.hourly_rate as never, is_owner: subCoach.is_owner ?? false },
+        'sub',
+        true,
+      )
+    }
+
+    const initialAttendance: Record<string, { status: 'present' | 'absent' | 'partial'; actual_minutes: number | null; note: string | null }> = {}
+    for (const [cid, att] of coachAttMap) {
+      initialAttendance[cid] = {
+        status: att.status,
+        actual_minutes: att.actual_minutes,
+        note: att.note ?? null,
+      }
+    }
+
+    const candidateSubCoaches = (allActiveCoaches ?? [])
+      .filter(c => !knownCoachIds.has(c.id))
+      .map(c => ({ id: c.id, name: c.name }))
+
+    // Silence unused-var lint — keep `deriveSessionCoachPay` accessible to
+    // consumers that hydrate pay-row totals (the modal renders the same
+    // rows the session page does).
+    void deriveSessionCoachPay
+
+    return {
+      data: {
+        sessionId: session.id,
+        programId,
+        programName: program?.name ?? null,
+        programLevel: program?.level ?? null,
+        durationMin,
+        date: session.date,
+        startTime: session.start_time,
+        endTime: session.end_time,
+        attendanceFormPlayers,
+        attendanceMap,
+        families,
+        walkInExcludedIds: presentInSession,
+        termExcludedIds: enrolledInProgram,
+        futureSessionCount,
+        earlyBirdTier1Pct: program?.early_pay_discount_pct ?? null,
+        earlyBirdTier2Pct: program?.early_pay_discount_pct_tier2 ?? null,
+        initialCoaches: initialCoachRows,
+        initialAttendance,
+        candidateSubCoaches,
+      },
+    }
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : 'Unknown error loading session'
+    console.error('getManageSessionData failed:', msg)
+    return { error: msg }
+  }
+}
 
 // ── Mark Session Complete ─────────────────────────────────────────────
 

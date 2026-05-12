@@ -12,8 +12,11 @@ export function OverviewCalendar({
   sessions: SessionData[]
   programs: ProgramInfo[]
 }) {
+  // Show cancelled program sessions too (greyed-out + line-through in the
+  // grid via <WeeklyCalendar>'s sessionStatus styling). Cancelled
+  // private/standalone sessions stay filtered upstream in calendar-helpers.
   const events = useMemo(
-    () => sessionsToCalendarEvents(sessions, programs, { hideCancelled: true }),
+    () => sessionsToCalendarEvents(sessions, programs),
     [sessions, programs],
   )
 
