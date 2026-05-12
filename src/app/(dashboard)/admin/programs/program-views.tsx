@@ -259,6 +259,11 @@ export function ProgramViews({ programs, sessionTallies, programCoaches }: { pro
                     const termPrice = p.per_session_cents && sessionCount > 0
                       ? p.per_session_cents * sessionCount
                       : null
+                    const coaches = programCoaches?.[p.id]
+                    const assistantCount = coaches?.assistants.length ?? 0
+                    const coachTitle = coaches
+                      ? `Lead: ${coaches.lead || '—'}${assistantCount > 0 ? ` · Assistants: ${coaches.assistants.join(', ')}` : ''}`
+                      : undefined
                     return (
                       <TableRow key={p.id}>
                         <TableCell className="font-medium">
@@ -273,6 +278,18 @@ export function ProgramViews({ programs, sessionTallies, programCoaches }: { pro
                         </TableCell>
                         <TableCell className="text-muted-foreground">
                           {enrolled}{p.max_capacity ? `/${p.max_capacity}` : ''}
+                        </TableCell>
+                        <TableCell className="text-muted-foreground" title={coachTitle}>
+                          {coaches?.lead ? (
+                            <>
+                              <span className="text-foreground">{coaches.lead}</span>
+                              {assistantCount > 0 && <span className="ml-1">+{assistantCount}</span>}
+                            </>
+                          ) : assistantCount > 0 ? (
+                            <span>+{assistantCount}</span>
+                          ) : (
+                            <span>-</span>
+                          )}
                         </TableCell>
                         <TableCell className="text-muted-foreground tabular-nums text-xs">
                           {t ? (
@@ -331,7 +348,7 @@ export function ProgramViews({ programs, sessionTallies, programCoaches }: { pro
               )
             })}
           </div>
-          <ProgramCards programs={filteredByLevel} tallies={sessionTallies} />
+          <ProgramCards programs={filteredByLevel} tallies={sessionTallies} coaches={programCoaches} />
         </div>
       )}
 
@@ -362,7 +379,7 @@ export function ProgramViews({ programs, sessionTallies, programCoaches }: { pro
               )
             })}
           </div>
-          <ProgramCards programs={filteredByType} tallies={sessionTallies} />
+          <ProgramCards programs={filteredByType} tallies={sessionTallies} coaches={programCoaches} />
         </div>
       )}
 
@@ -390,7 +407,7 @@ export function ProgramViews({ programs, sessionTallies, programCoaches }: { pro
               </button>
             ))}
           </div>
-          <ProgramCards programs={filteredByVenue} tallies={sessionTallies} />
+          <ProgramCards programs={filteredByVenue} tallies={sessionTallies} coaches={programCoaches} />
         </div>
       )}
     </div>
