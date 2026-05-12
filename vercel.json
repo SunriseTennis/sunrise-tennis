@@ -16,6 +16,10 @@
     {
       "path": "/api/cron/orphan-signup-audit",
       "schedule": "30 23 * * *"
+    },
+    {
+      "path": "/api/cron/dispatch-queued-notifications",
+      "schedule": "*/15 * * * *"
     }
   ]
 }

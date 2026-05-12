@@ -12,7 +12,9 @@
 import { createClient as createServiceClient, SupabaseClient } from '@supabase/supabase-js'
 import { sendPushToUser, getAdminUserIds } from '@/lib/push/send'
 import { getEligibleParentUserIds } from '@/lib/utils/private-booking'
+import { isQuietHoursActive, nextAdelaideQuietWindowEnd } from '@/lib/utils/time-windows'
 import { sendBrandedEmail } from './send-email'
+import { queueOutboxRows } from './outbox'
 import {
   fetchUserPrefs,
   isOptedIn,
@@ -20,6 +22,14 @@ import {
   type NotificationChannel,
   type UserPrefs,
 } from './preferences'
+
+/**
+ * Plan 25 — Audiences subject to Adelaide-local quiet hours (21:00–08:00).
+ * Admins are deliberately excluded: real-time business signals always fire
+ * immediately. Parents and coaches get push/email deferred until 08:00 the
+ * next morning when the dispatcher runs inside quiet hours.
+ */
+const QUIET_HOURS_AUDIENCES = new Set(['family', 'coach', 'eligible_families'])
 
 export interface DispatchContext {
   /** Family-level resolves to all parent userIds for this family. */
@@ -249,6 +259,15 @@ export async function dispatchNotification(
       return userIds.filter((uid) => isOptedIn(prefsByUser.get(uid), channel, category))
     }
 
+    // Plan 25 — Quiet hours gate. Push/email for parent/coach audiences
+    // get deferred to the next 08:00 Adelaide when fired during quiet hours.
+    // in_app always writes immediately (passive — only seen on app open, so
+    // deferring would create a feed mismatch with DB state). admins are
+    // never deferred — real-time business signals.
+    const deferThisRule =
+      QUIET_HOURS_AUDIENCES.has(rule.audience) && isQuietHoursActive()
+    const deliverAfter = deferThisRule ? nextAdelaideQuietWindowEnd() : null
+
     if (channels.includes('in_app')) {
       const recipients = filterByChannel('in_app')
       if (recipients.length > 0) {
@@ -258,13 +277,29 @@ export async function dispatchNotification(
     if (channels.includes('push')) {
       const recipients = filterByChannel('push')
       if (recipients.length > 0) {
-        await sendPush(recipients, rendered)
+        if (deferThisRule && deliverAfter) {
+          await queueOutboxRows({
+            service, userIds: recipients, channel: 'push', rendered,
+            rule: { id: rule.id, event_type: rule.event_type, audience: rule.audience, category: rule.category },
+            deliverAfter,
+          })
+        } else {
+          await sendPush(recipients, rendered)
+        }
       }
     }
     if (channels.includes('email')) {
       const recipients = filterByChannel('email')
       if (recipients.length > 0) {
-        await sendEmailChannel(service, recipients, rendered)
+        if (deferThisRule && deliverAfter) {
+          await queueOutboxRows({
+            service, userIds: recipients, channel: 'email', rendered,
+            rule: { id: rule.id, event_type: rule.event_type, audience: rule.audience, category: rule.category },
+            deliverAfter,
+          })
+        } else {
+          await sendEmailChannel(service, recipients, rendered)
+        }
       }
     }
   }

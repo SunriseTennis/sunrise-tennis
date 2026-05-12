@@ -806,6 +806,31 @@ export async function adminBookPrivate(formData: FormData) {
 
   revalidatePath('/admin/privates/bookings')
   revalidatePath('/admin/privates')
+
+  // Plan 25 — notify the family that admin booked them. Quiet-hours-deferred
+  // automatically by the dispatcher (audience='family'). Fire-and-forget.
+  try {
+    const { dispatchNotification } = await import('@/lib/notifications/dispatch')
+    const { formatDate, formatTime } = await import('@/lib/utils/dates')
+    const dayName = new Date(date + 'T12:00:00').toLocaleDateString('en-AU', { weekday: 'long' })
+    const dateLabel = formatDate(date)
+    const timeLabel = formatTime(startTime)
+    const bookingDescription = scheduleMode === 'standing'
+      ? `${player.first_name} has a standing weekly private with ${coachName} on ${dayName}s at ${timeLabel}, starting ${dateLabel}.`
+      : `${player.first_name} is booked for a private with ${coachName} on ${dateLabel} at ${timeLabel}.`
+    await dispatchNotification('admin.private.booked', {
+      familyId,
+      bookingDescription,
+      playerName: player.first_name,
+      coachName,
+      date: dateLabel,
+      startTime: timeLabel,
+      dayOfWeek: dayName,
+    })
+  } catch (e) {
+    console.error('[adminBookPrivate] dispatch failed:', e)
+  }
+
   const msg = scheduleMode === 'standing'
     ? `${count}+weekly+sessions+booked`
     : 'Private+lesson+booked'
@@ -1007,6 +1032,39 @@ export async function adminCreateSharedPrivate(formData: FormData) {
 
   revalidatePath('/admin/privates/bookings')
   revalidatePath('/admin/privates')
+
+  // Plan 25 — notify both families that admin booked them. Per-family
+  // dispatch so the body includes the *other* family's player name as the
+  // partner. Quiet-hours-deferred automatically by the dispatcher
+  // (audience='family'). Fire-and-forget.
+  try {
+    const { dispatchNotification } = await import('@/lib/notifications/dispatch')
+    const { formatDate, formatTime } = await import('@/lib/utils/dates')
+    const dayName = new Date(date + 'T12:00:00').toLocaleDateString('en-AU', { weekday: 'long' })
+    const dateLabel = formatDate(date)
+    const timeLabel = formatTime(startTime)
+    const describeFor = (myPlayer: string, partner: string) =>
+      scheduleMode === 'standing'
+        ? `${myPlayer} has a standing weekly shared private with ${partner} (coach: ${coachName}) on ${dayName}s at ${timeLabel}, starting ${dateLabel}.`
+        : `${myPlayer} is booked for a shared private with ${partner} (coach: ${coachName}) on ${dateLabel} at ${timeLabel}.`
+    await dispatchNotification('admin.private.booked', {
+      familyId: familyId1,
+      bookingDescription: describeFor(player1!.first_name, player2!.first_name),
+      playerName: player1!.first_name,
+      partnerName: player2!.first_name,
+      coachName, date: dateLabel, startTime: timeLabel, dayOfWeek: dayName,
+    })
+    await dispatchNotification('admin.private.booked', {
+      familyId: familyId2,
+      bookingDescription: describeFor(player2!.first_name, player1!.first_name),
+      playerName: player2!.first_name,
+      partnerName: player1!.first_name,
+      coachName, date: dateLabel, startTime: timeLabel, dayOfWeek: dayName,
+    })
+  } catch (e) {
+    console.error('[adminCreateSharedPrivate] dispatch failed:', e)
+  }
+
   const msg = scheduleMode === 'standing'
     ? `${count}+weekly+shared+sessions+booked`
     : 'Shared+private+booked'
