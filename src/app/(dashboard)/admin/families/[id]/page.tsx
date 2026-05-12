@@ -210,6 +210,8 @@ export default async function FamilyDetailPage({ params, searchParams }: PagePro
             if (balanceConfirmed !== 0) parts.push('non-zero balance')
             return parts.length > 0 ? parts.join(', ') : null
           })()}
+          isTest={(family as { is_test?: boolean }).is_test === true}
+          displayId={family.display_id}
         />
       </div>
     </div>

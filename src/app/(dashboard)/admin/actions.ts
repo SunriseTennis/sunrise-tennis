@@ -2505,6 +2505,108 @@ export async function deleteFamily(
 }
 
 /**
+ * Bundled with Plan 25 — force-delete a test family.
+ *
+ * Calls admin_force_delete_test_family which CASCADEs through every
+ * dependent row and refuses unless families.is_test=true. After the
+ * RPC succeeds, renames the parent auth.users emails so the original
+ * addresses are freed for re-signup (per debugging.md auth-user-delete
+ * FK trap — we don't try to delete auth.users themselves).
+ *
+ * Only callable from /admin/families/[id] when family.is_test=true.
+ */
+export async function forceDeleteTestFamily(familyId: string) {
+  await requireAdmin()
+  const supabase = await createClient()
+
+  if (!/^[0-9a-f-]{36}$/i.test(familyId)) {
+    redirect('/admin?error=Invalid+family+id')
+  }
+
+  // RPC added 12-May-2026 — types.ts not yet regenerated, cast required.
+  const { data, error } = await (supabase as unknown as { rpc: (name: string, args: Record<string, unknown>) => Promise<{ data: unknown; error: { message: string } | null }> })
+    .rpc('admin_force_delete_test_family', {
+      p_family_id: familyId,
+    })
+
+  const errorPath = `/admin/families/${familyId}`
+
+  if (error) {
+    console.error('[admin/forceDeleteTestFamily] rpc:', error.message)
+    redirect(`${errorPath}?error=${encodeURIComponent('Force delete failed')}`)
+  }
+
+  const result = data as unknown as
+    | { success: boolean; deleted?: boolean; error?: string; parent_user_ids?: string[]; counts?: Record<string, number>; display_id?: string }
+    | null
+
+  if (!result || result.success === false) {
+    redirect(`${errorPath}?error=${encodeURIComponent(result?.error ?? 'Force delete failed')}`)
+  }
+
+  // Auth-side cleanup: rename emails so originals are freed. Per
+  // debugging.md "Auth user delete blocked by FK" we don't delete the
+  // auth.users row itself (audit_log FK + others would 500).
+  const userIds = result.parent_user_ids ?? []
+  if (userIds.length > 0) {
+    try {
+      const { createServiceClient } = await import('@/lib/supabase/server')
+      const service = createServiceClient()
+      const stamp = Date.now()
+      for (const userId of userIds) {
+        const { data: u } = await service.auth.admin.getUserById(userId)
+        const orig = u?.user?.email
+        if (!orig) continue
+        // Skip if already archived
+        if (orig.includes('+deleted-')) continue
+        const local = orig.split('@')[0]
+        const archivedEmail = `${local}+deleted-${stamp}@archived.invalid`
+        await service.auth.admin.updateUserById(userId, {
+          email: archivedEmail,
+          email_confirm: true,
+        })
+      }
+    } catch (e) {
+      console.error('[admin/forceDeleteTestFamily] auth rename:', e)
+      // Non-fatal — the public-schema delete already succeeded.
+    }
+  }
+
+  revalidatePath('/admin/families')
+  revalidatePath('/admin/approvals')
+  redirect(`/admin/families?success=${encodeURIComponent('Test family ' + (result.display_id ?? '') + ' wiped')}`)
+}
+
+/**
+ * Bundled with Plan 25 — toggle families.is_test flag.
+ *
+ * Required before forceDeleteTestFamily will accept a delete for this
+ * family. Admin-only, no other side effects.
+ */
+export async function setFamilyIsTest(familyId: string, isTest: boolean) {
+  await requireAdmin()
+  const supabase = await createClient()
+
+  if (!/^[0-9a-f-]{36}$/i.test(familyId)) {
+    redirect('/admin?error=Invalid+family+id')
+  }
+
+  // `is_test` column added 12-May-2026 — types.ts not yet regenerated, cast required.
+  const { error } = await supabase
+    .from('families')
+    .update({ is_test: isTest } as never)
+    .eq('id', familyId)
+
+  if (error) {
+    console.error('[admin/setFamilyIsTest]:', error.message)
+    redirect(`/admin/families/${familyId}?error=${encodeURIComponent('Failed to update test flag')}`)
+  }
+
+  revalidatePath(`/admin/families/${familyId}`)
+  redirect(`/admin/families/${familyId}?success=${encodeURIComponent(isTest ? 'Marked as test family' : 'Unmarked test flag')}`)
+}
+
+/**
  * Set a family's status (active / inactive / archived). Archive is
  * the right pattern for families with operational history (charges,
  * sessions, lesson notes) — keeps the record but hides them from
