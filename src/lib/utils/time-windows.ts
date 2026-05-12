@@ -1,11 +1,16 @@
 /**
  * Plan 25 — Adelaide-local quiet hours helpers for notification deferral.
  *
- * Quiet hours: 21:00 ≤ Adelaide-local time < 08:00. Push/email notifications
+ * Quiet hours: 21:00 ≤ Adelaide-local time < 09:00. Push/email notifications
  * routed via dispatchNotification to a parent/coach audience are queued in
  * `notification_outbox` when fired inside this window, and flushed by the
- * 15-min cron at /api/cron/dispatch-queued-notifications on the first tick
- * at or after 08:00 Adelaide.
+ * daily cron at /api/cron/dispatch-queued-notifications.
+ *
+ * Window-end is 09:00 (not 08:00) so it matches the cron's wall-clock fire
+ * time year-round. Vercel Hobby caps crons at daily, so the cron expression
+ * `30 23 * * *` UTC fires at 09:00 ACST (winter) or 10:00 ACDT (summer).
+ * Always ≥ 09:00 Adelaide, so the cron is never earlier than the queue's
+ * deliver_after stamp — no notification can wait an extra day.
  *
  * Adelaide is UTC+9:30 (ACST) or UTC+10:30 (ACDT) depending on DST. We
  * resolve the wall-clock instant by formatting through Intl with timeZone
@@ -14,8 +19,8 @@
 
 const ADELAIDE_TZ = 'Australia/Adelaide'
 
-/** End of quiet hours (inclusive). 08:00 = start of normal delivery window. */
-export const QUIET_HOURS_END_HOUR = 8
+/** End of quiet hours (inclusive). 09:00 = start of normal delivery window. */
+export const QUIET_HOURS_END_HOUR = 9
 /** Start of quiet hours (inclusive). 21:00 = first hour push/email is deferred. */
 export const QUIET_HOURS_START_HOUR = 21
 

@@ -4,18 +4,19 @@ import { sendPushToUser } from '@/lib/push/send'
 import { sendBrandedEmail } from '@/lib/notifications/send-email'
 
 /**
- * Plan 25 — Dispatch queued notifications (every 15 min).
+ * Plan 25 — Dispatch queued notifications (daily).
  *
  * Flushes push/email rows in `notification_outbox` whose `deliver_after`
  * has passed. Rows land here when `dispatchNotification` runs during
- * Adelaide-local quiet hours (21:00–08:00) for parent/coach audiences.
+ * Adelaide-local quiet hours (21:00–09:00) for parent/coach audiences.
  *
  * Retention sweep at the end: drops `status='sent'` rows older than 30
  * days to keep the table small. The partial sent-retention index makes
  * the DELETE cheap.
  *
- * Vercel cron: `*​/15 * * * *` (every 15 min). The first tick at or after
- * 08:00 Adelaide flushes the previous night's queue.
+ * Vercel cron: `30 23 * * *` UTC. Fires at 09:00 ACST (winter) or 10:00
+ * ACDT (summer) — always ≥ 09:00 Adelaide so no notification can stay
+ * queued past the day's window-end. Vercel Hobby caps crons at daily.
  */
 
 const FLUSH_BATCH_LIMIT = 200

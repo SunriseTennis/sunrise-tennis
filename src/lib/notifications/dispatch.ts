@@ -24,9 +24,9 @@ import {
 } from './preferences'
 
 /**
- * Plan 25 — Audiences subject to Adelaide-local quiet hours (21:00–08:00).
+ * Plan 25 — Audiences subject to Adelaide-local quiet hours (21:00–09:00).
  * Admins are deliberately excluded: real-time business signals always fire
- * immediately. Parents and coaches get push/email deferred until 08:00 the
+ * immediately. Parents and coaches get push/email deferred until 09:00 the
  * next morning when the dispatcher runs inside quiet hours.
  */
 const QUIET_HOURS_AUDIENCES = new Set(['family', 'coach', 'eligible_families'])
@@ -260,7 +260,7 @@ export async function dispatchNotification(
     }
 
     // Plan 25 — Quiet hours gate. Push/email for parent/coach audiences
-    // get deferred to the next 08:00 Adelaide when fired during quiet hours.
+    // get deferred to the next 09:00 Adelaide when fired during quiet hours.
     // in_app always writes immediately (passive — only seen on app open, so
     // deferring would create a feed mismatch with DB state). admins are
     // never deferred — real-time business signals.

@@ -3,7 +3,7 @@
  *
  * Queues push/email sends for later flushing by the
  * /api/cron/dispatch-queued-notifications cron when notifications fire
- * during Adelaide-local quiet hours (21:00–08:00) for parent/coach
+ * during Adelaide-local quiet hours (21:00–09:00) for parent/coach
  * audiences.
  */
 

@@ -3,8 +3,8 @@
 --
 -- Push/email notifications routed via `dispatchNotification` that target a
 -- parent or coach audience (`family`, `coach`, `eligible_families`) are
--- enqueued here when fired outside Adelaide-local 08:00–21:00, instead of
--- sending immediately. A 15-min cron at /api/cron/dispatch-queued-notifications
+-- enqueued here when fired outside Adelaide-local 09:00–21:00, instead of
+-- sending immediately. A daily cron at /api/cron/dispatch-queued-notifications
 -- flushes due rows.
 --
 -- In-app feed rows still write immediately to `notifications` regardless of
@@ -73,6 +73,6 @@ CREATE POLICY notification_outbox_admin_select ON notification_outbox
 -- No INSERT/UPDATE/DELETE policy for authenticated — only service-role writes.
 
 COMMENT ON TABLE notification_outbox IS
-  'Plan 25 — push/email sends deferred during Adelaide quiet hours (21:00–08:00). '
+  'Plan 25 — push/email sends deferred during Adelaide quiet hours (21:00–09:00). '
   'In-app feed rows still write immediately to `notifications`. Cron at '
-  '/api/cron/dispatch-queued-notifications flushes due rows every 15 min.';
+  '/api/cron/dispatch-queued-notifications (daily, `30 23 * * *` UTC) flushes due rows.';
