@@ -19,6 +19,7 @@ import {
 } from '@/lib/utils/billing'
 import {
   getPlayerSessionPriceBreakdown,
+  getPlayerEffectiveSessionPriceBreakdown,
   formatDiscountSuffix,
   buildPricingBreakdown,
 } from '@/lib/utils/player-pricing'
@@ -158,7 +159,7 @@ export async function coachUpdateAttendance(sessionId: string, formData: FormDat
         if (!walkInPlayer?.family_id) continue
         const walkInExisting = await getExistingSessionCharge(supabase, sessionId, entry.playerId)
         if (walkInExisting) continue
-        const walkInBreakdown = await getPlayerSessionPriceBreakdown(
+        const walkInBreakdown = await getPlayerEffectiveSessionPriceBreakdown(
           supabase, walkInPlayer.family_id, programId, program?.type, entry.playerId,
         )
         if (walkInBreakdown.priceCents <= 0) continue
@@ -173,7 +174,7 @@ export async function coachUpdateAttendance(sessionId: string, formData: FormDat
           description: formatChargeDescription({
             playerName: playerNames.get(entry.playerId),
             label: `${program?.name ?? 'Session'} (walk-in)`,
-            suffix: formatDiscountSuffix({ multiGroupApplied: walkInBreakdown.multiGroupApplied, earlyPayPct: 0 }),
+            suffix: formatDiscountSuffix({ multiGroupApplied: walkInBreakdown.multiGroupApplied, earlyPayPct: walkInBreakdown.earlyBirdPct }),
             term: termLabel,
             date: sessionDate,
           }),
@@ -186,6 +187,7 @@ export async function coachUpdateAttendance(sessionId: string, formData: FormDat
             morningSquadPartnerApplied: walkInBreakdown.morningSquadPartnerApplied,
             multiGroupApplied: walkInBreakdown.multiGroupApplied,
             sessions: 1,
+            earlyBirdPct: walkInBreakdown.earlyBirdPct,
           }) as never,
         })
         continue
@@ -812,23 +814,23 @@ export async function addWalkInPlayer(sessionId: string, playerId: string, charg
         .single()
 
       if (player?.family_id) {
-        // Player-aware price: morning-squad partner rule + 25% multi-group recalc.
-        // Walk-ins get the same multi-group treatment as casual bookings — the
-        // walk-in is "additional" iff the player has any other eligible enrolment.
-        const { getPlayerSessionPriceBreakdown, formatDiscountSuffix } = await import('@/lib/utils/player-pricing')
+        // Effective price: inherits the term per-session rate (incl. early-bird)
+        // when the player is on the program roster; otherwise standard walk-in
+        // pricing (morning-squad partner + family override + 25% multi-group).
+        const { getPlayerEffectiveSessionPriceBreakdown, formatDiscountSuffix, buildPricingBreakdown } = await import('@/lib/utils/player-pricing')
         const { data: programRow } = await supabase
           .from('programs')
           .select('type')
           .eq('id', session.program_id)
           .single()
-        const breakdown = await getPlayerSessionPriceBreakdown(
+        const breakdown = await getPlayerEffectiveSessionPriceBreakdown(
           supabase, player.family_id, session.program_id, programRow?.type ?? null, playerId,
         )
         const priceCents = breakdown.priceCents
 
         if (priceCents > 0) {
           const { createCharge } = await import('@/lib/utils/billing')
-          const suffix = formatDiscountSuffix({ multiGroupApplied: breakdown.multiGroupApplied, earlyPayPct: 0 })
+          const suffix = formatDiscountSuffix({ multiGroupApplied: breakdown.multiGroupApplied, earlyPayPct: breakdown.earlyBirdPct })
           await createCharge(supabase, {
             familyId: player.family_id,
             playerId,
@@ -841,6 +843,14 @@ export async function addWalkInPlayer(sessionId: string, playerId: string, charg
             amountCents: priceCents,
             status: 'confirmed',
             createdBy: user.id,
+            pricingBreakdown: buildPricingBreakdown({
+              basePriceCents: breakdown.basePriceCents,
+              perSessionPriceCents: breakdown.priceCents,
+              morningSquadPartnerApplied: breakdown.morningSquadPartnerApplied,
+              multiGroupApplied: breakdown.multiGroupApplied,
+              sessions: 1,
+              earlyBirdPct: breakdown.earlyBirdPct,
+            }) as never,
           })
         }
       }

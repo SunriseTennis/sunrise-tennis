@@ -25,7 +25,7 @@ import {
   recalculateBalance,
   formatChargeDescription,
 } from '@/lib/utils/billing'
-import { getPlayerSessionPriceBreakdown, formatDiscountSuffix, buildPricingBreakdown } from '@/lib/utils/player-pricing'
+import { getPlayerSessionPriceBreakdown, getPlayerEffectiveSessionPriceBreakdown, formatDiscountSuffix, buildPricingBreakdown } from '@/lib/utils/player-pricing'
 import { getTermLabel } from '@/lib/utils/school-terms'
 import { getActiveEarlyBird } from '@/lib/utils/eligibility'
 // Adelaide-aware future-session filtering is now centralised inside
@@ -1097,7 +1097,7 @@ export async function updateAttendance(sessionId: string, formData: FormData) {
         if (!walkInPlayer?.family_id) continue
         const walkInExisting = await getExistingSessionCharge(supabase, sessionId, entry.playerId)
         if (walkInExisting) continue
-        const walkInBreakdown = await getPlayerSessionPriceBreakdown(
+        const walkInBreakdown = await getPlayerEffectiveSessionPriceBreakdown(
           supabase, walkInPlayer.family_id, programId, program?.type, entry.playerId,
         )
         if (walkInBreakdown.priceCents <= 0) continue
@@ -1112,7 +1112,7 @@ export async function updateAttendance(sessionId: string, formData: FormData) {
           description: formatChargeDescription({
             playerName: playerNames.get(entry.playerId),
             label: `${program?.name ?? 'Session'} (walk-in)`,
-            suffix: formatDiscountSuffix({ multiGroupApplied: walkInBreakdown.multiGroupApplied, earlyPayPct: 0 }),
+            suffix: formatDiscountSuffix({ multiGroupApplied: walkInBreakdown.multiGroupApplied, earlyPayPct: walkInBreakdown.earlyBirdPct }),
             term: termLabel,
             date: sessionDate,
           }),
@@ -1125,6 +1125,7 @@ export async function updateAttendance(sessionId: string, formData: FormData) {
             morningSquadPartnerApplied: walkInBreakdown.morningSquadPartnerApplied,
             multiGroupApplied: walkInBreakdown.multiGroupApplied,
             sessions: 1,
+            earlyBirdPct: walkInBreakdown.earlyBirdPct,
           }) as never,
         })
         continue
@@ -2353,8 +2354,10 @@ export async function adminAddWalkInAttendance(formData: FormData) {
     redirect(`/admin/programs/${programId}/sessions/${sessionId}?error=${encodeURIComponent(attError.message)}`)
   }
 
-  // Create charge using player-aware pricing helper (respects family overrides + multi-group + morning-squad)
-  const breakdown = await getPlayerSessionPriceBreakdown(
+  // Effective per-session price: inherits the term rate (incl. early-bird) when
+  // the player is on the program roster; falls back to standard walk-in pricing
+  // (respects family overrides + multi-group + morning-squad) otherwise.
+  const breakdown = await getPlayerEffectiveSessionPriceBreakdown(
     supabase, player.family_id, effectiveProgramId, program?.type, playerId,
   )
 
@@ -2370,7 +2373,7 @@ export async function adminAddWalkInAttendance(formData: FormData) {
       description: formatChargeDescription({
         playerName: player.first_name,
         label: `${program?.name ?? 'Session'} (walk-in)`,
-        suffix: formatDiscountSuffix({ multiGroupApplied: breakdown.multiGroupApplied, earlyPayPct: 0 }),
+        suffix: formatDiscountSuffix({ multiGroupApplied: breakdown.multiGroupApplied, earlyPayPct: breakdown.earlyBirdPct }),
         term: getTermLabel(session.date),
         date: session.date,
       }),
@@ -2383,6 +2386,7 @@ export async function adminAddWalkInAttendance(formData: FormData) {
         morningSquadPartnerApplied: breakdown.morningSquadPartnerApplied,
         multiGroupApplied: breakdown.multiGroupApplied,
         sessions: 1,
+        earlyBirdPct: breakdown.earlyBirdPct,
       }) as never,
     })
   }
@@ -2741,7 +2745,7 @@ export async function bulkAddWalkInAttendance(args: {
       continue
     }
 
-    const breakdown = await getPlayerSessionPriceBreakdown(
+    const breakdown = await getPlayerEffectiveSessionPriceBreakdown(
       supabase, player.family_id, effectiveProgramId, program?.type, player.id,
     )
 
@@ -2757,7 +2761,7 @@ export async function bulkAddWalkInAttendance(args: {
         description: formatChargeDescription({
           playerName: player.first_name,
           label: `${program?.name ?? 'Session'} (walk-in)`,
-          suffix: formatDiscountSuffix({ multiGroupApplied: breakdown.multiGroupApplied, earlyPayPct: 0 }),
+          suffix: formatDiscountSuffix({ multiGroupApplied: breakdown.multiGroupApplied, earlyPayPct: breakdown.earlyBirdPct }),
           term: getTermLabel(session.date),
           date: session.date,
         }),
@@ -2770,6 +2774,7 @@ export async function bulkAddWalkInAttendance(args: {
           morningSquadPartnerApplied: breakdown.morningSquadPartnerApplied,
           multiGroupApplied: breakdown.multiGroupApplied,
           sessions: 1,
+          earlyBirdPct: breakdown.earlyBirdPct,
         }) as never,
       })
     }

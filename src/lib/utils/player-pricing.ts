@@ -1,6 +1,7 @@
 import { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/lib/supabase/types'
 import { getSessionPrice } from './billing'
+import { getActiveEarlyBird } from './eligibility'
 
 type Supabase = SupabaseClient<Database>
 
@@ -119,6 +120,96 @@ export async function getPlayerSessionPrice(
 ): Promise<number> {
   const { priceCents } = await getPlayerSessionPriceBreakdown(supabase, familyId, programId, programType, playerId)
   return priceCents
+}
+
+export type PlayerEffectiveSessionPriceBreakdown = PlayerSessionPriceBreakdown & {
+  /** Active early-bird percent embedded in the returned price (0 when none). */
+  earlyBirdPct: number
+  /** True when the price was inherited from the player's term per-session rate (or fresh-computed for an enrolled-roster-no-sibling-charge edge case). */
+  inheritedFromTerm: boolean
+}
+
+/**
+ * Effective per-session price for a casual / walk-in attendance.
+ *
+ * When the player is on the term roster for this program
+ * (`program_roster.status='enrolled'`), the casual inherits the same
+ * per-session rate the family agreed to at enrol time — including any
+ * early-bird discount baked into the term charges. This keeps a casual
+ * billed at $22.50 for a player whose term charges are $22.50, instead
+ * of bouncing them to the $25 program default that
+ * `getPlayerSessionPriceBreakdown` would return on its own.
+ *
+ * Order of resolution:
+ *   1. Not on roster → standard walk-in price (matches today's behaviour).
+ *   2. On roster + a non-voided enrolment-source charge exists for
+ *      (player, program) → inherit `pricing_breakdown.total_cents` from
+ *      the most recent such charge. This preserves the exact discount
+ *      stack (multi-group, early-bird tier, family override) that was
+ *      applied at enrol time, even if the program's discount config has
+ *      changed since.
+ *   3. On roster but no sibling charge yet (e.g. enrolment just landed
+ *      and fan-out hasn't fired, or pre-Plan-Atomic-Gathering-Octopus
+ *      data) → recompute fresh via `getPlayerSessionPriceBreakdown` and
+ *      apply today's active early-bird tier.
+ */
+export async function getPlayerEffectiveSessionPriceBreakdown(
+  supabase: Supabase,
+  familyId: string,
+  programId: string,
+  programType: string | null | undefined,
+  playerId: string,
+): Promise<PlayerEffectiveSessionPriceBreakdown> {
+  // 1. Roster check
+  const { data: roster } = await supabase
+    .from('program_roster')
+    .select('id')
+    .eq('program_id', programId)
+    .eq('player_id', playerId)
+    .eq('status', 'enrolled')
+    .maybeSingle()
+
+  if (!roster) {
+    const std = await getPlayerSessionPriceBreakdown(supabase, familyId, programId, programType, playerId)
+    return { ...std, earlyBirdPct: 0, inheritedFromTerm: false }
+  }
+
+  // 2. Inherit from most-recent non-voided enrolment charge
+  const { data: siblingCharge } = await supabase
+    .from('charges')
+    .select('amount_cents, pricing_breakdown')
+    .eq('player_id', playerId)
+    .eq('program_id', programId)
+    .eq('source_type', 'enrollment')
+    .neq('status', 'voided')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  if (siblingCharge?.pricing_breakdown) {
+    const pb = siblingCharge.pricing_breakdown as Record<string, unknown>
+    const totalCents = typeof pb.total_cents === 'number' ? pb.total_cents : siblingCharge.amount_cents
+    const perSessionCents = typeof pb.per_session_cents === 'number' ? pb.per_session_cents : siblingCharge.amount_cents
+    return {
+      priceCents: totalCents,
+      basePriceCents: perSessionCents,
+      morningSquadPartnerApplied: Boolean(pb.morning_squad_partner_applied),
+      multiGroupApplied: typeof pb.multi_group_pct === 'number' && pb.multi_group_pct > 0,
+      earlyBirdPct: typeof pb.early_bird_pct === 'number' ? pb.early_bird_pct : 0,
+      inheritedFromTerm: true,
+    }
+  }
+
+  // 3. Recompute fresh + apply today's active early-bird
+  const std = await getPlayerSessionPriceBreakdown(supabase, familyId, programId, programType, playerId)
+  const { data: program } = await supabase
+    .from('programs')
+    .select('early_pay_discount_pct, early_bird_deadline, early_pay_discount_pct_tier2, early_bird_deadline_tier2')
+    .eq('id', programId)
+    .maybeSingle()
+  const eb = program ? getActiveEarlyBird(program) : { pct: 0, tier: null as 1 | 2 | null, deadline: null as string | null }
+  const final = eb.pct > 0 ? Math.round(std.priceCents * (1 - eb.pct / 100)) : std.priceCents
+  return { ...std, priceCents: final, earlyBirdPct: eb.pct, inheritedFromTerm: true }
 }
 
 export function isMultiGroupEligibleType(programType: string | null | undefined): boolean {
