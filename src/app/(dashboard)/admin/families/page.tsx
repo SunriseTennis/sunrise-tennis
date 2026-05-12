@@ -46,6 +46,32 @@ export default async function FamiliesPage() {
     }
   }
 
+  // Sum received payments per family per method. Drives the new "Paid"
+  // column + per-method filter in the families table. Unlike the balance
+  // columns this is just gross inflow (no allocation netting), so a Square
+  // (FTD) credit shows up here when the toggle is on.
+  const { data: receivedPayments } = familyIds.length
+    ? await supabase
+        .from('payments')
+        .select('family_id, amount_cents, payment_method')
+        .in('family_id', familyIds)
+        .eq('status', 'received')
+    : { data: [] as { family_id: string; amount_cents: number; payment_method: string }[] }
+
+  const paidByFamily = new Map<string, Record<string, number>>()
+  for (const p of receivedPayments ?? []) {
+    const fid = p.family_id as string
+    const row = paidByFamily.get(fid) ?? {}
+    row[p.payment_method] = (row[p.payment_method] ?? 0) + p.amount_cents
+    paidByFamily.set(fid, row)
+  }
+
+  // Union of methods that have at least one received payment — drives the
+  // filter chip set (won't render an unused method).
+  const methodsInUseSet = new Set<string>()
+  for (const p of receivedPayments ?? []) methodsInUseSet.add(p.payment_method)
+  const methodsInUse = Array.from(methodsInUseSet)
+
   const VALID_STATUS = new Set(['active', 'inactive', 'lead', 'archived'])
 
   const rows = familyList.map((f) => {
@@ -82,6 +108,7 @@ export default async function FamiliesPage() {
       playerNames: players.map(p => `${p.first_name} ${p.last_name}`),
       connectionState,
       pendingExpiresAt: pending?.expiresAt ?? null,
+      paidByMethod: paidByFamily.get(f.id) ?? {},
     }
   })
 
@@ -119,7 +146,7 @@ export default async function FamiliesPage() {
       {/* ── Families Table ── */}
       <section className="animate-fade-up" style={{ animationDelay: '80ms' }}>
         {rows.length > 0 ? (
-          <FamiliesTable families={rows} />
+          <FamiliesTable families={rows} methodsInUse={methodsInUse} />
         ) : (
           <EmptyState
             icon={Users}

@@ -17,6 +17,7 @@ import { ArrowUpDown, Search } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
 import { InlineSelect } from '@/components/inline-edit/inline-select'
 import { updateFamilyInline } from '../actions'
+import { formatPaymentMethod } from '@/lib/utils/payment-method'
 
 type ConnectionState = 'connected' | 'invited' | 'invite_expired' | 'not_invited' | 'no_email'
 type FamilyStatus = 'active' | 'inactive' | 'lead' | 'archived'
@@ -34,9 +35,17 @@ interface FamilyRow {
   playerNames: string[]
   connectionState: ConnectionState
   pendingExpiresAt: string | null
+  // Sum of received payments per method (cents). Gross inflow, no allocation
+  // netting — Square (FTD) included when its filter chip is on.
+  paidByMethod: Record<string, number>
 }
 
-type SortKey = 'displayId' | 'familyName' | 'contactName' | 'status' | 'currentBalance' | 'upcomingBalance' | 'connection'
+type SortKey = 'displayId' | 'familyName' | 'contactName' | 'status' | 'currentBalance' | 'upcomingBalance' | 'connection' | 'paid'
+
+// Canonical order for the payment-method filter chips. Methods not in this
+// list fall to the end alphabetically. Mirrors paymentMethodSchema in
+// validation.ts.
+const METHOD_ORDER = ['stripe', 'bank_transfer', 'cash', 'direct_debit', 'square_ftd']
 
 const CONNECTION_LABEL: Record<ConnectionState, string> = {
   connected:      'Connected',
@@ -82,9 +91,19 @@ const SORT_OPTIONS: { value: SortKey; label: string }[] = [
   { value: 'contactName',     label: 'Contact' },
   { value: 'status',          label: 'Status' },
   { value: 'connection',      label: 'Connection' },
+  { value: 'paid',            label: 'Paid' },
   { value: 'currentBalance',  label: 'Current balance' },
   { value: 'upcomingBalance', label: 'Upcoming balance' },
 ]
+
+// Sum a family's paidByMethod restricted to the selected methods set.
+function paidCentsFor(row: FamilyRow, selected: Set<string>): number {
+  let total = 0
+  for (const [method, cents] of Object.entries(row.paidByMethod)) {
+    if (selected.has(method)) total += cents
+  }
+  return total
+}
 
 // ── Status cell ───────────────────────────────────────────────────────────────
 
@@ -101,11 +120,33 @@ function StatusCell({ familyId, status }: { familyId: string; status: FamilyStat
 
 // ── Main table ────────────────────────────────────────────────────────────────
 
-export function FamiliesTable({ families }: { families: FamilyRow[] }) {
+export function FamiliesTable({ families, methodsInUse }: { families: FamilyRow[]; methodsInUse: string[] }) {
   const [search, setSearch] = useState('')
   const [connectionFilter, setConnectionFilter] = useState<'all' | ConnectionState>('all')
   const [sortKey, setSortKey] = useState<SortKey>('displayId')
   const [sortAsc, setSortAsc] = useState(true)
+
+  // Methods sorted canonical first, then any leftover alphabetically. Stable
+  // across renders.
+  const orderedMethods = useMemo(() => {
+    const known = METHOD_ORDER.filter(m => methodsInUse.includes(m))
+    const extra = methodsInUse.filter(m => !METHOD_ORDER.includes(m)).sort()
+    return [...known, ...extra]
+  }, [methodsInUse])
+
+  // Default: every method on. Filter only affects the Paid column +
+  // its totals; does not exclude rows.
+  const [selectedMethods, setSelectedMethods] = useState<Set<string>>(() => new Set(orderedMethods))
+  const allOn = orderedMethods.length > 0 && orderedMethods.every(m => selectedMethods.has(m))
+
+  function toggleMethod(method: string) {
+    setSelectedMethods(prev => {
+      const next = new Set(prev)
+      if (next.has(method)) next.delete(method)
+      else next.add(method)
+      return next
+    })
+  }
 
   function toggleSort(key: SortKey) {
     if (sortKey === key) {
@@ -152,11 +193,13 @@ export function FamiliesTable({ families }: { families: FamilyRow[] }) {
           return dir * (a.projectedBalanceCents - b.projectedBalanceCents)
         case 'connection':
           return dir * (CONNECTION_SORT_ORDER[a.connectionState] - CONNECTION_SORT_ORDER[b.connectionState])
+        case 'paid':
+          return dir * (paidCentsFor(a, selectedMethods) - paidCentsFor(b, selectedMethods))
         default:
           return 0
       }
     })
-  }, [filtered, sortKey, sortAsc])
+  }, [filtered, sortKey, sortAsc, selectedMethods])
 
   const counts = useMemo(() => {
     const c: Record<ConnectionState, number> = {
@@ -167,15 +210,18 @@ export function FamiliesTable({ families }: { families: FamilyRow[] }) {
   }, [families])
 
   // Totals reflect the filtered+searched view — switching filter recomputes.
+  // `paid` also responds to the method-filter toggles (independent of sort).
   const totals = useMemo(() => {
     let current = 0
     let upcoming = 0
+    let paid = 0
     for (const f of sorted) {
       current += f.confirmedBalanceCents
       upcoming += f.projectedBalanceCents
+      paid += paidCentsFor(f, selectedMethods)
     }
-    return { current, upcoming }
-  }, [sorted])
+    return { current, upcoming, paid }
+  }, [sorted, selectedMethods])
 
   const SortHeader = ({ label, sortId }: { label: string; sortId: SortKey }) => (
     <button
@@ -218,6 +264,45 @@ export function FamiliesTable({ families }: { families: FamilyRow[] }) {
         <span className="text-sm text-muted-foreground">{sorted.length} families</span>
       </div>
 
+      {/* Payment-method chips — toggle which methods feed the Paid column.
+          All on by default. Doesn't filter rows; only affects Paid amounts +
+          their totals. Toggling works regardless of current sort. */}
+      {orderedMethods.length > 0 && (
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            Paid filter
+          </span>
+          {orderedMethods.map(method => {
+            const on = selectedMethods.has(method)
+            return (
+              <button
+                key={method}
+                type="button"
+                onClick={() => toggleMethod(method)}
+                className={cn(
+                  'inline-flex items-center rounded-full border px-3 py-1 text-xs font-medium transition-colors',
+                  on
+                    ? 'border-primary/40 bg-primary/10 text-primary'
+                    : 'border-border bg-muted text-muted-foreground hover:border-border/80',
+                )}
+                aria-pressed={on}
+              >
+                {formatPaymentMethod(method)}
+              </button>
+            )
+          })}
+          {!allOn && (
+            <button
+              type="button"
+              onClick={() => setSelectedMethods(new Set(orderedMethods))}
+              className="text-xs font-medium text-primary hover:underline"
+            >
+              Reset (all)
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Mobile sort controls */}
       <div className="mt-4 flex items-center gap-2 md:hidden">
         <label className="text-xs text-muted-foreground" htmlFor="families-mobile-sort">
@@ -247,6 +332,9 @@ export function FamiliesTable({ families }: { families: FamilyRow[] }) {
       {sorted.length > 0 && (
         <div className="mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-border bg-muted/30 px-3 py-2 text-xs md:hidden">
           <span className="font-medium text-foreground">Totals ({sorted.length})</span>
+          <span className="tabular-nums text-muted-foreground">
+            Paid: {formatCurrency(totals.paid)}
+          </span>
           <span className={cn('tabular-nums', totals.current < 0 ? 'text-danger' : 'text-muted-foreground')}>
             Current: {formatCurrency(totals.current)}
           </span>
@@ -277,6 +365,11 @@ export function FamiliesTable({ families }: { families: FamilyRow[] }) {
               <div className="flex items-center justify-between">
                 <span>{f.contactName}</span>
                 <div className="flex items-center gap-3">
+                  {paidCentsFor(f, selectedMethods) > 0 && (
+                    <span className="text-xs tabular-nums text-muted-foreground">
+                      Paid: {formatCurrency(paidCentsFor(f, selectedMethods))}
+                    </span>
+                  )}
                   {f.confirmedBalanceCents !== 0 && (
                     <span className={`text-xs tabular-nums ${f.confirmedBalanceCents < 0 ? 'text-danger' : 'text-muted-foreground'}`}>
                       Current: {formatCurrency(f.confirmedBalanceCents)}
@@ -313,6 +406,7 @@ export function FamiliesTable({ families }: { families: FamilyRow[] }) {
               <TableHead>Mobile</TableHead>
               <TableHead><SortHeader label="Status" sortId="status" /></TableHead>
               <TableHead><SortHeader label="Connection" sortId="connection" /></TableHead>
+              <TableHead className="text-right"><SortHeader label="Paid" sortId="paid" /></TableHead>
               <TableHead className="text-right"><SortHeader label="Current" sortId="currentBalance" /></TableHead>
               <TableHead className="text-right"><SortHeader label="Upcoming" sortId="upcomingBalance" /></TableHead>
             </TableRow>
@@ -354,6 +448,9 @@ export function FamiliesTable({ families }: { families: FamilyRow[] }) {
                       {CONNECTION_LABEL[f.connectionState]}
                     </span>
                   </TableCell>
+                  <TableCell className="text-right tabular-nums text-muted-foreground">
+                    {paidCentsFor(f, selectedMethods) > 0 ? formatCurrency(paidCentsFor(f, selectedMethods)) : '-'}
+                  </TableCell>
                   <TableCell className={`text-right tabular-nums ${f.confirmedBalanceCents < 0 ? 'text-danger' : 'text-muted-foreground'}`}>
                     {f.confirmedBalanceCents !== 0 ? formatCurrency(f.confirmedBalanceCents) : '-'}
                   </TableCell>
@@ -369,6 +466,9 @@ export function FamiliesTable({ families }: { families: FamilyRow[] }) {
               <TableRow>
                 <TableCell colSpan={6} className="text-right text-xs uppercase tracking-wide text-muted-foreground">
                   Totals ({sorted.length} {sorted.length === 1 ? 'family' : 'families'})
+                </TableCell>
+                <TableCell className="text-right tabular-nums text-muted-foreground">
+                  {formatCurrency(totals.paid)}
                 </TableCell>
                 <TableCell className={cn('text-right tabular-nums', totals.current < 0 ? 'text-danger' : 'text-muted-foreground')}>
                   {formatCurrency(totals.current)}
