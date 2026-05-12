@@ -42,13 +42,13 @@ export default async function SessionDetailPage({
 
   const { data: session } = await supabase
     .from('sessions')
-    .select('*, programs:program_id(id, name, level, type, per_session_cents, term_fee_cents), coaches:coach_id(id, name, hourly_rate, is_owner), venues:venue_id(name)')
+    .select('*, programs:program_id(id, name, level, type, per_session_cents, term_fee_cents, early_pay_discount_pct, early_pay_discount_pct_tier2), coaches:coach_id(id, name, hourly_rate, is_owner), venues:venue_id(name)')
     .eq('id', sessionId)
     .single()
 
   if (!session) notFound()
 
-  const program = session.programs as unknown as { id: string; name: string; level: string; type: string; per_session_cents: number | null; term_fee_cents: number | null } | null
+  const program = session.programs as unknown as { id: string; name: string; level: string; type: string; per_session_cents: number | null; term_fee_cents: number | null; early_pay_discount_pct: number | null; early_pay_discount_pct_tier2: number | null } | null
   const sessionCoach = session.coaches as unknown as { id: string; name: string; hourly_rate: { group_rate_cents?: number; private_rate_cents?: number } | null; is_owner: boolean } | null
   const venue = session.venues as unknown as { name: string } | null
 
@@ -388,6 +388,8 @@ export default async function SessionDetailPage({
           walkInExcludedIds={Array.from(presentInSession)}
           termExcludedIds={Array.from(enrolledInProgram)}
           futureSessionCount={futureSessionCount}
+          earlyBirdTier1Pct={program?.early_pay_discount_pct ?? null}
+          earlyBirdTier2Pct={program?.early_pay_discount_pct_tier2 ?? null}
         />
       )}
 

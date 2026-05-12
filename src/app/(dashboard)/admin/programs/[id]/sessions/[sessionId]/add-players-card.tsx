@@ -24,6 +24,8 @@ export function AddPlayersCard({
   walkInExcludedIds,
   termExcludedIds,
   futureSessionCount,
+  earlyBirdTier1Pct,
+  earlyBirdTier2Pct,
 }: {
   sessionId: string
   programId: string
@@ -35,12 +37,20 @@ export function AddPlayersCard({
   termExcludedIds: string[]
   /** How many future sessions exist for this program — drives the "X future sessions" preview. */
   futureSessionCount: number
+  /** Configured early-bird tiers on this program — drives the EB override picker. */
+  earlyBirdTier1Pct: number | null
+  earlyBirdTier2Pct: number | null
 }) {
   const router = useRouter()
   const [mode, setMode] = useState<Mode>('walkin')
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [search, setSearch] = useState('')
   const [notes, setNotes] = useState('')
+  // Early-bird override for term mode. Same shape as <BulkEnrolForm> on the
+  // program detail page. 'auto' uses today's deadline-based logic; the others
+  // force a specific tier regardless of date — for retroactive enrolments
+  // started from a specific session (May 4) when the deadline has passed.
+  const [earlyBirdOverride, setEarlyBirdOverride] = useState<'auto' | 'tier1' | 'tier2' | 'none'>('auto')
   const [isPending, startTransition] = useTransition()
   const [feedback, setFeedback] = useState<{ kind: 'success' | 'error'; message: string } | null>(null)
 
@@ -95,6 +105,7 @@ export function AddPlayersCard({
         fd.set('booking_type', 'term')
         fd.set('return_to_session_id', sessionId)
         fd.set('from_session_id', sessionId)
+        fd.set('early_bird_override', earlyBirdOverride)
         if (notes.trim()) fd.set('notes', notes.trim())
         try {
           await bulkEnrolPlayers(fd)
@@ -161,6 +172,30 @@ export function AddPlayersCard({
               onChange={(e) => setNotes(e.target.value)}
               maxLength={1000}
             />
+          </div>
+        )}
+
+        {mode === 'term' && (
+          <div className="mt-3">
+            <Label htmlFor="eb-override">Early-bird discount</Label>
+            <select
+              id="eb-override"
+              className="mt-1 block w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+              value={earlyBirdOverride}
+              onChange={(e) => setEarlyBirdOverride(e.target.value as 'auto' | 'tier1' | 'tier2' | 'none')}
+            >
+              <option value="auto">Auto (use program default for today)</option>
+              {earlyBirdTier1Pct && earlyBirdTier1Pct > 0 && (
+                <option value="tier1">Force Tier 1 ({earlyBirdTier1Pct}%)</option>
+              )}
+              {earlyBirdTier2Pct && earlyBirdTier2Pct > 0 && (
+                <option value="tier2">Force Tier 2 ({earlyBirdTier2Pct}%)</option>
+              )}
+              <option value="none">Force none (no discount)</option>
+            </select>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Use to honour a discount when enroling retroactively from this session and the deadline has passed.
+            </p>
           </div>
         )}
 
