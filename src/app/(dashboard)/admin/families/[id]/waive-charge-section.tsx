@@ -16,6 +16,8 @@ interface Charge {
   status: string
   type: string
   created_at: string | null
+  /** Session date when this charge is tied to a specific session; preferred over `created_at` for display. */
+  session_date?: string | null
 }
 
 export function WaiveChargeSection({ charges }: { charges: Charge[] }) {
@@ -55,7 +57,11 @@ export function WaiveChargeSection({ charges }: { charges: Charge[] }) {
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-foreground">{charge.description}</p>
                   <p className="text-xs text-muted-foreground">
-                    {charge.created_at ? formatDate(charge.created_at) : '-'}
+                    {charge.session_date
+                      ? formatDate(charge.session_date)
+                      : charge.created_at
+                        ? formatDate(charge.created_at)
+                        : '-'}
                     {' - '}
                     <span className="capitalize">{charge.type}</span>
                   </p>

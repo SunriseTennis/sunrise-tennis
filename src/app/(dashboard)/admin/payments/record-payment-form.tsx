@@ -23,6 +23,8 @@ interface ChargeRow {
   amount_cents: number
   type: string
   created_at: string | null
+  /** Session date when this charge is tied to a specific session; preferred over `created_at` for display. */
+  session_date?: string | null
 }
 
 export function RecordPaymentForm({
@@ -51,14 +53,22 @@ export function RecordPaymentForm({
     )
     supabase
       .from('charges')
-      .select('id, description, amount_cents, type, created_at')
+      .select('id, description, amount_cents, type, created_at, session_id, sessions:session_id(date)')
       .eq('family_id', familyId)
       .in('status', ['pending', 'confirmed'])
       .gt('amount_cents', 0)
       .order('created_at', { ascending: true })
       .limit(50)
       .then(({ data }) => {
-        setCharges(data ?? [])
+        const rows = (data ?? []).map(c => ({
+          id: c.id,
+          description: c.description,
+          amount_cents: c.amount_cents,
+          type: c.type,
+          created_at: c.created_at,
+          session_date: (c.sessions as unknown as { date: string } | null)?.date ?? null,
+        }))
+        setCharges(rows)
         setSelectedChargeIds(new Set())
         setLoading(false)
       })
@@ -179,7 +189,11 @@ export function RecordPaymentForm({
                       <div className="flex-1 min-w-0">
                         <p className="truncate text-foreground">{c.description}</p>
                         <p className="text-xs text-muted-foreground">
-                          {c.created_at ? formatDate(c.created_at) : '-'}
+                          {c.session_date
+                            ? formatDate(c.session_date)
+                            : c.created_at
+                              ? formatDate(c.created_at)
+                              : '-'}
                           {' · '}
                           <span className="capitalize">{c.type}</span>
                         </p>

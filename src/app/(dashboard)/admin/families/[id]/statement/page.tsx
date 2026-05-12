@@ -35,9 +35,13 @@ export default async function FamilyStatementPage({ params }: { params: Promise<
 
   for (const c of charges ?? []) {
     const session = c.sessions as unknown as { date: string; status: string } | null
+    // Session date is the meaningful date for per-session charges (term enrol fan-out
+    // wrote all charges with the same created_at at enrol time). Fall back to created_at
+    // for charges not tied to a session (manual adjustments, voucher redemptions, etc.).
+    const displayDate = session?.date ?? c.created_at ?? ''
     if (c.amount_cents >= 0) {
       entries.push({
-        date: c.created_at ?? '',
+        date: displayDate,
         description: c.description,
         debit: c.amount_cents,
         credit: 0,
@@ -47,7 +51,7 @@ export default async function FamilyStatementPage({ params }: { params: Promise<
       })
     } else {
       entries.push({
-        date: c.created_at ?? '',
+        date: displayDate,
         description: c.description,
         debit: 0,
         credit: Math.abs(c.amount_cents),

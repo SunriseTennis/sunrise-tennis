@@ -39,26 +39,38 @@ export function AttendanceForm({
   const [savedAt, setSavedAt] = useState<number | null>(null)
   const [isPending, startTransition] = useTransition()
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Refs mirror the latest state so the debounced flush isn't bitten by the
+  // stale closure that captures `dirty` / `local` at click time (before the
+  // matching setState has applied) — a single click would otherwise schedule
+  // a flush whose captured `dirty` is still empty and short-circuit, losing
+  // the click entirely. In a multi-click burst the LAST click would always
+  // be dropped (its setDirty hadn't applied when the timer-bound flush
+  // captured `dirty`).
+  const dirtyRef = useRef<Set<string>>(new Set())
+  const localRef = useRef<Record<string, AttendanceStatus>>({})
+  useEffect(() => { localRef.current = local }, [local])
 
   useEffect(() => () => { if (timerRef.current) clearTimeout(timerRef.current) }, [])
 
   function pick(playerId: string, next: AttendanceStatus) {
-    setLocal(prev => ({ ...prev, [playerId]: next }))
-    setDirty(prev => {
-      const s = new Set(prev)
-      s.add(playerId)
-      return s
+    setLocal(prev => {
+      const updated = { ...prev, [playerId]: next }
+      localRef.current = updated
+      return updated
     })
+    dirtyRef.current.add(playerId)
+    setDirty(new Set(dirtyRef.current))
     if (timerRef.current) clearTimeout(timerRef.current)
     timerRef.current = setTimeout(() => flush(), AUTOSAVE_DELAY_MS)
   }
 
   function flush() {
+    const playersToSubmit = Array.from(dirtyRef.current)
+    if (playersToSubmit.length === 0) return
+    dirtyRef.current = new Set()
     startTransition(async () => {
-      const playersToSubmit = dirty.size > 0 ? Array.from(dirty) : []
-      if (playersToSubmit.length === 0) return
       const fd = new FormData()
-      for (const pid of playersToSubmit) fd.append(`attendance_${pid}`, local[pid])
+      for (const pid of playersToSubmit) fd.append(`attendance_${pid}`, localRef.current[pid])
       try {
         await updateAttendance(sessionId, fd)
       } catch (e) {

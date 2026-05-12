@@ -36,7 +36,7 @@ export default async function FamilyDetailPage({ params, searchParams }: PagePro
     supabase.from('programs').select('id, name, type').eq('status', 'active').order('name'),
     supabase.from('coaches').select('id, name, private_opt_in_required, delivers_privates').eq('status', 'active').order('name'),
     supabase.from('player_allowed_coaches').select('player_id, coach_id, auto_approve'),
-    supabase.from('charges').select('id, description, amount_cents, status, type, created_at').eq('family_id', id).in('status', ['pending', 'confirmed']).gt('amount_cents', 0).order('created_at', { ascending: false }).limit(50),
+    supabase.from('charges').select('id, description, amount_cents, status, type, created_at, session_id, sessions:session_id(date)').eq('family_id', id).in('status', ['pending', 'confirmed']).gt('amount_cents', 0).order('created_at', { ascending: false }).limit(50),
     supabase.from('invitations').select('id, email, expires_at, created_at, token').eq('family_id', id).eq('status', 'pending').order('created_at', { ascending: false }),
   ])
 
@@ -168,7 +168,15 @@ export default async function FamilyDetailPage({ params, searchParams }: PagePro
 
         {/* Outstanding Charges / Waive */}
         {outstandingCharges && outstandingCharges.length > 0 && (
-          <WaiveChargeSection charges={outstandingCharges} />
+          <WaiveChargeSection charges={outstandingCharges.map(c => ({
+            id: c.id,
+            description: c.description,
+            amount_cents: c.amount_cents,
+            status: c.status,
+            type: c.type,
+            created_at: c.created_at,
+            session_date: (c.sessions as unknown as { date: string } | null)?.date ?? null,
+          }))} />
         )}
 
         {/* Private Lesson Coaches — Plan 24 collapsed by default */}
