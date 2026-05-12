@@ -46,6 +46,8 @@ export default async function FamiliesPage() {
     }
   }
 
+  const VALID_STATUS = new Set(['active', 'inactive', 'lead', 'archived'])
+
   const rows = familyList.map((f) => {
     const contact = f.primary_contact as { name?: string; phone?: string; email?: string } | null
     const balanceRow = f.family_balance as unknown as { balance_cents: number; confirmed_balance_cents: number; projected_balance_cents: number } | null
@@ -63,13 +65,17 @@ export default async function FamiliesPage() {
     else if (!hasEmail) connectionState = 'no_email'
     else connectionState = 'not_invited'
 
+    const rawStatus = (f.status ?? 'active') as string
+    const status: 'active' | 'inactive' | 'lead' | 'archived' =
+      VALID_STATUS.has(rawStatus) ? (rawStatus as 'active' | 'inactive' | 'lead' | 'archived') : 'active'
+
     return {
       id: f.id,
       displayId: f.display_id,
       familyName: f.family_name,
       contactName: contact?.name ?? '',
       contactPhone: contact?.phone ?? '',
-      status: f.status ?? 'active',
+      status,
       balanceCents: balanceRow?.balance_cents ?? 0,
       confirmedBalanceCents: balanceRow?.confirmed_balance_cents ?? 0,
       projectedBalanceCents: balanceRow?.projected_balance_cents ?? 0,

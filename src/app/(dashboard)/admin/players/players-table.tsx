@@ -38,7 +38,22 @@ interface PlayerRow {
   utr: string | null
 }
 
-type SortKey = 'firstName' | 'lastName' | 'dob' | 'age' | 'family' | 'utr' | 'compStatus' | 'track' | 'status' | 'gender'
+type SortKey = 'firstName' | 'lastName' | 'dob' | 'age' | 'family' | 'classifications' | 'programs' | 'utr' | 'compStatus' | 'track' | 'status' | 'gender'
+
+const SORT_OPTIONS: { value: SortKey; label: string }[] = [
+  { value: 'firstName',       label: 'First name' },
+  { value: 'lastName',        label: 'Last name' },
+  { value: 'dob',             label: 'DOB' },
+  { value: 'age',             label: 'Age' },
+  { value: 'family',          label: 'Family' },
+  { value: 'classifications', label: 'Classification' },
+  { value: 'track',           label: 'Track' },
+  { value: 'gender',          label: 'Gender' },
+  { value: 'status',          label: 'Status' },
+  { value: 'programs',        label: 'Programs (count)' },
+  { value: 'utr',             label: 'UTR' },
+  { value: 'compStatus',      label: 'Comp (count)' },
+]
 
 function calcAge(dob: string | null): number | null {
   if (!dob) return null
@@ -379,6 +394,19 @@ export function PlayersTable({ players }: { players: PlayerRow[] }) {
         }
         case 'family':
           return dir * a.familyDisplayId.localeCompare(b.familyDisplayId)
+        case 'classifications': {
+          // Rank by the lowest ladder index a player carries. Empty → last.
+          const rank = (cs: string[]) => {
+            if (cs.length === 0) return 99
+            const idxs = cs
+              .map(c => ALL_CLASSIFICATIONS.indexOf(c as Classification))
+              .filter(i => i >= 0)
+            return idxs.length === 0 ? 99 : Math.min(...idxs)
+          }
+          return dir * (rank(a.classifications) - rank(b.classifications))
+        }
+        case 'programs':
+          return dir * (a.programs.length - b.programs.length)
         case 'utr': {
           const aUtr = parseFloat(a.utr ?? '0') || 0
           const bUtr = parseFloat(b.utr ?? '0') || 0
@@ -462,13 +490,38 @@ export function PlayersTable({ players }: { players: PlayerRow[] }) {
         <span className="text-sm text-muted-foreground">{sorted.length} players</span>
       </div>
 
-      {/* Inline-edit hint */}
-      <p className="mt-3 text-xs text-muted-foreground">
+      {/* Inline-edit hint (desktop) */}
+      <p className="mt-3 hidden text-xs text-muted-foreground md:block">
         Click classification chips to toggle. Track, gender, and status save on change.
       </p>
 
+      {/* Mobile sort controls */}
+      <div className="mt-4 flex items-center gap-2 md:hidden">
+        <label className="text-xs text-muted-foreground" htmlFor="players-mobile-sort">
+          Sort
+        </label>
+        <select
+          id="players-mobile-sort"
+          value={sortKey}
+          onChange={(e) => setSortKey(e.target.value as SortKey)}
+          className={cn(selectClasses, 'flex-1')}
+        >
+          {SORT_OPTIONS.map(o => (
+            <option key={o.value} value={o.value}>{o.label}</option>
+          ))}
+        </select>
+        <button
+          type="button"
+          onClick={() => setSortAsc(!sortAsc)}
+          className={cn(selectClasses, 'px-3')}
+          aria-label={sortAsc ? 'Switch to descending' : 'Switch to ascending'}
+        >
+          {sortAsc ? '↑ Asc' : '↓ Desc'}
+        </button>
+      </div>
+
       {/* Mobile cards (read-only — use desktop for editing) */}
-      <div className="mt-4 space-y-3 md:hidden">
+      <div className="mt-3 space-y-3 md:hidden">
         {sorted.map((p) => {
           const genderUi = genderToUi(p.gender)
           return (
@@ -520,11 +573,11 @@ export function PlayersTable({ players }: { players: PlayerRow[] }) {
               <TableHead><SortHeader label="DOB" sortId="dob" /></TableHead>
               <TableHead><SortHeader label="Age" sortId="age" /></TableHead>
               <TableHead><SortHeader label="Family" sortId="family" /></TableHead>
-              <TableHead>Classifications</TableHead>
+              <TableHead><SortHeader label="Classifications" sortId="classifications" /></TableHead>
               <TableHead><SortHeader label="Track" sortId="track" /></TableHead>
               <TableHead><SortHeader label="Gender" sortId="gender" /></TableHead>
               <TableHead><SortHeader label="Status" sortId="status" /></TableHead>
-              <TableHead>Programs</TableHead>
+              <TableHead><SortHeader label="Programs" sortId="programs" /></TableHead>
               <TableHead><SortHeader label="UTR" sortId="utr" /></TableHead>
               <TableHead><SortHeader label="Comp" sortId="compStatus" /></TableHead>
             </TableRow>

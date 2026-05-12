@@ -3,20 +3,23 @@
 import { useState, useMemo } from 'react'
 import Link from 'next/link'
 import { Input } from '@/components/ui/input'
-import { StatusBadge } from '@/components/status-badge'
 import { formatCurrency } from '@/lib/utils/currency'
 import {
   Table,
   TableBody,
   TableCell,
+  TableFooter,
   TableHead,
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
 import { ArrowUpDown, Search } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
+import { InlineSelect } from '@/components/inline-edit/inline-select'
+import { updateFamilyInline } from '../actions'
 
 type ConnectionState = 'connected' | 'invited' | 'invite_expired' | 'not_invited' | 'no_email'
+type FamilyStatus = 'active' | 'inactive' | 'lead' | 'archived'
 
 interface FamilyRow {
   id: string
@@ -24,7 +27,7 @@ interface FamilyRow {
   familyName: string
   contactName: string
   contactPhone: string
-  status: string
+  status: FamilyStatus
   balanceCents: number
   confirmedBalanceCents: number
   projectedBalanceCents: number
@@ -58,6 +61,45 @@ const CONNECTION_SORT_ORDER: Record<ConnectionState, number> = {
   not_invited:    3,
   no_email:       4,
 }
+
+const STATUS_OPTIONS: { value: FamilyStatus; label: string }[] = [
+  { value: 'active',   label: 'Active' },
+  { value: 'inactive', label: 'Inactive' },
+  { value: 'lead',     label: 'Lead' },
+  { value: 'archived', label: 'Archived' },
+]
+
+const STATUS_STYLES: Record<FamilyStatus, string> = {
+  active:   'bg-success/10 text-success border-success/30',
+  inactive: 'bg-warning/10 text-warning border-warning/30',
+  lead:     'bg-info/10 text-info border-info/30',
+  archived: 'bg-muted text-muted-foreground border-border',
+}
+
+const SORT_OPTIONS: { value: SortKey; label: string }[] = [
+  { value: 'displayId',       label: 'ID' },
+  { value: 'familyName',      label: 'Family name' },
+  { value: 'contactName',     label: 'Contact' },
+  { value: 'status',          label: 'Status' },
+  { value: 'connection',      label: 'Connection' },
+  { value: 'currentBalance',  label: 'Current balance' },
+  { value: 'upcomingBalance', label: 'Upcoming balance' },
+]
+
+// ── Status cell ───────────────────────────────────────────────────────────────
+
+function StatusCell({ familyId, status }: { familyId: string; status: FamilyStatus }) {
+  return (
+    <InlineSelect<FamilyStatus>
+      value={status}
+      options={STATUS_OPTIONS}
+      onSave={(next) => updateFamilyInline(familyId, { status: next })}
+      styles={STATUS_STYLES}
+    />
+  )
+}
+
+// ── Main table ────────────────────────────────────────────────────────────────
 
 export function FamiliesTable({ families }: { families: FamilyRow[] }) {
   const [search, setSearch] = useState('')
@@ -124,6 +166,17 @@ export function FamiliesTable({ families }: { families: FamilyRow[] }) {
     return c
   }, [families])
 
+  // Totals reflect the filtered+searched view — switching filter recomputes.
+  const totals = useMemo(() => {
+    let current = 0
+    let upcoming = 0
+    for (const f of sorted) {
+      current += f.confirmedBalanceCents
+      upcoming += f.projectedBalanceCents
+    }
+    return { current, upcoming }
+  }, [sorted])
+
   const SortHeader = ({ label, sortId }: { label: string; sortId: SortKey }) => (
     <button
       onClick={() => toggleSort(sortId)}
@@ -165,8 +218,46 @@ export function FamiliesTable({ families }: { families: FamilyRow[] }) {
         <span className="text-sm text-muted-foreground">{sorted.length} families</span>
       </div>
 
+      {/* Mobile sort controls */}
+      <div className="mt-4 flex items-center gap-2 md:hidden">
+        <label className="text-xs text-muted-foreground" htmlFor="families-mobile-sort">
+          Sort
+        </label>
+        <select
+          id="families-mobile-sort"
+          value={sortKey}
+          onChange={(e) => setSortKey(e.target.value as SortKey)}
+          className={cn(selectClasses, 'flex-1')}
+        >
+          {SORT_OPTIONS.map(o => (
+            <option key={o.value} value={o.value}>{o.label}</option>
+          ))}
+        </select>
+        <button
+          type="button"
+          onClick={() => setSortAsc(!sortAsc)}
+          className={cn(selectClasses, 'px-3')}
+          aria-label={sortAsc ? 'Switch to descending' : 'Switch to ascending'}
+        >
+          {sortAsc ? '↑ Asc' : '↓ Desc'}
+        </button>
+      </div>
+
+      {/* Mobile totals strip */}
+      {sorted.length > 0 && (
+        <div className="mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-border bg-muted/30 px-3 py-2 text-xs md:hidden">
+          <span className="font-medium text-foreground">Totals ({sorted.length})</span>
+          <span className={cn('tabular-nums', totals.current < 0 ? 'text-danger' : 'text-muted-foreground')}>
+            Current: {formatCurrency(totals.current)}
+          </span>
+          <span className={cn('tabular-nums font-medium', totals.upcoming < 0 ? 'text-danger' : 'text-foreground')}>
+            Upcoming: {formatCurrency(totals.upcoming)}
+          </span>
+        </div>
+      )}
+
       {/* Mobile cards */}
-      <div className="mt-4 space-y-3 md:hidden">
+      <div className="mt-3 space-y-3 md:hidden">
         {sorted.map((f) => (
           <Link
             key={f.id}
@@ -178,7 +269,9 @@ export function FamiliesTable({ families }: { families: FamilyRow[] }) {
                 <p className="font-medium text-foreground">{f.familyName}</p>
                 <p className="text-xs text-muted-foreground">{f.displayId}</p>
               </div>
-              <StatusBadge status={f.status} />
+              <span className={cn('inline-flex rounded-full border px-2 py-0.5 text-[11px] font-medium capitalize', STATUS_STYLES[f.status])}>
+                {f.status}
+              </span>
             </div>
             <div className="mt-2 space-y-1 text-sm text-muted-foreground">
               <div className="flex items-center justify-between">
@@ -251,7 +344,7 @@ export function FamiliesTable({ families }: { families: FamilyRow[] }) {
                     {f.contactPhone || '-'}
                   </TableCell>
                   <TableCell>
-                    <StatusBadge status={f.status} />
+                    <StatusCell familyId={f.id} status={f.status} />
                   </TableCell>
                   <TableCell>
                     <span
@@ -271,6 +364,21 @@ export function FamiliesTable({ families }: { families: FamilyRow[] }) {
               )
             })}
           </TableBody>
+          {sorted.length > 0 && (
+            <TableFooter>
+              <TableRow>
+                <TableCell colSpan={6} className="text-right text-xs uppercase tracking-wide text-muted-foreground">
+                  Totals ({sorted.length} {sorted.length === 1 ? 'family' : 'families'})
+                </TableCell>
+                <TableCell className={cn('text-right tabular-nums', totals.current < 0 ? 'text-danger' : 'text-muted-foreground')}>
+                  {formatCurrency(totals.current)}
+                </TableCell>
+                <TableCell className={cn('text-right tabular-nums font-semibold', totals.upcoming < 0 ? 'text-danger' : 'text-foreground')}>
+                  {formatCurrency(totals.upcoming)}
+                </TableCell>
+              </TableRow>
+            </TableFooter>
+          )}
         </Table>
       </div>
     </div>

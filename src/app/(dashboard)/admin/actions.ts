@@ -299,6 +299,89 @@ export async function updatePlayer(playerId: string, familyId: string, formData:
   redirect(`/admin/families/${familyId}/players/${playerId}`)
 }
 
+// ── Status cascade helpers ─────────────────────────────────────────────
+//
+// When admin flips a player's status, if every non-archived sibling now
+// agrees on one bucket (active / inactive / archived), the family rolls
+// over to match. When admin flips a family's status, all players follow.
+// 'lead' is a one-way carve-out — never cascade in either direction.
+//
+// Both helpers are best-effort secondaries: on RLS or transport failure
+// they log and return, letting the primary write keep its success.
+
+type AdminSupabaseClient = Awaited<ReturnType<typeof createClient>>
+
+async function cascadeFamilyFromPlayers(
+  supabase: AdminSupabaseClient,
+  familyId: string,
+): Promise<void> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: players, error: playersErr } = await (supabase.from('players') as any)
+    .select('status')
+    .eq('family_id', familyId)
+
+  if (playersErr) {
+    console.error('[cascadeFamilyFromPlayers] read players:', playersErr.message)
+    return
+  }
+  if (!players || players.length === 0) return // no players → leave family alone
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: fam, error: famErr } = await (supabase.from('families') as any)
+    .select('status')
+    .eq('id', familyId)
+    .single()
+  if (famErr || !fam) {
+    if (famErr) console.error('[cascadeFamilyFromPlayers] read family:', famErr.message)
+    return
+  }
+  if (fam.status === 'lead') return // lead families never auto-flip
+
+  // Archived players are "gone" — they don't block an all-active rollup.
+  const live = (players as Array<{ status: string }>).filter(p => p.status !== 'archived')
+
+  let rollup: 'active' | 'inactive' | 'archived' | null = null
+  if (live.length === 0) {
+    // every player is archived → family becomes archived too
+    rollup = 'archived'
+  } else {
+    const statuses = new Set(live.map(p => p.status))
+    if (statuses.size === 1) {
+      const [only] = [...statuses]
+      if (only === 'active' || only === 'inactive') rollup = only
+    }
+  }
+
+  if (!rollup) return
+  if (rollup === fam.status) return // already matches
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error: writeErr } = await (supabase.from('families') as any)
+    .update({ status: rollup })
+    .eq('id', familyId)
+  if (writeErr) {
+    console.error('[cascadeFamilyFromPlayers] write family:', writeErr.message)
+  }
+}
+
+async function cascadePlayersFromFamily(
+  supabase: AdminSupabaseClient,
+  familyId: string,
+  newStatus: 'active' | 'inactive' | 'archived' | 'lead',
+): Promise<void> {
+  // 'lead' families don't carry the cascade — players have no 'lead' status,
+  // and a family being marked a lead shouldn't bulk-deactivate real players.
+  if (newStatus === 'lead') return
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await (supabase.from('players') as any)
+    .update({ status: newStatus })
+    .eq('family_id', familyId)
+  if (error) {
+    console.error('[cascadePlayersFromFamily]:', error.message)
+  }
+}
+
 /**
  * Inline-edit a single player. Accepts a partial patch — only fields
  * present in the payload are written. Auths admin and filters constrained
@@ -423,6 +506,12 @@ export async function updatePlayerInline(
   if (row?.family_id) {
     revalidatePath(`/admin/families/${row.family_id}`)
     revalidatePath(`/admin/families/${row.family_id}/players/${playerId}`)
+    // If status changed, roll up to the family — if every non-archived
+    // sibling agrees, family follows. Best-effort; logs on failure.
+    if (patch.status !== undefined) {
+      await cascadeFamilyFromPlayers(supabase, row.family_id as string)
+      revalidatePath('/admin/families')
+    }
   }
   return {}
 }
@@ -551,6 +640,13 @@ export async function updateFamilyInline(
 
   revalidatePath(`/admin/families/${familyId}`)
   revalidatePath('/admin/families')
+
+  // If status changed, cascade to players. 'lead' never cascades.
+  if (patch.status !== undefined) {
+    await cascadePlayersFromFamily(supabase, familyId, patch.status)
+    revalidatePath('/admin/players')
+  }
+
   return {}
 }
 
@@ -2435,8 +2531,13 @@ export async function setFamilyStatus(
     redirect(`/admin/families/${familyId}?error=${encodeURIComponent('Update failed')}`)
   }
 
+  // Cascade to players. 'archived' / 'inactive' / 'active' all bulk-flip
+  // siblings; the danger-zone button only sends those three.
+  await cascadePlayersFromFamily(supabase, familyId, status)
+
   revalidatePath('/admin/families')
   revalidatePath(`/admin/families/${familyId}`)
+  revalidatePath('/admin/players')
   redirect(`/admin/families/${familyId}?success=${encodeURIComponent(`Family ${status === 'archived' ? 'archived' : status === 'inactive' ? 'set to inactive' : 'reactivated'}`)}`)
 }
 
