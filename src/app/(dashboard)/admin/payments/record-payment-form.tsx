@@ -11,8 +11,9 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Card, CardContent } from '@/components/ui/card'
 import { createBrowserClient } from '@supabase/ssr'
+import { formatPaymentMethod } from '@/lib/utils/payment-method'
 
-const PAYMENT_METHODS = ['stripe', 'bank_transfer', 'cash']
+const PAYMENT_METHODS = ['stripe', 'bank_transfer', 'cash', 'square_ftd']
 
 const selectClass = 'mt-1 block w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary'
 
@@ -237,7 +238,7 @@ export function RecordPaymentForm({
             >
               {PAYMENT_METHODS.map((m) => (
                 <option key={m} value={m}>
-                  {m.replace('_', ' ')}
+                  {formatPaymentMethod(m)}
                 </option>
               ))}
             </select>

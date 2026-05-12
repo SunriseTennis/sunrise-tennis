@@ -31,11 +31,18 @@ export function BulkEnrolForm({
   programLevel,
   families,
   existingPlayerIds,
+  earlyBirdTier1Pct,
+  earlyBirdTier2Pct,
 }: {
   programId: string
   programLevel: string
   families: Family[]
   existingPlayerIds: string[]
+  // Configured early-bird tiers on this program. Passed in so the override
+  // select can show the actual percentages (e.g. "Tier 1 (15%)"). Nulls /
+  // zeros mean that tier isn't configured and its option is hidden.
+  earlyBirdTier1Pct: number | null
+  earlyBirdTier2Pct: number | null
 }) {
   // Default-open when there are zero enrolled — surfaces the form on a fresh
   // program. Once at least one player is enrolled, defaults closed so the
@@ -45,6 +52,12 @@ export function BulkEnrolForm({
   const [search, setSearch] = useState('')
   const [bookingType, setBookingType] = useState('term')
   const [notes, setNotes] = useState('')
+  // Early-bird override (term enrolments only). 'auto' = use program's
+  // configured tier/deadline logic (current behaviour). 'tier1' / 'tier2' /
+  // 'none' force the corresponding pct regardless of today's date — used for
+  // retroactive enrolments where the deadline has passed but the family
+  // qualified under the original timing.
+  const [earlyBirdOverride, setEarlyBirdOverride] = useState<'auto' | 'tier1' | 'tier2' | 'none'>('auto')
 
   const existingSet = useMemo(() => new Set(existingPlayerIds), [existingPlayerIds])
 
@@ -151,6 +164,32 @@ export function BulkEnrolForm({
             />
           </div>
 
+          {/* Early-bird override — term enrolments only */}
+          {bookingType === 'term' && (
+            <div>
+              <Label htmlFor="bulk-eb-override">Early-bird discount</Label>
+              <select
+                id="bulk-eb-override"
+                className={selectClass}
+                value={earlyBirdOverride}
+                onChange={(e) => setEarlyBirdOverride(e.target.value as 'auto' | 'tier1' | 'tier2' | 'none')}
+              >
+                <option value="auto">Auto (use program default for today)</option>
+                {earlyBirdTier1Pct && earlyBirdTier1Pct > 0 && (
+                  <option value="tier1">Force Tier 1 ({earlyBirdTier1Pct}%)</option>
+                )}
+                {earlyBirdTier2Pct && earlyBirdTier2Pct > 0 && (
+                  <option value="tier2">Force Tier 2 ({earlyBirdTier2Pct}%)</option>
+                )}
+                <option value="none">Force none (no discount)</option>
+              </select>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Use to honour a discount on a retroactive enrolment when the
+                deadline has passed.
+              </p>
+            </div>
+          )}
+
           {/* Select all / clear */}
           <div className="flex items-center justify-between">
             <span className="text-xs text-muted-foreground">
@@ -199,6 +238,7 @@ export function BulkEnrolForm({
             <input type="hidden" name="player_ids" value={JSON.stringify([...selected])} />
             <input type="hidden" name="booking_type" value={bookingType} />
             <input type="hidden" name="notes" value={notes} />
+            <input type="hidden" name="early_bird_override" value={earlyBirdOverride} />
             <Button type="submit" disabled={selected.size === 0} className="gap-2">
               <UserPlus className="size-4" />
               {submitLabel}

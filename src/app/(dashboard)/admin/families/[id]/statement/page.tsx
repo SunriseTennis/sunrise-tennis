@@ -5,6 +5,7 @@ import { formatDate } from '@/lib/utils/dates'
 import { PageHeader } from '@/components/page-header'
 import { Card, CardContent } from '@/components/ui/card'
 import { StatementWaiveButton } from './statement-waive-button'
+import { formatPaymentMethod } from '@/lib/utils/payment-method'
 
 export default async function FamilyStatementPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -60,7 +61,7 @@ export default async function FamilyStatementPage({ params }: { params: Promise<
   for (const p of payments ?? []) {
     entries.push({
       date: p.created_at ?? p.received_at ?? '',
-      description: p.description || `Payment (${p.payment_method.replace('_', ' ')})`,
+      description: p.description || `Payment (${formatPaymentMethod(p.payment_method)})`,
       debit: 0,
       credit: p.amount_cents,
       type: 'payment',

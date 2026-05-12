@@ -638,6 +638,8 @@ export default async function ProgramDetailPage({
             const p = r.players as unknown as { id: string } | null
             return p?.id ?? ''
           }).filter(Boolean)}
+          earlyBirdTier1Pct={program.early_pay_discount_pct ?? null}
+          earlyBirdTier2Pct={program.early_pay_discount_pct_tier2 ?? null}
         />
 
         <ProgramEditForm program={program} />

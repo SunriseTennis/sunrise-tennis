@@ -7,6 +7,7 @@ import { EmptyState } from '@/components/empty-state'
 import { CreditCard, ChevronDown, CheckCircle2, Clock, CloudRain, XCircle } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
 import { PricingBreakdownPanel, aggregateBundleBreakdown, type PricingBreakdownData } from '@/components/pricing-breakdown-panel'
+import { formatPaymentMethod } from '@/lib/utils/payment-method'
 
 // SA school terms 2026 (approximate)
 const TERMS: { label: string; start: string; end: string }[] = [
@@ -132,10 +133,6 @@ function cleanDescription(desc: string): string {
   return desc.replace(/\s*-\s*\d{4}-\d{2}-\d{2}\s*$/, '')
 }
 
-function methodLabel(method: string): string {
-  return method.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
-}
-
 function PaymentCard({ payment }: { payment: Payment }) {
   const [expanded, setExpanded] = useState(false)
   const allocCount = payment.allocations.length
@@ -159,7 +156,7 @@ function PaymentCard({ payment }: { payment: Payment }) {
               {payment.date ? formatDate(payment.date) : '-'}
             </span>
             <span className="inline-flex items-center rounded-full border border-border bg-muted/40 px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
-              {methodLabel(payment.method)}
+              {formatPaymentMethod(payment.method)}
             </span>
             {hasAllocations && (
               <span className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-800">

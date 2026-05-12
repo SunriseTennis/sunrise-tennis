@@ -20,6 +20,7 @@ import {
 } from '@/components/ui/table'
 import { CreditCard, AlertCircle, Bell, Ticket, ChevronRight } from 'lucide-react'
 import { sendOverdueReminders } from './actions'
+import { formatPaymentMethod } from '@/lib/utils/payment-method'
 
 export default async function AdminPaymentsPage({
   searchParams,
@@ -36,6 +37,11 @@ export default async function AdminPaymentsPage({
     .select('*, families:family_id(display_id, family_name)')
     .order('created_at', { ascending: false })
     .limit(50)
+    // square_ftd is pre-Sunrise credit (e.g. Square payments to FTD honoured
+    // on Sunrise accounts), not Sunrise revenue — hidden from this table and
+    // from the receivedTotal hero. Still visible on /admin/families/[id] and
+    // in parent payment history.
+    .neq('payment_method', 'square_ftd')
 
   if (!showAll) {
     // Default: show only received (completed) payments
@@ -200,8 +206,8 @@ export default async function AdminPaymentsPage({
                       <TableCell className="text-slate-blue">
                         {payment.description || payment.category || '-'}
                       </TableCell>
-                      <TableCell className="capitalize text-slate-blue">
-                        {payment.payment_method.replace('_', ' ')}
+                      <TableCell className="text-slate-blue">
+                        {formatPaymentMethod(payment.payment_method)}
                       </TableCell>
                       <TableCell className="text-right font-medium tabular-nums text-success">
                         {formatCurrency(payment.amount_cents)}

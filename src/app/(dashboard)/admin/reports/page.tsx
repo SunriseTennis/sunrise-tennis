@@ -44,12 +44,14 @@ export default async function AdminReportsPage() {
     { data: programs },
     { data: families },
   ] = await Promise.all([
-    // All payments in current FY
+    // All payments in current FY (excluding square_ftd — pre-Sunrise credit,
+    // not Sunrise revenue)
     supabase
       .from('payments')
       .select('id, amount_cents, payment_method, received_at, family_id, category')
       .gte('received_at', fyStart)
       .lte('received_at', fyEnd)
+      .neq('payment_method', 'square_ftd')
       .order('received_at', { ascending: true }),
     // All charges in current FY
     supabase

@@ -1809,6 +1809,17 @@ export async function bulkEnrolPlayers(formData: FormData) {
   // (regardless of past/future / attendance state). Default behaviour
   // (no field) is unchanged: future-scheduled + past-attended-Present.
   const fromSessionId = (formData.get('from_session_id') as string) || ''
+  // Optional early-bird override (term enrolments only). 'auto' (default) uses
+  // getActiveEarlyBird's date-based logic against the program's tier/deadline
+  // config — same as the parent path. 'tier1' / 'tier2' / 'none' force the
+  // corresponding pct regardless of today's date — for retroactive enrolments
+  // where the deadline has passed but the family qualified under the original
+  // timing.
+  const earlyBirdOverrideRaw = (formData.get('early_bird_override') as string) || 'auto'
+  const earlyBirdOverride: 'auto' | 'tier1' | 'tier2' | 'none' =
+    earlyBirdOverrideRaw === 'tier1' || earlyBirdOverrideRaw === 'tier2' || earlyBirdOverrideRaw === 'none'
+      ? earlyBirdOverrideRaw
+      : 'auto'
 
   if (!programId || !playerIdsRaw) {
     redirect(`/admin/programs/${programId || ''}?error=${encodeURIComponent('Missing required fields')}`)
@@ -1897,14 +1908,33 @@ export async function bulkEnrolPlayers(formData: FormData) {
       .in('id', newPlayerIds),
   ])
 
-  const earlyBirdInfo = isTermEnrollment
-    ? getActiveEarlyBird({
+  // Resolve the active early-bird percent for this enrolment. With override =
+  // 'auto' (the default), this mirrors the parent path's date-based detection.
+  // Other override values force a specific tier (or none) regardless of date,
+  // for retroactive enrolments where the family qualified under the original
+  // timing but the deadline has now passed.
+  const earlyBirdInfo: { pct: number; tier: 1 | 2 | null; deadline: string | null } = !isTermEnrollment
+    ? { pct: 0, tier: null, deadline: null }
+    : earlyBirdOverride === 'tier1'
+    ? {
+        pct: program?.early_pay_discount_pct ?? 0,
+        tier: 1,
+        deadline: program?.early_bird_deadline ?? null,
+      }
+    : earlyBirdOverride === 'tier2'
+    ? {
+        pct: program?.early_pay_discount_pct_tier2 ?? 0,
+        tier: 2,
+        deadline: program?.early_bird_deadline_tier2 ?? null,
+      }
+    : earlyBirdOverride === 'none'
+    ? { pct: 0, tier: null, deadline: null }
+    : getActiveEarlyBird({
         early_pay_discount_pct: program?.early_pay_discount_pct ?? null,
         early_bird_deadline: program?.early_bird_deadline ?? null,
         early_pay_discount_pct_tier2: program?.early_pay_discount_pct_tier2 ?? null,
         early_bird_deadline_tier2: program?.early_bird_deadline_tier2 ?? null,
       })
-    : { pct: 0, tier: null as 1 | 2 | null, deadline: null as string | null }
 
   const earlyBirdMeta = isTermEnrollment
     ? {
