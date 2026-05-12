@@ -58,10 +58,14 @@ export default async function AdminDashboard({
       .in('status', ['owed', 'paid']),
     supabase.from('program_coaches')
       .select('program_id, coach_id, role'),
-    // Calendar sessions — scheduled + completed only (no cancelled)
+    // Calendar sessions — scheduled + completed + cancelled. Cancelled
+    // program sessions render dimmed + line-through via <WeeklyCalendar>'s
+    // sessionStatus styling (Plan delightful-nibbling-sparkle); the page
+    // used to filter them out entirely which caused cancelled sessions to
+    // disappear from the overview after admin cancelled them.
     supabase.from('sessions')
       .select('id, program_id, date, start_time, end_time, status, session_type, coach_id, coaches:coach_id(name), venues:venue_id(name)')
-      .in('status', ['scheduled', 'completed'])
+      .in('status', ['scheduled', 'completed', 'cancelled'])
       .gte('date', termStart)
       .lte('date', sessionEndDate)
       .order('date')
