@@ -51,6 +51,8 @@ type Program = {
 
 export type SessionTally = { completed: number; cancelled: number; planned: number; scheduled?: number }
 
+export type ProgramCoachAssignment = { lead: string; assistants: string[] }
+
 type Tab = 'list' | 'level' | 'type' | 'venue'
 
 const tabs: { key: Tab; label: string; icon: typeof List }[] = [
@@ -60,12 +62,23 @@ const tabs: { key: Tab; label: string; icon: typeof List }[] = [
   { key: 'venue', label: 'Venue', icon: MapPin },
 ]
 
-function ProgramCard({ program, tally }: { program: Program; tally?: SessionTally }) {
+function ProgramCard({ program, tally, coaches }: { program: Program; tally?: SessionTally; coaches?: ProgramCoachAssignment }) {
   const enrolled = program.program_roster?.[0]?.count ?? 0
   const sessionCount = tally ? (tally.scheduled ?? tally.completed + tally.planned) : 0
   const termPrice = program.per_session_cents && sessionCount > 0
     ? program.per_session_cents * sessionCount
     : null
+  const assistantCount = coaches?.assistants.length ?? 0
+  const coachLabel = coaches?.lead
+    ? assistantCount > 0
+      ? `${coaches.lead} +${assistantCount}`
+      : coaches.lead
+    : assistantCount > 0
+      ? `+${assistantCount}`
+      : null
+  const coachTitle = coaches
+    ? `Lead: ${coaches.lead || '—'}${assistantCount > 0 ? ` · Assistants: ${coaches.assistants.join(', ')}` : ''}`
+    : undefined
 
   return (
     <Link
@@ -85,6 +98,7 @@ function ProgramCard({ program, tally }: { program: Program; tally?: SessionTall
         <span className="capitalize">{program.type}</span>
         <span className="capitalize">{program.level}</span>
         <span>{enrolled}{program.max_capacity ? `/${program.max_capacity}` : ''} enrolled</span>
+        {coachLabel && <span title={coachTitle}>{coachLabel}</span>}
         {program.venues && <span>{program.venues.name}</span>}
       </div>
       {(program.per_session_cents || tally) && (
@@ -111,13 +125,13 @@ function ProgramCard({ program, tally }: { program: Program; tally?: SessionTall
   )
 }
 
-function ProgramCards({ programs, tallies }: { programs: Program[]; tallies?: Record<string, SessionTally> }) {
+function ProgramCards({ programs, tallies, coaches }: { programs: Program[]; tallies?: Record<string, SessionTally>; coaches?: Record<string, ProgramCoachAssignment> }) {
   if (programs.length === 0) {
     return <p className="rounded-lg border border-border bg-card p-8 text-center text-sm text-muted-foreground">No programs match.</p>
   }
   return (
     <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-      {programs.map((p) => <ProgramCard key={p.id} program={p} tally={tallies?.[p.id]} />)}
+      {programs.map((p) => <ProgramCard key={p.id} program={p} tally={tallies?.[p.id]} coaches={coaches?.[p.id]} />)}
     </div>
   )
 }
@@ -147,7 +161,7 @@ function sortPrograms(programs: Program[], key: SortKey, dir: SortDir): Program[
   })
 }
 
-export function ProgramViews({ programs, sessionTallies }: { programs: Program[]; sessionTallies?: Record<string, SessionTally> }) {
+export function ProgramViews({ programs, sessionTallies, programCoaches }: { programs: Program[]; sessionTallies?: Record<string, SessionTally>; programCoaches?: Record<string, ProgramCoachAssignment> }) {
   const [tab, setTab] = useState<Tab>('list')
   const [levelFilter, setLevelFilter] = useState('')
   const [typeFilter, setTypeFilter] = useState('')
@@ -218,7 +232,7 @@ export function ProgramViews({ programs, sessionTallies }: { programs: Program[]
       {tab === 'list' && (
         <>
           <div className="mt-4 space-y-3 md:hidden">
-            {sortedPrograms.map((p) => <ProgramCard key={p.id} program={p} tally={sessionTallies?.[p.id]} />)}
+            {sortedPrograms.map((p) => <ProgramCard key={p.id} program={p} tally={sessionTallies?.[p.id]} coaches={programCoaches?.[p.id]} />)}
           </div>
           <div className="mt-4 hidden md:block">
             <div className="overflow-hidden rounded-lg border border-border bg-card shadow-card">
@@ -230,6 +244,7 @@ export function ProgramViews({ programs, sessionTallies }: { programs: Program[]
                     <TableHead><button onClick={() => toggleSort('level')} className="flex items-center gap-1 hover:text-foreground"><span>Level</span><ArrowUpDown className="size-3" /></button></TableHead>
                     <TableHead><button onClick={() => toggleSort('day')} className="flex items-center gap-1 hover:text-foreground"><span>Day / Time</span><ArrowUpDown className="size-3" /></button></TableHead>
                     <TableHead>Enrolled</TableHead>
+                    <TableHead>Coaches</TableHead>
                     <TableHead>Sessions</TableHead>
                     <TableHead className="text-right">Per Session</TableHead>
                     <TableHead className="text-right">Term Total</TableHead>

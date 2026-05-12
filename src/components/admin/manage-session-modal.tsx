@@ -211,6 +211,7 @@ export function ManageSessionModal({
                   programId={data.programId ?? ''}
                   players={data.attendanceFormPlayers}
                   attendanceMap={data.attendanceMap}
+                  silent
                 />
               ) : (
                 <div className="rounded-lg border border-border bg-card/40 px-4 py-6 text-center text-sm text-muted-foreground">
@@ -230,6 +231,7 @@ export function ManageSessionModal({
                   futureSessionCount={data.futureSessionCount}
                   earlyBirdTier1Pct={data.earlyBirdTier1Pct}
                   earlyBirdTier2Pct={data.earlyBirdTier2Pct}
+                  silent
                 />
               )}
 

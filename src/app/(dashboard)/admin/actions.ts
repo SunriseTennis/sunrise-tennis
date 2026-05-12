@@ -1214,9 +1214,14 @@ export async function generateTermSessions(formData: FormData) {
   redirect(`/admin/programs?success=${encodeURIComponent(`Generated ${created} sessions for T${term} ${year}`)}`)
 }
 
-export async function updateAttendance(sessionId: string, formData: FormData) {
+export async function updateAttendance(
+  sessionId: string,
+  formData: FormData,
+  opts?: { silent?: boolean },
+): Promise<{ error?: string } | void> {
   const user = await requireAdmin()
   const supabase = await createClient()
+  const silent = opts?.silent === true
 
   // Parse attendance entries from form: attendance_PLAYERID = present|absent|noshow
   const entries: { playerId: string; status: string }[] = []
@@ -1545,9 +1550,13 @@ export async function updateAttendance(sessionId: string, formData: FormData) {
   const programIdForRedirect = session?.program_id
   if (programIdForRedirect) {
     revalidatePath(`/admin/programs/${programIdForRedirect}/sessions/${sessionId}`)
+    revalidatePath('/admin')
+    if (silent) return
     redirect(`/admin/programs/${programIdForRedirect}/sessions/${sessionId}`)
   }
   revalidatePath('/admin/programs')
+  revalidatePath('/admin')
+  if (silent) return
   redirect('/admin/programs')
 }
 
@@ -2089,9 +2098,13 @@ export async function adminReopenSession(
 
 // ── Bulk Enrol Players ─────────────────────────────────────────────────
 
-export async function bulkEnrolPlayers(formData: FormData) {
+export async function bulkEnrolPlayers(
+  formData: FormData,
+  opts?: { silent?: boolean },
+): Promise<{ error?: string } | void> {
   const user = await requireAdmin()
   const supabase = await createClient()
+  const silent = opts?.silent === true
 
   const programId = formData.get('program_id') as string
   const playerIdsRaw = formData.get('player_ids') as string
@@ -2115,6 +2128,7 @@ export async function bulkEnrolPlayers(formData: FormData) {
       : 'auto'
 
   if (!programId || !playerIdsRaw) {
+    if (silent) return { error: 'Missing required fields' }
     redirect(`/admin/programs/${programId || ''}?error=${encodeURIComponent('Missing required fields')}`)
   }
 
@@ -2122,6 +2136,7 @@ export async function bulkEnrolPlayers(formData: FormData) {
   try { playerIds = JSON.parse(playerIdsRaw) } catch { playerIds = [] }
 
   if (playerIds.length === 0) {
+    if (silent) return { error: 'No players selected' }
     redirect(`/admin/programs/${programId}?error=${encodeURIComponent('No players selected')}`)
   }
 
@@ -2408,6 +2423,7 @@ export async function bulkEnrolPlayers(formData: FormData) {
 
   revalidatePath(`/admin/programs/${programId}`)
   revalidatePath('/admin/sessions')
+  revalidatePath('/admin')
 
   // Optional: stay on the originating session page when admin enrolled
   // from /admin/programs/[id]/sessions/[sessionId]. Defaults to program page.
@@ -2415,8 +2431,10 @@ export async function bulkEnrolPlayers(formData: FormData) {
   const successMsg = `Enrolled ${newPlayerIds.length} player(s)`
   if (returnToSessionId) {
     revalidatePath(`/admin/programs/${programId}/sessions/${returnToSessionId}`)
+    if (silent) return
     redirect(`/admin/programs/${programId}/sessions/${returnToSessionId}?success=${encodeURIComponent(successMsg)}`)
   }
+  if (silent) return
   redirect(`/admin/programs/${programId}?success=${encodeURIComponent(successMsg)}`)
 }
 

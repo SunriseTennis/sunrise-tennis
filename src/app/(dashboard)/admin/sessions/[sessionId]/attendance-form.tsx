@@ -29,7 +29,7 @@ export function AttendanceForm({
     return initial
   })
 
-  const updateWithSession = updateAttendance.bind(null, sessionId)
+  const updateWithSession = async (fd: FormData) => { await updateAttendance(sessionId, fd) }
 
   return (
     <Card>

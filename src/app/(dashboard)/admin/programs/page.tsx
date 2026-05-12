@@ -156,7 +156,7 @@ export default async function ProgramsPage({
       {/* ── Program List ── */}
       <section className="animate-fade-up" style={{ animationDelay: '80ms' }}>
         {filteredPrograms.length > 0 ? (
-          <ProgramViews programs={filteredPrograms as never} sessionTallies={sessionTallies} />
+          <ProgramViews programs={filteredPrograms as never} sessionTallies={sessionTallies} programCoaches={coachMap} />
         ) : (
           <EmptyState
             icon={GraduationCap}

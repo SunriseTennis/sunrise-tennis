@@ -26,6 +26,7 @@ export function AddPlayersCard({
   futureSessionCount,
   earlyBirdTier1Pct,
   earlyBirdTier2Pct,
+  silent = false,
 }: {
   sessionId: string
   programId: string
@@ -40,6 +41,10 @@ export function AddPlayersCard({
   /** Configured early-bird tiers on this program — drives the EB override picker. */
   earlyBirdTier1Pct: number | null
   earlyBirdTier2Pct: number | null
+  /** When true, skip bulkEnrolPlayers' built-in redirect so a caller embedded
+   *  in a modal (e.g. <ManageSessionModal>) stays on its current page. Walk-in
+   *  mode already non-redirects (returns a summary). */
+  silent?: boolean
 }) {
   const router = useRouter()
   const [mode, setMode] = useState<Mode>('walkin')
@@ -108,9 +113,14 @@ export function AddPlayersCard({
         fd.set('early_bird_override', earlyBirdOverride)
         if (notes.trim()) fd.set('notes', notes.trim())
         try {
-          await bulkEnrolPlayers(fd)
+          const res = await bulkEnrolPlayers(fd, silent ? { silent: true } : undefined)
+          if (silent && res?.error) {
+            setFeedback({ kind: 'error', message: res.error })
+            return
+          }
         } catch (e) {
-          // bulkEnrolPlayers redirects on success — Next.js throws NEXT_REDIRECT.
+          // bulkEnrolPlayers redirects on success when not silent — Next.js
+          // throws NEXT_REDIRECT here. Treat that as success.
           const msg = e instanceof Error ? e.message : ''
           if (!msg.includes('NEXT_REDIRECT')) {
             setFeedback({ kind: 'error', message: 'Term enrol failed' })

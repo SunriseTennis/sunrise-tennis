@@ -233,7 +233,7 @@ export function BulkEnrolForm({
           </div>
 
           {/* Submit */}
-          <form action={bulkEnrolPlayers}>
+          <form action={async (fd) => { await bulkEnrolPlayers(fd) }}>
             <input type="hidden" name="program_id" value={programId} />
             <input type="hidden" name="player_ids" value={JSON.stringify([...selected])} />
             <input type="hidden" name="booking_type" value={bookingType} />

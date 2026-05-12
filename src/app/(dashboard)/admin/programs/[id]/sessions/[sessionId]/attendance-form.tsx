@@ -23,11 +23,15 @@ export function AttendanceForm({
   sessionId,
   players,
   attendanceMap,
+  silent = false,
 }: {
   sessionId: string
   programId: string
   players: { id: string; first_name: string; last_name: string; family_id: string; isWalkIn?: boolean }[]
   attendanceMap: Record<string, AttendanceStatus>
+  /** When true, skip updateAttendance's built-in redirect so a caller embedded
+   *  in a modal (e.g. <ManageSessionModal>) stays on its current page. */
+  silent?: boolean
 }) {
   const router = useRouter()
   const [local, setLocal] = useState<Record<string, AttendanceStatus>>(() => {
@@ -72,10 +76,10 @@ export function AttendanceForm({
       const fd = new FormData()
       for (const pid of playersToSubmit) fd.append(`attendance_${pid}`, localRef.current[pid])
       try {
-        await updateAttendance(sessionId, fd)
+        await updateAttendance(sessionId, fd, silent ? { silent: true } : undefined)
       } catch (e) {
-        // updateAttendance redirects on success — Next throws a NEXT_REDIRECT
-        // error that bubbles here. Treat it as success.
+        // updateAttendance redirects on success when not silent — Next throws a
+        // NEXT_REDIRECT error that bubbles here. Treat it as success.
         const msg = e instanceof Error ? e.message : ''
         if (!msg.includes('NEXT_REDIRECT')) {
           console.error('attendance save failed', e)
