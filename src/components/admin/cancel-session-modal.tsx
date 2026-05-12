@@ -81,6 +81,12 @@ export function CancelSessionModal({
 
   return createPortal(
     <div
+      // data-popup-overlay tells <WeeklyCalendar>'s document-mousedown
+      // outside-click handler to treat this modal as an extension of the
+      // popup (the calendar popup opens this modal; both are portaled to
+      // body, so without this opt-in any click inside this reason picker
+      // would close the popup that opened it).
+      data-popup-overlay
       className="fixed inset-0 z-[110] flex items-end sm:items-center justify-center bg-black/40 backdrop-blur-sm animate-fade-in"
       role="dialog"
       aria-modal="true"

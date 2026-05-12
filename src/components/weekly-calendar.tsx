@@ -683,12 +683,21 @@ export function WeeklyCalendar({
 
   const visibleHours = Array.from({ length: maxHour - minHour }, (_, i) => minHour + i)
 
-  // Close popup on outside click
+  // Close popup on outside click.
+  //
+  // Portaled overlays (e.g. <ManageSessionModal>, <CancelSessionModal>) that
+  // open ON TOP of the popup get mounted directly on `document.body`, so
+  // their DOM nodes are NOT inside `popupRef.current`. Without the
+  // `[data-popup-overlay]` opt-in marker below, every click inside such
+  // an overlay looks like an "outside click", which would unmount the
+  // popup (and therefore the overlay) mid-interaction.
   const handleOutsideClick = useCallback((e: MouseEvent) => {
-    if (popupRef.current && !popupRef.current.contains(e.target as Node)) {
-      setPopupEvent(null)
-      setPopupPos(null)
-    }
+    const target = e.target as Node | null
+    if (!target) return
+    if (popupRef.current && popupRef.current.contains(target)) return
+    if (target instanceof Element && target.closest('[data-popup-overlay]')) return
+    setPopupEvent(null)
+    setPopupPos(null)
   }, [])
 
   useEffect(() => {

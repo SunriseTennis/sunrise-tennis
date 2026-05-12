@@ -140,6 +140,12 @@ export function ManageSessionModal({
 
   return createPortal(
     <div
+      // data-popup-overlay tells <WeeklyCalendar>'s document-mousedown
+      // outside-click handler to treat this modal as an extension of the
+      // popup (it's portaled to body, so it's outside the popup's DOM tree —
+      // without this opt-in any click inside the modal would close the
+      // popup that opened it).
+      data-popup-overlay
       className="fixed inset-0 z-[100] flex items-stretch sm:items-center justify-center bg-black/40 backdrop-blur-sm animate-fade-in"
       role="dialog"
       aria-modal="true"
@@ -289,6 +295,7 @@ export function ManageSessionModal({
       {/* Nested confirm modal for Mark complete */}
       {confirmComplete && (
         <div
+          data-popup-overlay
           className="fixed inset-0 z-[120] flex items-center justify-center bg-black/40 backdrop-blur-sm animate-fade-in"
           role="dialog"
           aria-modal="true"
