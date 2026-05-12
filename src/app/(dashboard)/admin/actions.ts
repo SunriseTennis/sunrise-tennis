@@ -21,6 +21,7 @@ import {
   voidCharge,
   getExistingSessionCharge,
   recalculateBalance,
+  recalcFamiliesForSession,
   formatChargeDescription,
 } from '@/lib/utils/billing'
 import { getPlayerSessionPriceBreakdown, getPlayerEffectiveSessionPriceBreakdown, formatDiscountSuffix, buildPricingBreakdown } from '@/lib/utils/player-pricing'
@@ -1973,6 +1974,10 @@ export async function adminCompleteSession(sessionId: string) {
     redirect(`/admin/programs?error=${encodeURIComponent(error.message)}`)
   }
 
+  // Charges for this session now flip from "excluded from confirmed_balance"
+  // to "included" — refresh family_balance for every family with a charge here.
+  await recalcFamiliesForSession(supabase, sessionId)
+
   const pid = session.program_id
   if (pid) {
     revalidatePath(`/admin/programs/${pid}/sessions/${sessionId}`)
@@ -2025,6 +2030,10 @@ export async function adminReopenSession(sessionId: string) {
     }
     redirect(`/admin/programs?error=${encodeURIComponent(error.message)}`)
   }
+
+  // Reverse of complete — charges for this session flip back out of the
+  // confirmed_balance set, so every family with a charge here needs a recalc.
+  await recalcFamiliesForSession(supabase, sessionId)
 
   const pid = session.program_id
   if (pid) {

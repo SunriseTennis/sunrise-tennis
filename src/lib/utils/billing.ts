@@ -28,6 +28,46 @@ export async function recalculateBalance(
 }
 
 /**
+ * Recalculate family_balance for every family with a charge on a given session.
+ *
+ * `confirmed_balance_cents` includes only charges linked to completed sessions
+ * (or no session at all). When a session's status flips between `scheduled`
+ * and `completed`, every charge attached to it moves in or out of the
+ * confirmed set — so every family with a charge on the session needs a fresh
+ * recalc. Without this, `family_balance.confirmed_balance_cents` goes stale
+ * for those families until something else triggers a recalc on them.
+ *
+ * Call this AFTER any UPDATE that flips `sessions.status` between
+ * `scheduled` and `completed`. Cancellation paths don't need it — they void
+ * the charges through the existing billing helpers, which already recalc.
+ *
+ * Documented in `.claude/rules/debugging.md` "family_balance staleness".
+ */
+export async function recalcFamiliesForSession(
+  supabase: Supabase,
+  sessionId: string,
+): Promise<void> {
+  const { data: charges, error } = await supabase
+    .from('charges')
+    .select('family_id')
+    .eq('session_id', sessionId)
+
+  if (error) {
+    console.error('recalcFamiliesForSession: failed to read charges', error.message)
+    return
+  }
+
+  const familyIds = Array.from(new Set((charges ?? []).map(c => c.family_id).filter((id): id is string => !!id)))
+  for (const fid of familyIds) {
+    try {
+      await recalculateBalance(supabase, fid)
+    } catch (e) {
+      console.error(`recalcFamiliesForSession: recalc failed for family ${fid}`, e)
+    }
+  }
+}
+
+/**
  * Get both confirmed and projected balances for a family.
  * - confirmed: payments minus charges for completed sessions + non-session charges
  * - projected: payments minus ALL active charges (includes future bookings)

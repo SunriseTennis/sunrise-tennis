@@ -16,6 +16,7 @@ import {
   formatChargeDescription,
   voidCharge,
   getExistingSessionCharge,
+  recalcFamiliesForSession,
 } from '@/lib/utils/billing'
 import {
   getPlayerSessionPriceBreakdown,
@@ -285,6 +286,10 @@ export async function coachUpdateAttendance(sessionId: string, formData: FormDat
     .update({ status: 'completed' })
     .eq('id', sessionId)
     .eq('status', 'scheduled')
+
+  // Charges for this session now move into the confirmed_balance set — refresh
+  // every family with a charge here so their cached balance matches reality.
+  await recalcFamiliesForSession(supabase, sessionId)
 
   revalidatePath(`/coach/schedule/${sessionId}`)
   redirect(`/coach/schedule/${sessionId}`)
@@ -628,6 +633,10 @@ export async function completePrivateSession(sessionId: string) {
     .from('sessions')
     .update({ status: 'completed', completed_by: user.id })
     .eq('id', sessionId)
+
+  // Charges for this session now move into the confirmed_balance set — refresh
+  // every family with a charge here so their cached balance matches reality.
+  await recalcFamiliesForSession(supabase, sessionId)
 
   // Get booking to find price
   const { data: booking } = await supabase
