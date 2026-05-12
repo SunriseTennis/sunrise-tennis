@@ -31,14 +31,14 @@ export function AdminSessionPopup({ event, onClose }: { event: CalendarEvent; on
   function handleConfirmCancel(payload: { category: 'rain_out' | 'heat_out' | 'other'; reason: string }) {
     if (!event.sessionId) return
     startTransition(async () => {
-      try {
-        const fd = new FormData()
-        fd.set('cancellation_category', payload.category)
-        if (payload.reason) fd.set('cancellation_reason', payload.reason)
-        await cancelSession(event.sessionId!, fd)
-      } catch (e) {
-        const msg = e instanceof Error ? e.message : ''
-        if (!msg.includes('NEXT_REDIRECT')) console.error('cancel session failed', e)
+      const fd = new FormData()
+      fd.set('cancellation_category', payload.category)
+      if (payload.reason) fd.set('cancellation_reason', payload.reason)
+      const res = await cancelSession(event.sessionId!, fd, { silent: true })
+      if (res?.error) {
+        console.error('cancel session failed:', res.error)
+        // Keep the modal open so admin sees something went wrong — they can retry or close.
+        return
       }
       setCancelOpen(false)
       onClose()
@@ -50,11 +50,10 @@ export function AdminSessionPopup({ event, onClose }: { event: CalendarEvent; on
     if (!event.sessionId) return
     if (!confirm('Reopen this session for edits? Status flips back to scheduled. Attendance + charges stay as-is.')) return
     startReopenTransition(async () => {
-      try {
-        await adminReopenSession(event.sessionId!)
-      } catch (e) {
-        const msg = e instanceof Error ? e.message : ''
-        if (!msg.includes('NEXT_REDIRECT')) console.error('reopen failed', e)
+      const res = await adminReopenSession(event.sessionId!, { silent: true })
+      if (res?.error) {
+        console.error('reopen failed:', res.error)
+        return
       }
       onClose()
       router.refresh()

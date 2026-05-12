@@ -99,11 +99,12 @@ export function ManageSessionModal({
 
   function doComplete() {
     startCompleteTransition(async () => {
-      try {
-        await adminCompleteSession(sessionId)
-      } catch (e) {
-        const msg = e instanceof Error ? e.message : ''
-        if (!msg.includes('NEXT_REDIRECT')) console.error('mark complete failed', e)
+      const res = await adminCompleteSession(sessionId, { silent: true })
+      if (res?.error) {
+        console.error('mark complete failed:', res.error)
+        setLoadError(res.error)
+        setConfirmComplete(false)
+        return
       }
       setConfirmComplete(false)
       onClose()
@@ -114,11 +115,11 @@ export function ManageSessionModal({
   function doReopen() {
     if (!confirm('Reopen this session for edits? Status flips back to scheduled. Attendance + charges stay as-is.')) return
     startReopenTransition(async () => {
-      try {
-        await adminReopenSession(sessionId)
-      } catch (e) {
-        const msg = e instanceof Error ? e.message : ''
-        if (!msg.includes('NEXT_REDIRECT')) console.error('reopen failed', e)
+      const res = await adminReopenSession(sessionId, { silent: true })
+      if (res?.error) {
+        console.error('reopen failed:', res.error)
+        setLoadError(res.error)
+        return
       }
       onClose()
       router.refresh()

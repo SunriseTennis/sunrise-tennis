@@ -1551,12 +1551,25 @@ export async function updateAttendance(sessionId: string, formData: FormData) {
   redirect('/admin/programs')
 }
 
-export async function cancelSession(sessionId: string, formData: FormData) {
+/**
+ * `silent: true` skips the final redirect + returns `{ error? }` so callers
+ * invoked from modals/popups (calendar popup, ManageSessionModal) can
+ * `router.refresh()` in place instead of being yanked off `/admin`.
+ * Defaults preserve the existing form-action behaviour for the session
+ * detail page's `<SessionActions>` and the legacy `<CancelSessionForm>`.
+ */
+export async function cancelSession(
+  sessionId: string,
+  formData: FormData,
+  opts?: { silent?: boolean },
+): Promise<{ error?: string } | void> {
   const user = await requireAdmin()
   const supabase = await createClient()
+  const silent = opts?.silent === true
 
   const parsed = parseCancellationFormData(formData)
   if ('error' in parsed) {
+    if (silent) return { error: parsed.error }
     // Try to figure out where to redirect with the validation error.
     const { data: session } = await supabase
       .from('sessions')
@@ -1576,6 +1589,7 @@ export async function cancelSession(sessionId: string, formData: FormData) {
   })
 
   if (result.error) {
+    if (silent) return { error: result.error }
     const { data: session } = await supabase
       .from('sessions')
       .select('program_id')
@@ -1591,6 +1605,7 @@ export async function cancelSession(sessionId: string, formData: FormData) {
   revalidatePath(`/admin/sessions/${sessionId}`)
   revalidatePath('/admin/programs')
   revalidatePath('/admin')
+  if (silent) return
   redirect('/admin/programs')
 }
 
@@ -1903,9 +1918,19 @@ export async function getManageSessionData(sessionId: string): Promise<
 
 // ── Mark Session Complete ─────────────────────────────────────────────
 
-export async function adminCompleteSession(sessionId: string) {
+/**
+ * `silent: true` skips the final redirect + returns `{ error? }` so modal
+ * callers (`<ManageSessionModal>` on `/admin` calendar popup) can stay on
+ * the overview and trigger their own `router.refresh()` instead of being
+ * yanked to the session detail page.
+ */
+export async function adminCompleteSession(
+  sessionId: string,
+  opts?: { silent?: boolean },
+): Promise<{ error?: string } | void> {
   const user = await requireAdmin()
   const supabase = await createClient()
+  const silent = opts?.silent === true
 
   const { data: session } = await supabase
     .from('sessions')
@@ -1914,10 +1939,12 @@ export async function adminCompleteSession(sessionId: string) {
     .single()
 
   if (!session) {
+    if (silent) return { error: 'Session not found' }
     redirect('/admin/programs?error=Session+not+found')
   }
 
   if (session.status !== 'scheduled') {
+    if (silent) return { error: `Session is already ${session.status}` }
     const pid = session.program_id
     if (pid) {
       redirect(`/admin/programs/${pid}/sessions/${sessionId}?error=Session+is+already+${session.status}`)
@@ -1967,6 +1994,7 @@ export async function adminCompleteSession(sessionId: string) {
     .eq('id', sessionId)
 
   if (error) {
+    if (silent) return { error: error.message }
     const pid = session.program_id
     if (pid) {
       redirect(`/admin/programs/${pid}/sessions/${sessionId}?error=${encodeURIComponent(error.message)}`)
@@ -1981,9 +2009,13 @@ export async function adminCompleteSession(sessionId: string) {
   const pid = session.program_id
   if (pid) {
     revalidatePath(`/admin/programs/${pid}/sessions/${sessionId}`)
+    revalidatePath('/admin')
+    if (silent) return
     redirect(`/admin/programs/${pid}/sessions/${sessionId}`)
   }
   revalidatePath('/admin/programs')
+  revalidatePath('/admin')
+  if (silent) return
   redirect('/admin/programs')
 }
 
@@ -1996,9 +2028,13 @@ export async function adminCompleteSession(sessionId: string) {
 //
 // Refuses if the session is cancelled (use createSession or restoreSession
 // path for that — out of scope here).
-export async function adminReopenSession(sessionId: string) {
+export async function adminReopenSession(
+  sessionId: string,
+  opts?: { silent?: boolean },
+): Promise<{ error?: string } | void> {
   await requireAdmin()
   const supabase = await createClient()
+  const silent = opts?.silent === true
 
   const { data: session } = await supabase
     .from('sessions')
@@ -2007,10 +2043,12 @@ export async function adminReopenSession(sessionId: string) {
     .single()
 
   if (!session) {
+    if (silent) return { error: 'Session not found' }
     redirect('/admin/programs?error=Session+not+found')
   }
 
   if (session.status !== 'completed') {
+    if (silent) return { error: 'Only completed sessions can be reopened' }
     const pid = session.program_id
     if (pid) {
       redirect(`/admin/programs/${pid}/sessions/${sessionId}?error=Only+completed+sessions+can+be+reopened`)
@@ -2024,6 +2062,7 @@ export async function adminReopenSession(sessionId: string) {
     .eq('id', sessionId)
 
   if (error) {
+    if (silent) return { error: error.message }
     const pid = session.program_id
     if (pid) {
       redirect(`/admin/programs/${pid}/sessions/${sessionId}?error=${encodeURIComponent(error.message)}`)
@@ -2038,9 +2077,13 @@ export async function adminReopenSession(sessionId: string) {
   const pid = session.program_id
   if (pid) {
     revalidatePath(`/admin/programs/${pid}/sessions/${sessionId}`)
+    revalidatePath('/admin')
+    if (silent) return
     redirect(`/admin/programs/${pid}/sessions/${sessionId}?success=Session+reopened`)
   }
   revalidatePath('/admin/programs')
+  revalidatePath('/admin')
+  if (silent) return
   redirect('/admin/programs')
 }
 
