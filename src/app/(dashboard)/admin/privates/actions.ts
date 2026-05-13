@@ -1550,12 +1550,57 @@ export async function markPrivateAttendance(formData: FormData): Promise<{
     }).catch(err => console.error('[markPrivateAttendance] dispatch failed:', err))
   }
 
-  // 2. Conversion (shared → solo): add top-up + lesson note + notify remaining.
+  // 2. Conversion (shared → solo): MUTATE the remaining player's existing
+  //    charge to the full solo rate + update the description to reflect
+  //    the absent partner. Auto-create a lesson note on the remaining player.
+  //
+  //    Why mutate rather than add a top-up? `charges` carries a partial
+  //    unique index `idx_charges_unique_active` on `(session_id, player_id,
+  //    type)` where status NOT IN ('voided', 'credited'). Adding a second
+  //    active charge on the same triple violates the constraint and throws
+  //    — silently breaking the entire conversion path. Mutating in place
+  //    respects the constraint and yields the right end-state ($80 solo
+  //    charge on the remaining player's side). See Zanshin decision
+  //    `Zanshin/Decisions/platform/private-session-conversion.md`.
   if (isConversion) {
     const remaining = presentPicks[0].booking
-    const absentPick = absentPicks[0] // pick first as the partner name for the body / note
-    const topUpCents = remaining.price_cents
-    if (topUpCents > 0) {
+    const absentPick = absentPicks[0]
+    const partnerName = absentPick.booking.players?.first_name ?? 'partner'
+
+    // Full solo rate = sum of every booking's price on this session.
+    const fullSoloCents = allBookings.reduce((sum, b) => sum + (b.price_cents ?? 0), 0)
+
+    const newDescription = formatChargeDescription({
+      playerName: remaining.players?.first_name,
+      label: `Solo private (${partnerName} did not attend)`,
+      date: session.date,
+    })
+
+    // Find existing active charge for the remaining player on this session.
+    const { data: existingRemainingCharge } = await supabase
+      .from('charges')
+      .select('id')
+      .eq('session_id', sessionId)
+      .eq('player_id', remaining.player_id)
+      .eq('type', 'private')
+      .in('status', ['pending', 'confirmed'])
+      .maybeSingle()
+
+    const { recalculateBalance } = await import('@/lib/utils/billing')
+
+    if (existingRemainingCharge && fullSoloCents > 0) {
+      // Mutate in place.
+      const { error: upErr } = await supabase
+        .from('charges')
+        .update({
+          amount_cents: fullSoloCents,
+          description: newDescription,
+        })
+        .eq('id', existingRemainingCharge.id)
+      if (upErr) console.error('[markPrivateAttendance] charge mutate failed:', upErr.message)
+      await recalculateBalance(supabase, remaining.family_id)
+    } else if (fullSoloCents > 0) {
+      // Defensive fallback: no existing charge — create one (unique index allows it).
       await createCharge(supabase, {
         familyId: remaining.family_id,
         playerId: remaining.player_id,
@@ -1563,12 +1608,8 @@ export async function markPrivateAttendance(formData: FormData): Promise<{
         sourceType: 'enrollment',
         sessionId,
         bookingId: remaining.id,
-        description: formatChargeDescription({
-          playerName: remaining.players?.first_name,
-          label: 'Solo private rate (partner did not attend)',
-          date: session.date,
-        }),
-        amountCents: topUpCents,
+        description: newDescription,
+        amountCents: fullSoloCents,
         status: 'confirmed',
         createdBy: user.id,
       })
@@ -1576,7 +1617,6 @@ export async function markPrivateAttendance(formData: FormData): Promise<{
 
     // Auto-create lesson_notes row on remaining player (only if no row exists
     // yet — coach may have written one before the picker fired).
-    const partnerName = absentPick.booking.players?.first_name ?? 'partner'
     const { data: existingNote } = await supabase
       .from('lesson_notes')
       .select('id')
