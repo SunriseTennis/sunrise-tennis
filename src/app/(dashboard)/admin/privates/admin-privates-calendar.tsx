@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { WeeklyCalendar, type CalendarEvent } from '@/components/weekly-calendar'
 import { StatusBadge } from '@/components/status-badge'
-import { X, Eye, Users, Clock, DollarSign, UserMinus } from 'lucide-react'
+import { X, Eye, Users, Clock, DollarSign, ClipboardCheck } from 'lucide-react'
 import { formatTime } from '@/lib/utils/dates'
 import { formatCurrency } from '@/lib/utils/currency'
 
@@ -74,13 +74,14 @@ function PrivatePopup({
   booking,
   partner,
   onClose,
-  onConvert,
+  onMarkAttendance,
 }: {
   event: CalendarEvent
   booking: Booking | undefined
   partner: Booking | undefined
   onClose: () => void
-  onConvert?: () => void
+  /** Plan `velvety-whistling-boot`: opens the attendance picker for this private session. */
+  onMarkAttendance?: () => void
 }) {
   const isShared = !!partner
   const ownPrice = booking?.priceCents ?? 0
@@ -145,14 +146,14 @@ function PrivatePopup({
             Open session
           </Link>
         )}
-        {isShared && booking?.sessionStatus === 'scheduled' && onConvert && (
+        {booking?.sessionStatus === 'scheduled' && onMarkAttendance && (
           <button
             type="button"
-            onClick={onConvert}
-            className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-800 transition-all hover:bg-amber-100"
+            onClick={onMarkAttendance}
+            className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-success/30 bg-success/5 px-3 py-2 text-sm font-medium text-success transition-all hover:bg-success/10"
           >
-            <UserMinus className="size-3.5" />
-            Convert to solo
+            <ClipboardCheck className="size-3.5" />
+            Mark attendance
           </button>
         )}
       </div>
@@ -162,10 +163,11 @@ function PrivatePopup({
 
 export function AdminPrivatesCalendar({
   bookings,
-  onConvert,
+  onMarkAttendance,
 }: {
   bookings: Booking[]
-  onConvert?: (sessionId: string) => void
+  /** Plan `velvety-whistling-boot`: opens the attendance picker modal for the clicked session. */
+  onMarkAttendance?: (sessionId: string) => void
 }) {
   const { events } = bookingsToEvents(bookings)
   const bookingsById = new Map(bookings.map(b => [b.id, b]))
@@ -191,7 +193,7 @@ export function AdminPrivatesCalendar({
             booking={booking}
             partner={partner}
             onClose={onClose}
-            onConvert={onConvert && booking?.sessionId ? () => { onConvert(booking.sessionId!); onClose() } : undefined}
+            onMarkAttendance={onMarkAttendance && booking?.sessionId ? () => { onMarkAttendance(booking.sessionId!); onClose() } : undefined}
           />
         )
       }}

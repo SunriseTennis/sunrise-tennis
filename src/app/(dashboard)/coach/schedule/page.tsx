@@ -162,6 +162,8 @@ export default async function CoachSchedulePage() {
       sessionStatus: s.status,
       coachName: isLead ? 'Lead' : 'Assistant',
       bookedCount: attendanceCounts[s.id] ?? rosterCounts[s.program_id ?? ''] ?? 0,
+      // Plan `velvety-whistling-boot`: flag private events so the popup can show "Mark attendance".
+      programType: s.session_type === 'private' ? 'private' : undefined,
     }
   })
 

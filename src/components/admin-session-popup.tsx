@@ -4,10 +4,11 @@ import { useState, useTransition } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import type { CalendarEvent } from '@/components/weekly-calendar'
-import { Users, X, ExternalLink, Eye, XCircle, CheckCircle, ListChecks, RotateCcw, Loader2 } from 'lucide-react'
+import { Users, X, ExternalLink, Eye, XCircle, CheckCircle, ListChecks, RotateCcw, Loader2, ClipboardCheck } from 'lucide-react'
 import { cancelSession, adminReopenSession } from '@/app/(dashboard)/admin/actions'
 import { CancelSessionModal } from '@/components/admin/cancel-session-modal'
 import { ManageSessionModal } from '@/components/admin/manage-session-modal'
+import { ManagePrivateSessionModal } from '@/components/admin/manage-private-session-modal'
 
 const STATUS_STYLES: Record<string, string> = {
   scheduled: 'bg-muted text-muted-foreground',
@@ -20,6 +21,7 @@ export function AdminSessionPopup({ event, onClose }: { event: CalendarEvent; on
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
   const [manageOpen, setManageOpen] = useState(false)
+  const [managePrivateOpen, setManagePrivateOpen] = useState(false)
   const [cancelOpen, setCancelOpen] = useState(false)
   const [reopenPending, startReopenTransition] = useTransition()
 
@@ -27,6 +29,9 @@ export function AdminSessionPopup({ event, onClose }: { event: CalendarEvent; on
   const isScheduled = status === 'scheduled'
   const isCompleted = status === 'completed'
   const isCancelled = status === 'cancelled'
+  // Plan `velvety-whistling-boot`: privates have no programId, so the regular
+  // "Manage / Complete" path skips them. Branch on programType instead.
+  const isPrivate = event.programType === 'private'
 
   function handleConfirmCancel(payload: { category: 'rain_out' | 'heat_out' | 'other'; reason: string }) {
     if (!event.sessionId) return
@@ -136,6 +141,16 @@ export function AdminSessionPopup({ event, onClose }: { event: CalendarEvent; on
                   Manage / Complete
                 </button>
               )}
+              {isPrivate && (
+                <button
+                  onClick={() => setManagePrivateOpen(true)}
+                  disabled={isPending}
+                  className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-success/30 bg-success/5 px-3 py-2 text-sm font-medium text-success transition-all hover:bg-success/10 disabled:opacity-50"
+                >
+                  <ClipboardCheck className="size-3.5" />
+                  Mark attendance
+                </button>
+              )}
               <button
                 onClick={() => setCancelOpen(true)}
                 disabled={isPending}
@@ -191,6 +206,14 @@ export function AdminSessionPopup({ event, onClose }: { event: CalendarEvent; on
           programId={event.programId}
           currentStatus={status as 'scheduled' | 'completed'}
           onCancelSessionClicked={() => setCancelOpen(true)}
+        />
+      )}
+      {event.sessionId && isPrivate && (
+        <ManagePrivateSessionModal
+          open={managePrivateOpen}
+          onClose={() => setManagePrivateOpen(false)}
+          sessionId={event.sessionId}
+          deepLinkHref={`/admin/sessions/${event.sessionId}`}
         />
       )}
       {event.sessionId && (

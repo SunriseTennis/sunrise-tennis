@@ -1299,41 +1299,80 @@ export async function voidPrivateSeries(formData: FormData) {
   redirect('/admin/privates?success=Series+voided')
 }
 
-// ── Admin / Coach: Convert Shared → Solo for one session ───────────────
+// ── Admin / Coach: Private session attendance picker ─────────────────────
+//
+// Plan `velvety-whistling-boot` — single entry point for marking who attended
+// a private session (Present / Absent / No-show per player). Replaces the
+// older `convertSharedToSolo` shape entirely.
+//
+// Semantics:
+//   - Present       → booking stays active; charge confirms at complete.
+//   - Absent        → booking cancelled (cancellation_type='coach', excused);
+//                     charge voided (family credited).
+//   - No-show       → booking cancelled (cancellation_type='noshow', unexcused);
+//                     charge KEPT (forfeit); noshow_count incremented.
+//
+// When a shared session has exactly one remaining (Present) player, the
+// remaining family gets a top-up charge so the total billed = full solo rate.
+// This preserves the audit-trail-preserving "ADD top-up, don't mutate" trade
+// from `Zanshin/Decisions/platform/private-session-conversion.md`.
+//
+// Notifications:
+//   - admin.private.attendance_absent     → per absent family
+//   - admin.private.attendance_noshow     → per no-show family
+//   - admin.private.converted_to_solo     → remaining family on conversion
+// Seeded in migration 20260524000001_private_attendance_notification_rules.sql.
+
+type AttendanceMark = 'present' | 'absent' | 'noshow'
+
+type PrivateBookingRow = {
+  id: string
+  family_id: string
+  player_id: string
+  price_cents: number
+  status: string
+  players: { first_name: string; last_name: string } | null
+  families: { family_name: string; primary_contact: { name?: string | null } | null } | null
+}
 
 /**
- * One player no-shows / cancels late on a shared private. The session still
- * runs as a solo with the remaining player, who pays the full private rate.
- * The cancelled family's charge is voided (full credit) and a top-up charge
- * is added to the remaining family for the rate difference.
+ * Loader for the Manage Private Session modal. Returns active bookings + the
+ * session shell so the picker has everything it needs in one round-trip.
+ *
+ * Authz: admin OR the coach assigned to the session. Same gate as the picker
+ * action — keeps the modal usable from both /admin and /coach surfaces.
  */
-export async function convertSharedToSolo(formData: FormData) {
-  // Admin OR the coach assigned to the session may call this.
+export async function getManagePrivateData(sessionId: string): Promise<{
+  data?: {
+    session: {
+      id: string
+      date: string
+      start_time: string | null
+      end_time: string | null
+      duration_minutes: number | null
+      status: string
+      coach_id: string | null
+      coach_name: string | null
+    }
+    bookings: PrivateBookingRow[]
+  }
+  error?: string
+}> {
   const supabase = await createClient()
   const { getSessionUser } = await import('@/lib/supabase/server')
   const user = await getSessionUser()
-  if (!user) redirect('/login')
-
-  const sessionId = formData.get('session_id') as string
-  const removingPlayerIdRaw = formData.get('removing_player_id') as string
-  const knownPrimaryPlayerId = (formData.get('primary_player_id') as string) || ''
-  const reason = (formData.get('reason') as string) || 'Partner cancelled'
-
-  if (!sessionId || !removingPlayerIdRaw) {
-    redirect('/admin/privates?error=Session+and+player+are+required')
-  }
+  if (!user) return { error: 'Not signed in' }
 
   const { data: session } = await supabase
     .from('sessions')
-    .select('id, date, coach_id, duration_minutes, status, coaches:coach_id(name, user_id)')
+    .select('id, date, start_time, end_time, duration_minutes, status, coach_id, coaches:coach_id(name, user_id)')
     .eq('id', sessionId)
+    .eq('session_type', 'private')
     .single()
-  if (!session) redirect('/admin/privates?error=Session+not+found')
-  if (session.status !== 'scheduled') {
-    redirect('/admin/privates?error=Only+scheduled+sessions+can+be+converted')
-  }
 
-  // Authorisation: admin OR the coach owning this session.
+  if (!session) return { error: 'Private session not found' }
+
+  // Authz: admin OR the coach owning this session.
   const { data: adminCheck } = await supabase
     .from('user_roles')
     .select('role')
@@ -1341,106 +1380,364 @@ export async function convertSharedToSolo(formData: FormData) {
     .eq('role', 'admin')
     .limit(1)
     .maybeSingle()
-  const sessionCoach = session.coaches as unknown as { user_id: string | null } | null
+  const sessionCoach = session.coaches as unknown as { name: string; user_id: string | null } | null
   const isCoachOfSession = sessionCoach?.user_id === user.id
-  if (!adminCheck && !isCoachOfSession) {
-    redirect('/coach/privates?error=Not+allowed')
-  }
+  if (!adminCheck && !isCoachOfSession) return { error: 'Not allowed' }
 
   const { data: rows } = await supabase
     .from('bookings')
-    .select('id, family_id, player_id, price_cents, players!bookings_player_id_fkey(first_name)')
+    .select(`
+      id, family_id, player_id, price_cents, status,
+      players:player_id(first_name, last_name),
+      families:family_id(family_name, primary_contact)
+    `)
     .eq('session_id', sessionId)
     .eq('booking_type', 'private')
 
-  const bookings = (rows ?? []) as Array<{
+  const bookings = (rows ?? []) as unknown as PrivateBookingRow[]
+  const active = bookings.filter(b => b.status !== 'cancelled')
+  const coach = sessionCoach
+
+  return {
+    data: {
+      session: {
+        id: session.id,
+        date: session.date,
+        start_time: session.start_time ?? null,
+        end_time: session.end_time ?? null,
+        duration_minutes: session.duration_minutes ?? null,
+        status: session.status,
+        coach_id: session.coach_id ?? null,
+        coach_name: coach?.name ?? null,
+      },
+      bookings: active,
+    },
+  }
+}
+
+/**
+ * Mark attendance on a private session. Submitted by `<PrivateAttendanceForm>`.
+ * Returns a structured result so the modal/page can render inline feedback
+ * (no redirect — the form is inside client components).
+ */
+export async function markPrivateAttendance(formData: FormData): Promise<{
+  ok?: boolean
+  converted?: boolean
+  completed?: boolean
+  error?: string
+}> {
+  const supabase = await createClient()
+  const { getSessionUser } = await import('@/lib/supabase/server')
+  const user = await getSessionUser()
+  if (!user) return { error: 'Not signed in' }
+
+  const sessionId = formData.get('session_id') as string
+  if (!sessionId) return { error: 'session_id required' }
+
+  // Rate limit (best-effort)
+  const { checkRateLimitAsync } = await import('@/lib/utils/rate-limit')
+  if (!await checkRateLimitAsync(`private-att:${user.id}`, 20, 60_000)) {
+    return { error: 'Too many requests — wait a moment and try again' }
+  }
+
+  const { data: session } = await supabase
+    .from('sessions')
+    .select('id, date, start_time, coach_id, duration_minutes, status, coaches:coach_id(name, user_id)')
+    .eq('id', sessionId)
+    .eq('session_type', 'private')
+    .single()
+  if (!session) return { error: 'Private session not found' }
+  if (session.status !== 'scheduled') {
+    return { error: 'Only scheduled sessions can be marked' }
+  }
+
+  // Authz: admin OR the coach assigned to the session.
+  const { data: adminCheck } = await supabase
+    .from('user_roles')
+    .select('role')
+    .eq('user_id', user.id)
+    .eq('role', 'admin')
+    .limit(1)
+    .maybeSingle()
+  const sessionCoach = session.coaches as unknown as { name: string | null; user_id: string | null } | null
+  const isCoachOfSession = sessionCoach?.user_id === user.id
+  if (!adminCheck && !isCoachOfSession) return { error: 'Not allowed' }
+
+  // Read active bookings.
+  const { data: rows } = await supabase
+    .from('bookings')
+    .select('id, family_id, player_id, price_cents, status, players:player_id(first_name, last_name)')
+    .eq('session_id', sessionId)
+    .eq('booking_type', 'private')
+
+  const allBookings = (rows ?? []) as unknown as Array<{
     id: string
     family_id: string
     player_id: string
     price_cents: number
-    players: { first_name: string } | null
+    status: string
+    players: { first_name: string; last_name: string } | null
   }>
+  const activeBookings = allBookings.filter(b => b.status !== 'cancelled')
+  if (activeBookings.length === 0) return { error: 'No active bookings on this session' }
 
-  if (bookings.length !== 2) {
-    redirect('/admin/privates?error=Not+a+shared+session')
+  // Read per-booking attendance picks.
+  const picks: { booking: typeof activeBookings[number]; mark: AttendanceMark }[] = []
+  for (const b of activeBookings) {
+    const raw = formData.get(`attendance_${b.id}`) as string | null
+    const mark: AttendanceMark = raw === 'absent' || raw === 'noshow' ? raw : 'present'
+    picks.push({ booking: b, mark })
   }
 
-  // Resolve "__partner__" sentinel: the partner is the booking whose player_id
-  // is not the known primary's. If the form sends a real player_id, use it directly.
-  let resolvedRemovingPlayerId = removingPlayerIdRaw
-  if (removingPlayerIdRaw === '__partner__') {
-    const partner = bookings.find(b => b.player_id !== knownPrimaryPlayerId)
-    if (!partner) redirect('/admin/privates?error=Could+not+resolve+partner')
-    resolvedRemovingPlayerId = partner.player_id
+  const presentPicks = picks.filter(p => p.mark === 'present')
+  const absentPicks = picks.filter(p => p.mark !== 'present')
+
+  if (presentPicks.length === 0) {
+    return {
+      error: 'No remaining players — use Cancel session instead',
+    }
   }
 
-  const removing = bookings.find(b => b.player_id === resolvedRemovingPlayerId)
-  const remaining = bookings.find(b => b.player_id !== resolvedRemovingPlayerId)
-  if (!removing || !remaining) redirect('/admin/privates?error=Player+not+on+this+session')
+  const startedShared = activeBookings.length >= 2
+  const isConversion = startedShared && presentPicks.length === 1 && absentPicks.length >= 1
 
-  // Cancel the removing booking
-  await supabase
-    .from('bookings')
-    .update({ status: 'cancelled', cancellation_type: 'no_show' })
-    .eq('id', removing.id)
-
-  // Void the removing family's charge
   const { voidCharge, createCharge, formatChargeDescription } = await import('@/lib/utils/billing')
-  const { data: removingCharge } = await supabase
-    .from('charges')
-    .select('id')
-    .eq('booking_id', removing.id)
-    .eq('session_id', sessionId)
-    .in('status', ['pending', 'confirmed'])
-    .single()
-  if (removingCharge) {
-    await voidCharge(supabase, removingCharge.id, removing.family_id)
+  const { dispatchNotification } = await import('@/lib/notifications/dispatch')
+
+  // 1. Process each absent/no-show pick.
+  for (const { booking, mark } of absentPicks) {
+    const cancellationType = mark === 'absent' ? 'coach' : 'noshow'
+    await supabase
+      .from('bookings')
+      .update({ status: 'cancelled', cancellation_type: cancellationType })
+      .eq('id', booking.id)
+
+    if (mark === 'absent') {
+      // Void the charge — excused; family credited.
+      const { data: charge } = await supabase
+        .from('charges')
+        .select('id')
+        .eq('booking_id', booking.id)
+        .eq('session_id', sessionId)
+        .in('status', ['pending', 'confirmed'])
+        .maybeSingle()
+      if (charge) {
+        await voidCharge(supabase, charge.id, booking.family_id)
+      }
+    } else {
+      // No-show: charge stays. Increment counter (per-term).
+      const { data: termData } = await supabase.rpc('get_current_term')
+      const term = termData?.[0]
+      if (term?.term && term?.year) {
+        await supabase.rpc('increment_cancellation_counter', {
+          target_family_id: booking.family_id,
+          target_term: term.term,
+          target_year: term.year,
+          counter_type: 'noshow',
+        })
+      }
+    }
+
+    // Dispatch absent/no-show notification.
+    const ruleEvent = mark === 'absent' ? 'admin.private.attendance_absent' : 'admin.private.attendance_noshow'
+    await dispatchNotification(ruleEvent, {
+      familyId: booking.family_id,
+      excludeUserId: user.id,
+      playerName: booking.players?.first_name ?? 'Your player',
+      date: formatDateForBody(session.date),
+      coachName: sessionCoach?.name ?? 'your coach',
+      amount: formatCurrencyForBody(booking.price_cents ?? 0),
+    }).catch(err => console.error('[markPrivateAttendance] dispatch failed:', err))
   }
 
-  // Top-up the remaining family. Full price = 2 * each-side; top-up = remaining.price_cents.
-  // (price_cents on the booking row is the half-rate per the new schema; doubling it = full solo rate.)
-  const topUpCents = remaining.price_cents
+  // 2. Conversion (shared → solo): add top-up + lesson note + notify remaining.
+  if (isConversion) {
+    const remaining = presentPicks[0].booking
+    const absentPick = absentPicks[0] // pick first as the partner name for the body / note
+    const topUpCents = remaining.price_cents
+    if (topUpCents > 0) {
+      await createCharge(supabase, {
+        familyId: remaining.family_id,
+        playerId: remaining.player_id,
+        type: 'private',
+        sourceType: 'enrollment',
+        sessionId,
+        bookingId: remaining.id,
+        description: formatChargeDescription({
+          playerName: remaining.players?.first_name,
+          label: 'Solo private rate (partner did not attend)',
+          date: session.date,
+        }),
+        amountCents: topUpCents,
+        status: 'confirmed',
+        createdBy: user.id,
+      })
+    }
 
-  await createCharge(supabase, {
-    familyId: remaining.family_id,
-    playerId: remaining.player_id,
-    type: 'private',
-    sourceType: 'enrollment',
+    // Auto-create lesson_notes row on remaining player (only if no row exists
+    // yet — coach may have written one before the picker fired).
+    const partnerName = absentPick.booking.players?.first_name ?? 'partner'
+    const { data: existingNote } = await supabase
+      .from('lesson_notes')
+      .select('id')
+      .eq('session_id', sessionId)
+      .eq('player_id', remaining.player_id)
+      .maybeSingle()
+    if (!existingNote) {
+      const { error: noteErr } = await supabase
+        .from('lesson_notes')
+        .insert({
+          player_id: remaining.player_id,
+          coach_id: session.coach_id,
+          session_id: sessionId,
+          notes: `Was a private — ${partnerName} did not attend.`,
+        })
+      if (noteErr) console.error('[markPrivateAttendance] lesson_note insert failed:', noteErr.message)
+    }
+
+    // Notify remaining family of conversion.
+    await dispatchNotification('admin.private.converted_to_solo', {
+      familyId: remaining.family_id,
+      excludeUserId: user.id,
+      playerName: remaining.players?.first_name ?? 'Your player',
+      partnerName,
+      date: formatDateForBody(session.date),
+      coachName: sessionCoach?.name ?? 'your coach',
+    }).catch(err => console.error('[markPrivateAttendance] dispatch failed:', err))
+  }
+
+  // 3. Complete the session + confirm remaining charges + write coach earnings.
+  await _completePrivateSessionInternal({
+    supabase,
     sessionId,
-    bookingId: remaining.id,
-    description: formatChargeDescription({
-      playerName: remaining.players?.first_name,
-      label: `Solo private rate (partner cancelled)`,
-      date: session.date,
-    }),
-    amountCents: topUpCents,
-    status: 'confirmed',
-    createdBy: user.id,
+    userId: user.id,
+    coachId: session.coach_id,
+    sessionDate: session.date,
+    durationMinutes: session.duration_minutes ?? 60,
   })
 
-  // Notify the remaining family
-  const { notifyFamily } = await import('@/lib/notifications/notify')
-  await notifyFamily(remaining.family_id, {
-    title: 'Shared Private Became a Solo',
-    body: `Partner cancelled — your ${session.date} session is now a solo at the full private rate. Top-up charge added.`,
-    url: '/parent/bookings',
-    type: 'announcement',
-  }).catch(() => undefined)
-
-  // Notify the removing family
-  await notifyFamily(removing.family_id, {
-    title: 'Booking Cancelled',
-    body: `Your shared private on ${session.date} was cancelled. Full credit applied. Reason: ${reason}.`,
-    url: '/parent/bookings',
-    type: 'rain_cancel',
-  }).catch(() => undefined)
-
-  revalidatePath('/admin/privates')
   revalidatePath('/admin')
+  revalidatePath('/admin/privates')
+  revalidatePath(`/admin/sessions/${sessionId}`)
   revalidatePath('/coach/privates')
   revalidatePath(`/coach/privates/${sessionId}`)
-  const successPath = adminCheck
-    ? '/admin/privates?success=Converted+to+solo'
-    : `/coach/privates/${sessionId}?success=Converted+to+solo`
-  redirect(successPath)
+  revalidatePath('/coach/schedule')
+  revalidatePath('/parent/bookings')
+
+  return { ok: true, converted: isConversion, completed: true }
+}
+
+/**
+ * Helper: mark a private session complete, confirm remaining charges, write
+ * coach_earnings rows. Idempotent — safe to call on already-completed sessions.
+ *
+ * Shared by `markPrivateAttendance` and (historically) `completePrivateSession`
+ * on the coach side. Calls `recalcFamiliesForSession` per the documented
+ * session-status-flip companion trap (`debugging.md`).
+ */
+async function _completePrivateSessionInternal(opts: {
+  supabase: Awaited<ReturnType<typeof createClient>>
+  sessionId: string
+  userId: string
+  coachId: string | null
+  sessionDate: string
+  durationMinutes: number
+}): Promise<void> {
+  const { supabase, sessionId, userId, coachId, sessionDate, durationMinutes } = opts
+  const { recalcFamiliesForSession } = await import('@/lib/utils/billing')
+
+  // Flip status (idempotent — second call with status already 'completed' is a no-op below).
+  const { data: current } = await supabase
+    .from('sessions')
+    .select('status')
+    .eq('id', sessionId)
+    .single()
+  if (current?.status === 'completed') return
+
+  await supabase
+    .from('sessions')
+    .update({ status: 'completed', completed_by: userId })
+    .eq('id', sessionId)
+
+  await recalcFamiliesForSession(supabase, sessionId)
+
+  // Confirm any remaining pending charges on still-active bookings.
+  const { data: stillActiveBookings } = await supabase
+    .from('bookings')
+    .select('id, price_cents')
+    .eq('session_id', sessionId)
+    .eq('booking_type', 'private')
+    .neq('status', 'cancelled')
+
+  for (const booking of stillActiveBookings ?? []) {
+    await supabase
+      .from('charges')
+      .update({ status: 'confirmed' })
+      .eq('booking_id', booking.id)
+      .eq('status', 'pending')
+  }
+
+  // Write coach earnings for each active booking (skip owner).
+  if (coachId) {
+    const { data: coach } = await supabase
+      .from('coaches')
+      .select('is_owner, pay_period')
+      .eq('id', coachId)
+      .single()
+
+    if (coach && !coach.is_owner) {
+      const { calculateCoachPay, getPayPeriodKey } = await import('@/lib/utils/private-booking')
+      const { data: termData } = await supabase.rpc('get_current_term')
+      const term = termData?.[0]
+      const payPeriodKey = getPayPeriodKey(new Date(sessionDate), coach.pay_period ?? 'weekly')
+
+      for (const booking of stillActiveBookings ?? []) {
+        // Pull the actual confirmed charge total for this booking (covers
+        // top-up case where price_cents on the booking is the half-share).
+        const { data: chargeTotals } = await supabase
+          .from('charges')
+          .select('amount_cents')
+          .eq('booking_id', booking.id)
+          .eq('session_id', sessionId)
+          .in('status', ['pending', 'confirmed'])
+        const totalCents = (chargeTotals ?? []).reduce((s, c) => s + (c.amount_cents ?? 0), 0)
+        const basis = totalCents > 0 ? totalCents : (booking.price_cents ?? 0)
+        if (basis <= 0) continue
+
+        const payCents = calculateCoachPay(basis)
+
+        // Avoid duplicate insert if a previous attempt already wrote earnings.
+        const { data: existingEarning } = await supabase
+          .from('coach_earnings')
+          .select('id')
+          .eq('coach_id', coachId)
+          .eq('session_id', sessionId)
+          .maybeSingle()
+        if (existingEarning) continue
+
+        await supabase.from('coach_earnings').insert({
+          coach_id: coachId,
+          session_id: sessionId,
+          session_type: 'private',
+          amount_cents: payCents,
+          duration_minutes: durationMinutes,
+          term: term?.term ?? null,
+          year: term?.year ?? null,
+          pay_period_key: payPeriodKey,
+          status: 'owed',
+        })
+      }
+    }
+  }
+}
+
+// Inline tiny formatters — kept here to avoid a dedicated util for two callers.
+function formatDateForBody(date: string): string {
+  const d = new Date(date)
+  if (isNaN(d.getTime())) return date
+  return d.toLocaleDateString('en-AU', { day: '2-digit', month: 'short', year: 'numeric' })
+}
+
+function formatCurrencyForBody(cents: number): string {
+  return `$${(cents / 100).toFixed(2)}`
 }

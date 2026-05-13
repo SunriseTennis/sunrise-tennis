@@ -17,22 +17,22 @@ import {
   ChevronDown,
   ChevronRight,
   CheckCircle2,
+  ClipboardCheck,
   Clock,
   List,
   Pencil,
   Trash2,
-  UserMinus,
   Users,
   XCircle,
   X,
 } from 'lucide-react'
 import { AdminPrivatesCalendar } from './admin-privates-calendar'
 import { BookPrivateModal } from './book-private-modal'
+import { ManagePrivateSessionModal } from '@/components/admin/manage-private-session-modal'
 import {
   cancelPrivateSeries,
   modifyPrivateSeries,
   voidPrivateSeries,
-  convertSharedToSolo,
 } from './actions'
 
 export type Booking = {
@@ -257,16 +257,12 @@ export function PrivateViews({
 
   const [tab, setTab] = useState<Tab>(hasPending ? 'pending' : 'series')
 
-  // Calendar-tab convert flow: when admin clicks "Convert to solo" in the
-  // calendar popup, find the matching series and open its convert modal.
-  const [calendarConvertSession, setCalendarConvertSession] = useState<{
-    sessionId: string
-    series: Series
-  } | null>(null)
-  const onCalendarConvert = (sessionId: string) => {
-    const matching = series.find(s => s.bookings.some(b => b.sessionId === sessionId && b.sharedWithBookingId))
-    if (matching) setCalendarConvertSession({ sessionId, series: matching })
-  }
+  // Plan `velvety-whistling-boot`: Calendar tab + Series accordion both open
+  // the attendance picker modal when admin clicks on a scheduled private
+  // session. Same modal as the /admin overview calendar; replaces the
+  // legacy "Convert to solo" flow.
+  const [attendanceSessionId, setAttendanceSessionId] = useState<string | null>(null)
+  const openAttendance = (sessionId: string) => setAttendanceSessionId(sessionId)
 
   const tabs: { key: Tab; label: string; icon: typeof List; badge?: number }[] = [
     { key: 'pending', label: 'Pending', icon: AlertCircle, badge: pendingBookings.length || undefined },
@@ -327,16 +323,7 @@ export function PrivateViews({
 
       {tab === 'calendar' && (
         <div className="mt-4">
-          <AdminPrivatesCalendar bookings={bookings} onConvert={onCalendarConvert} />
-          {calendarConvertSession && (
-            <ConvertToSoloModal
-              sessionId={calendarConvertSession.sessionId}
-              series={calendarConvertSession.series}
-              removingPlayerId={null}
-              setRemovingPlayerId={() => undefined}
-              onClose={() => setCalendarConvertSession(null)}
-            />
-          )}
+          <AdminPrivatesCalendar bookings={bookings} onMarkAttendance={openAttendance} />
         </div>
       )}
 
@@ -346,10 +333,26 @@ export function PrivateViews({
             <EmptyState icon={Calendar} title="No private series yet" description="Booked privates will appear grouped here." />
           ) : (
             series.map(s => (
-              <SeriesAccordion key={s.key} series={s} families={families} coaches={coaches} />
+              <SeriesAccordion
+                key={s.key}
+                series={s}
+                families={families}
+                coaches={coaches}
+                onMarkAttendance={openAttendance}
+              />
             ))
           )}
         </div>
+      )}
+
+      {/* Shared attendance modal for both Calendar + Series tabs. */}
+      {attendanceSessionId && (
+        <ManagePrivateSessionModal
+          open
+          sessionId={attendanceSessionId}
+          onClose={() => setAttendanceSessionId(null)}
+          deepLinkHref={`/admin/sessions/${attendanceSessionId}`}
+        />
       )}
 
       {tab === 'all' && (
@@ -399,15 +402,15 @@ function SeriesAccordion({
   series,
   families,
   coaches,
+  onMarkAttendance,
 }: {
   series: Series
   families: { id: string; display_id: string; family_name: string; players: { id: string; first_name: string; last_name: string }[] }[]
   coaches: { id: string; name: string; rate: number }[]
+  onMarkAttendance: (sessionId: string) => void
 }) {
   const [expanded, setExpanded] = useState(false)
-  const [modal, setModal] = useState<'cancel' | 'modify' | 'void' | 'convert' | null>(null)
-  const [convertSessionId, setConvertSessionId] = useState<string | null>(null)
-  const [removingPlayerId, setRemovingPlayerId] = useState<string | null>(null)
+  const [modal, setModal] = useState<'cancel' | 'modify' | 'void' | null>(null)
 
   const scheduled = series.bookings.filter(b => b.sessionStatus === 'scheduled')
   const completed = series.bookings.filter(b => b.sessionStatus === 'completed')
@@ -468,12 +471,7 @@ function SeriesAccordion({
                 <SessionRow
                   key={b.id}
                   booking={b}
-                  isShared={series.isShared}
-                  onConvert={(sessionId) => {
-                    setConvertSessionId(sessionId)
-                    setRemovingPlayerId(null)
-                    setModal('convert')
-                  }}
+                  onMarkAttendance={onMarkAttendance}
                 />
               ))}
             </div>
@@ -506,27 +504,16 @@ function SeriesAccordion({
       {modal === 'void' && (
         <VoidSeriesModal series={series} onClose={() => setModal(null)} />
       )}
-      {modal === 'convert' && convertSessionId && (
-        <ConvertToSoloModal
-          sessionId={convertSessionId}
-          series={series}
-          removingPlayerId={removingPlayerId}
-          setRemovingPlayerId={setRemovingPlayerId}
-          onClose={() => setModal(null)}
-        />
-      )}
     </Card>
   )
 }
 
 function SessionRow({
   booking,
-  isShared,
-  onConvert,
+  onMarkAttendance,
 }: {
   booking: Booking
-  isShared: boolean
-  onConvert: (sessionId: string) => void
+  onMarkAttendance: (sessionId: string) => void
 }) {
   const sessionStatus = booking.sessionStatus || 'scheduled'
   const statusIcon = sessionStatus === 'completed'
@@ -541,15 +528,15 @@ function SessionRow({
       <span className="text-foreground tabular-nums">{booking.date ? formatDate(booking.date) : '-'}</span>
       <span className="text-muted-foreground">{booking.startTime ? formatTime(booking.startTime) : ''}</span>
       <span className="ml-auto flex items-center gap-2">
-        {isShared && sessionStatus === 'scheduled' && booking.sessionId && (
+        {sessionStatus === 'scheduled' && booking.sessionId && (
           <button
             type="button"
-            onClick={() => onConvert(booking.sessionId!)}
-            className="text-xs text-amber-700 hover:underline"
-            title="Partner cancelled — convert to solo"
+            onClick={() => onMarkAttendance(booking.sessionId!)}
+            className="text-xs text-success hover:underline"
+            title="Mark attendance for this session"
           >
-            <UserMinus className="inline size-3 mr-0.5" />
-            Convert
+            <ClipboardCheck className="inline size-3 mr-0.5" />
+            Mark attendance
           </button>
         )}
         {booking.sessionId && (
@@ -801,81 +788,3 @@ function VoidSeriesModal({ series, onClose }: { series: Series; onClose: () => v
   )
 }
 
-function ConvertToSoloModal({
-  sessionId,
-  series,
-  removingPlayerId,
-  setRemovingPlayerId,
-  onClose,
-}: {
-  sessionId: string
-  series: Series
-  removingPlayerId: string | null
-  setRemovingPlayerId: (id: string | null) => void
-  onClose: () => void
-}) {
-  const [pending, startTransition] = useTransition()
-  // For shared, the two players are: primary (we know id) + partner (we don't have player id directly,
-  // but we can get it from a sibling booking on this session — admin form passes player_id only).
-  // Simpler: fetch via the session's bookings query at submit time. For UX, list both names from series.
-  const primaryName = series.primaryPlayerFirstName
-  const partnerName = series.partnerPlayerFirstName ?? '—'
-
-  // The form needs removing_player_id. Since we have primary's player_id but not partner's, we ask the
-  // admin to pick which to cancel by name; the server resolves the rest.
-  // The primary playerId is in series.bookings (we filter by familyId === primary's). For partner, we need
-  // a passthrough — easiest is to pass the booking row's player_id from the series detail, but in this
-  // grouped view the partner row isn't included. Workaround: pass both names + session_id and let server
-  // resolve by name match if id missing. Cleaner: enrich series with partner_player_id at build time.
-
-  // For now: we know primary.playerId; partner submitter must be inferred from session bookings.
-  // Default: assume primary is staying (most common: partner cancelled), so removingPlayerId = partner.
-  // We need the partner's player_id. We'll pass a sentinel and resolve in the server.
-
-  // Provide two radio choices keyed by name; encode whose id we know vs which is the partner.
-  const primaryPlayerId = series.bookings[0]?.playerId ?? ''
-  // The partner row is on a different family — not in series.bookings. We pass a special token PARTNER
-  // and resolve server-side as: the booking on this session whose player_id !== primaryPlayerId.
-
-  const [choice, setChoice] = useState<'primary' | 'partner'>('partner')
-
-  function handle() {
-    startTransition(async () => {
-      const fd = new FormData()
-      fd.set('session_id', sessionId)
-      const removingId = choice === 'primary' ? primaryPlayerId : '__partner__'
-      fd.set('removing_player_id', removingId)
-      fd.set('primary_player_id', primaryPlayerId)
-      fd.set('reason', `Admin convert (${choice} cancelled)`)
-      await convertSharedToSolo(fd)
-    })
-  }
-
-  // Acknowledge unused setter (kept in props for future symmetry)
-  void removingPlayerId; void setRemovingPlayerId
-
-  return (
-    <ModalShell title="Convert shared → solo" onClose={onClose}>
-      <p className="text-sm text-muted-foreground">
-        One player no-shows or cancels. The session still runs; the remaining player pays the full private rate. The cancelled family is fully credited.
-      </p>
-      <div className="mt-4 space-y-2">
-        <label className="flex items-center gap-2 rounded-md border border-border p-2 text-sm cursor-pointer">
-          <input type="radio" checked={choice === 'partner'} onChange={() => setChoice('partner')} />
-          <span><strong>{partnerName}</strong> ({series.partnerFamilyName ?? 'partner'}) cancelled</span>
-        </label>
-        <label className="flex items-center gap-2 rounded-md border border-border p-2 text-sm cursor-pointer">
-          <input type="radio" checked={choice === 'primary'} onChange={() => setChoice('primary')} />
-          <span><strong>{primaryName}</strong> ({series.primaryFamilyName}) cancelled</span>
-        </label>
-      </div>
-
-      <div className="mt-5 flex justify-end gap-2">
-        <Button variant="ghost" size="sm" onClick={onClose} disabled={pending}>Back</Button>
-        <Button size="sm" onClick={handle} disabled={pending}>
-          {pending ? 'Converting…' : 'Convert this session'}
-        </Button>
-      </div>
-    </ModalShell>
-  )
-}

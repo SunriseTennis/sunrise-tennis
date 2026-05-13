@@ -4,23 +4,9 @@ import { PageHeader } from '@/components/page-header'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { StatusBadge } from '@/components/status-badge'
-import { UserMinus } from 'lucide-react'
 import { formatDate, formatTime } from '@/lib/utils/dates'
-import { completePrivateSession, createLessonNote } from '../../actions'
-import { convertSharedToSolo } from '@/app/(dashboard)/admin/privates/actions'
-
-function ConvertButton({ sessionId, removingPlayerId }: { sessionId: string; removingPlayerId: string }) {
-  return (
-    <form action={convertSharedToSolo} className="inline">
-      <input type="hidden" name="session_id" value={sessionId} />
-      <input type="hidden" name="removing_player_id" value={removingPlayerId} />
-      <input type="hidden" name="reason" value="Coach: partner cancelled" />
-      <Button type="submit" size="sm" variant="ghost" className="h-7 gap-1 text-xs text-amber-700 hover:bg-amber-50">
-        <UserMinus className="size-3" /> Mark cancelled
-      </Button>
-    </form>
-  )
-}
+import { createLessonNote } from '../../actions'
+import { PrivateAttendanceForm } from '@/components/admin/private-attendance-form'
 
 export default async function CoachPrivateSessionPage({
   params,
@@ -138,7 +124,7 @@ export default async function CoachPrivateSessionPage({
         </CardContent>
       </Card>
 
-      {/* Player info */}
+      {/* Player info (read-only — attendance picker below handles per-player status) */}
       {activeBookings.length > 0 && (
         <Card>
           <CardContent className="p-4">
@@ -150,12 +136,7 @@ export default async function CoachPrivateSessionPage({
                 if (!p) return null
                 return (
                   <div key={b.id} className={idx > 0 ? 'border-t border-border pt-3' : ''}>
-                    <div className="flex items-center justify-between">
-                      <p className="text-sm font-medium">{p.first_name} {p.last_name}</p>
-                      {isShared && session.status === 'scheduled' && (
-                        <ConvertButton sessionId={sessionId} removingPlayerId={p.id} />
-                      )}
-                    </div>
+                    <p className="text-sm font-medium">{p.first_name} {p.last_name}</p>
                     {(p.classifications ?? []).length > 0 && (
                       <p className="text-xs capitalize text-muted-foreground">{(p.classifications ?? []).join(' / ')}</p>
                     )}
@@ -178,13 +159,32 @@ export default async function CoachPrivateSessionPage({
         </Card>
       )}
 
-      {/* Complete button */}
-      {session.status === 'scheduled' && (
-        <form action={completePrivateSession.bind(null, sessionId)}>
-          <Button type="submit" className="w-full">
-            Mark Session Complete
-          </Button>
-        </form>
+      {/* Plan `velvety-whistling-boot` — attendance picker (Present / Absent / No-show).
+          Replaces the old per-player "Mark cancelled" + bottom "Mark Session Complete". */}
+      {session.status === 'scheduled' && activeBookings.length > 0 && (
+        <Card>
+          <CardContent className="p-4">
+            <h3 className="text-sm font-semibold">Mark attendance</h3>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Confirms the session and applies the right charges. On a shared session, marking
+              one player Absent or No-show converts to a solo (top-up to the remaining family).
+            </p>
+            <div className="mt-3">
+              <PrivateAttendanceForm
+                sessionId={sessionId}
+                bookings={activeBookings.map(b => ({
+                  id: b.id,
+                  playerId: b.players?.id ?? '',
+                  playerFirstName: b.players?.first_name ?? 'Player',
+                  playerLastName: b.players?.last_name ?? null,
+                  familyId: b.family_id,
+                  priceCents: b.price_cents ?? 0,
+                }))}
+                compact
+              />
+            </div>
+          </CardContent>
+        </Card>
       )}
 
       {/* Lesson note form */}

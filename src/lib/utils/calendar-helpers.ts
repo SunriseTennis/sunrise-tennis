@@ -102,6 +102,9 @@ export function sessionsToCalendarEvents(
           date: s.date,
           sessionId: s.id,
           programId: undefined,
+          // Plan `velvety-whistling-boot`: flag private events so popups can branch
+          // (admin overview popup renders "Mark attendance" entry for privates).
+          programType: 'private',
           sessionStatus: s.status,
           coachName: s.coachName,
           bookedCount: players.length,

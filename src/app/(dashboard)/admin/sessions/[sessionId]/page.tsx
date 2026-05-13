@@ -7,7 +7,7 @@ import { StatusBadge } from '@/components/status-badge'
 import { ChevronLeft, Clock, Users, User, DollarSign } from 'lucide-react'
 import { formatDate, formatTime } from '@/lib/utils/dates'
 import { formatCurrency } from '@/lib/utils/currency'
-import { SessionActions } from '../../programs/[id]/sessions/[sessionId]/session-actions'
+import { PrivateSessionActionCard } from './private-session-action-card'
 
 export default async function AdminSessionLandingPage({
   params,
@@ -203,22 +203,21 @@ export default async function AdminSessionLandingPage({
         </Card>
       )}
 
-      {/* Actions */}
-      {session.status === 'scheduled' && (
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <h2 className="text-sm font-semibold">Session actions</h2>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Cancel hits ALL families on this session. For single-family cancel on a shared
-                  private, ask the parent or use the Series accordion on /admin/privates.
-                </p>
-              </div>
-              <SessionActions sessionId={sessionId} status={session.status ?? 'scheduled'} />
-            </div>
-          </CardContent>
-        </Card>
+      {/* Plan `velvety-whistling-boot`: scheduled privates now expose the
+          per-player attendance picker inline. Replaces the generic
+          <SessionActions> Mark Complete + Cancel card. */}
+      {session.status === 'scheduled' && activeRows.length > 0 && (
+        <PrivateSessionActionCard
+          sessionId={sessionId}
+          bookings={activeRows.map(r => ({
+            id: r.id,
+            playerId: r.player_id,
+            playerFirstName: r.players?.first_name ?? 'Player',
+            playerLastName: r.players?.last_name ?? null,
+            familyId: r.family_id,
+            priceCents: r.price_cents ?? 0,
+          }))}
+        />
       )}
 
       <div className="flex flex-wrap gap-2">
