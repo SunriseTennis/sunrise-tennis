@@ -17,7 +17,11 @@ const OPTIONS: { value: AttendanceStatus; label: string; tone: 'success' | 'warn
   { value: 'noshow',  label: 'No-show', tone: 'danger'  },
 ]
 
-const AUTOSAVE_DELAY_MS = 800
+// Shorter than the original 800ms — long enough to batch a React render +
+// accidental double-click, short enough that the modal-close race is rare.
+// Combined with flush-on-unmount below, even a fast Mark Complete click
+// won't drop the user's selection.
+const AUTOSAVE_DELAY_MS = 200
 
 export function AttendanceForm({
   sessionId,
@@ -52,9 +56,44 @@ export function AttendanceForm({
   // captured `dirty`).
   const dirtyRef = useRef<Set<string>>(new Set())
   const localRef = useRef<Record<string, AttendanceStatus>>({})
+  // Mirror sessionId + silent so the unmount-only cleanup below can call the
+  // server action without listing them as effect deps (which would make the
+  // cleanup run on every render where they change, not just on unmount).
+  const sessionIdRef = useRef(sessionId)
+  const silentRef = useRef(silent)
   useEffect(() => { localRef.current = local }, [local])
+  useEffect(() => { sessionIdRef.current = sessionId }, [sessionId])
+  useEffect(() => { silentRef.current = silent }, [silent])
 
-  useEffect(() => () => { if (timerRef.current) clearTimeout(timerRef.current) }, [])
+  // Flush pending changes on unmount.
+  //
+  // Without this, a user who clicks Absent then quickly closes the modal (or
+  // clicks Mark Complete, which closes the modal after the action commits)
+  // loses their selection: the debounced timer is cleared and the dirty set
+  // never reaches the server. The fire-and-forget shape is safe because
+  // `updateAttendance` upserts ON CONFLICT (session_id, player_id) — racing
+  // with `adminCompleteSession`'s default-Present insert is benign (whichever
+  // commits second wins the row; the user's click wins because adminComplete
+  // only inserts MISSING rows and skips rows the user already wrote).
+  //
+  // See `.claude/rules/debugging.md` top-of-file pattern for the broader
+  // class of "click → debounce → modal-close drops click" bugs.
+  useEffect(() => () => {
+    if (timerRef.current) {
+      clearTimeout(timerRef.current)
+      timerRef.current = null
+    }
+    if (dirtyRef.current.size === 0) return
+    const fd = new FormData()
+    for (const pid of dirtyRef.current) fd.append(`attendance_${pid}`, localRef.current[pid])
+    updateAttendance(sessionIdRef.current, fd, silentRef.current ? { silent: true } : undefined)
+      .catch(e => {
+        const msg = e instanceof Error ? e.message : ''
+        if (!msg.includes('NEXT_REDIRECT')) {
+          console.error('[AttendanceForm] flush-on-unmount failed:', e)
+        }
+      })
+  }, [])
 
   function pick(playerId: string, next: AttendanceStatus) {
     setLocal(prev => {
