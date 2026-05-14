@@ -1295,10 +1295,14 @@ export async function updateAttendance(
       // and create a single-session charge so today's attendance is billed.
       // The charge gets absorbed cleanly when the family later enrols for
       // the term (gatherTermEnrolSessions picks it up at enrol time).
-      // Only `present` triggers a walk-in charge — `absent`/`noshow` for a
-      // non-rostered player has no policy meaning here.
+      //
+      // When the same walk-in is later flipped to absent / noshow, void the
+      // existing walk-in charge — the walk-in is being cancelled, the family
+      // never contracted to attend via a booking, and there's no forfeit
+      // policy for a non-rostered no-show. Without this void, admin sees
+      // "marked absent" succeed but the family stays billed (Dion Gekas /
+      // McAuley May 13 — see `.claude/rules/debugging.md` top-of-file).
       if (!booking) {
-        if (entry.status !== 'present') continue
         const { data: walkInPlayer } = await supabase
           .from('players')
           .select('family_id')
@@ -1306,38 +1310,43 @@ export async function updateAttendance(
           .single()
         if (!walkInPlayer?.family_id) continue
         const walkInExisting = await getExistingSessionCharge(supabase, sessionId, entry.playerId)
-        if (walkInExisting) continue
-        const walkInBreakdown = await getPlayerEffectiveSessionPriceBreakdown(
-          supabase, walkInPlayer.family_id, programId, program?.type, entry.playerId,
-        )
-        if (walkInBreakdown.priceCents <= 0) continue
-        await createCharge(supabase, {
-          familyId: walkInPlayer.family_id,
-          playerId: entry.playerId,
-          type: 'session',
-          sourceType: 'attendance',
-          sourceId: sessionId,
-          sessionId,
-          programId,
-          description: formatChargeDescription({
-            playerName: playerNames.get(entry.playerId),
-            label: `${program?.name ?? 'Session'} (walk-in)`,
-            suffix: formatDiscountSuffix({ multiGroupApplied: walkInBreakdown.multiGroupApplied, earlyPayPct: walkInBreakdown.earlyBirdPct }),
-            term: termLabel,
-            date: sessionDate,
-          }),
-          amountCents: walkInBreakdown.priceCents,
-          status: 'confirmed',
-          createdBy: user.id,
-          pricingBreakdown: buildPricingBreakdown({
-            basePriceCents: walkInBreakdown.basePriceCents,
-            perSessionPriceCents: walkInBreakdown.priceCents,
-            morningSquadPartnerApplied: walkInBreakdown.morningSquadPartnerApplied,
-            multiGroupApplied: walkInBreakdown.multiGroupApplied,
-            sessions: 1,
-            earlyBirdPct: walkInBreakdown.earlyBirdPct,
-          }) as never,
-        })
+
+        if (entry.status === 'present') {
+          if (walkInExisting) continue
+          const walkInBreakdown = await getPlayerEffectiveSessionPriceBreakdown(
+            supabase, walkInPlayer.family_id, programId, program?.type, entry.playerId,
+          )
+          if (walkInBreakdown.priceCents <= 0) continue
+          await createCharge(supabase, {
+            familyId: walkInPlayer.family_id,
+            playerId: entry.playerId,
+            type: 'session',
+            sourceType: 'attendance',
+            sourceId: sessionId,
+            sessionId,
+            programId,
+            description: formatChargeDescription({
+              playerName: playerNames.get(entry.playerId),
+              label: `${program?.name ?? 'Session'} (walk-in)`,
+              suffix: formatDiscountSuffix({ multiGroupApplied: walkInBreakdown.multiGroupApplied, earlyPayPct: walkInBreakdown.earlyBirdPct }),
+              term: termLabel,
+              date: sessionDate,
+            }),
+            amountCents: walkInBreakdown.priceCents,
+            status: 'confirmed',
+            createdBy: user.id,
+            pricingBreakdown: buildPricingBreakdown({
+              basePriceCents: walkInBreakdown.basePriceCents,
+              perSessionPriceCents: walkInBreakdown.priceCents,
+              morningSquadPartnerApplied: walkInBreakdown.morningSquadPartnerApplied,
+              multiGroupApplied: walkInBreakdown.multiGroupApplied,
+              sessions: 1,
+              earlyBirdPct: walkInBreakdown.earlyBirdPct,
+            }) as never,
+          })
+        } else if (walkInExisting) {
+          await voidCharge(supabase, walkInExisting.id, walkInPlayer.family_id)
+        }
         continue
       }
 
