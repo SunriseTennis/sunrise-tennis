@@ -1256,14 +1256,24 @@ export async function updateAttendance(
   const termLabel = sessionDate ? getTermLabel(sessionDate) : null
   const privateCoachName = (session?.coaches as unknown as { name?: string } | null)?.name ?? null
 
-  // Upsert attendance records
+  // Upsert attendance records. Halt the whole action if any write fails — the
+  // billing logic below assumes attendance was committed; silently swallowing
+  // an upsert error drifts the DB into an inconsistent state (Kurt Wilson /
+  // Thu Yellow May 14: charge voided but attendance stayed default-Present
+  // because adminCompleteSession's missing-roster batch inserted him later).
   for (const entry of entries) {
-    await supabase
+    const { error: upsertError } = await supabase
       .from('attendances')
       .upsert(
         { session_id: sessionId, player_id: entry.playerId, status: entry.status },
         { onConflict: 'session_id,player_id' }
       )
+      .select('id')
+      .single()
+    if (upsertError) {
+      console.error('[updateAttendance] upsert failed for', entry.playerId, upsertError.message)
+      throw new Error('Attendance write failed: ' + upsertError.message)
+    }
   }
 
   // ── Billing side effects ─────────────────────────────────────────────

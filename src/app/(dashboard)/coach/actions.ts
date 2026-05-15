@@ -91,13 +91,23 @@ export async function coachUpdateAttendance(sessionId: string, formData: FormDat
     }
   })
 
+  // Halt the whole action if any attendance write fails — the billing logic
+  // below assumes attendance was committed; silently swallowing the upsert
+  // error drifts the DB into an inconsistent state. Mirror admin
+  // `updateAttendance`.
   for (const entry of entries) {
-    await supabase
+    const { error: upsertError } = await supabase
       .from('attendances')
       .upsert(
         { session_id: sessionId, player_id: entry.playerId, status: entry.status },
         { onConflict: 'session_id,player_id' }
       )
+      .select('id')
+      .single()
+    if (upsertError) {
+      console.error('[coachUpdateAttendance] upsert failed for', entry.playerId, upsertError.message)
+      throw new Error('Attendance write failed: ' + upsertError.message)
+    }
   }
 
   // ── Billing side effects (06-May-2026) ────────────────────────────────
