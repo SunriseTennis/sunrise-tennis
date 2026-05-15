@@ -91,11 +91,24 @@ export async function requestPrivateBooking(formData: FormData) {
     redirect(`/parent/bookings?error=${encodeURIComponent(constraints.error!)}`)
   }
 
-  // Verify slot is still available (race condition guard)
+  // Service-role client for the writes — parents have no INSERT policy on
+  // sessions (only `admin_sessions_insert` exists). Without service-role,
+  // the session insert fails RLS and the action redirects with a generic
+  // "Failed to create session" error. Pattern mirrors `cancelPrivateBooking`
+  // (Plan 10 follow-up, 03-May-2026, commit 861c93f). All eligibility +
+  // ownership checks above ran on the JWT-scoped client; from here we use
+  // service-role for the writes and re-assert family_id on the booking
+  // payload so the parent-only guarantee survives.
+  const service = createServiceClient()
+
+  // Verify slot is still available (race condition guard).
+  // Use the service client — parent RLS hides other families' private
+  // sessions on the same coach/slot, so a JWT-scoped check would always
+  // return empty and miss real conflicts.
   const endMinutes = timeToMinutes(start_time) + duration_minutes
   const endTime = minutesToTime(endMinutes)
 
-  const { data: conflicts } = await supabase
+  const { data: conflicts } = await service
     .from('sessions')
     .select('id')
     .eq('coach_id', coach_id)
@@ -115,7 +128,7 @@ export async function requestPrivateBooking(formData: FormData) {
   const autoApprove = await isAutoApproved(supabase, player_id, coach_id)
 
   // Create session
-  const { data: session, error: sessionError } = await supabase
+  const { data: session, error: sessionError } = await service
     .from('sessions')
     .insert({
       session_type: 'private',
@@ -130,11 +143,12 @@ export async function requestPrivateBooking(formData: FormData) {
     .single()
 
   if (sessionError || !session) {
+    console.error('Failed to create private session:', sessionError)
     redirect(`/parent/bookings?error=${encodeURIComponent('Failed to create session')}`)
   }
 
   // Create booking
-  const { data: booking, error: bookingError } = await supabase
+  const { data: booking, error: bookingError } = await service
     .from('bookings')
     .insert({
       family_id: familyId,
@@ -154,13 +168,14 @@ export async function requestPrivateBooking(formData: FormData) {
     .single()
 
   if (bookingError || !booking) {
+    console.error('Failed to create private booking:', bookingError)
     // Clean up session
-    await supabase.from('sessions').delete().eq('id', session.id)
+    await service.from('sessions').delete().eq('id', session.id)
     redirect(`/parent/bookings?error=${encodeURIComponent('Failed to create booking')}`)
   }
 
   // Create charge
-  await createCharge(supabase, {
+  await createCharge(service, {
     familyId,
     playerId: player_id,
     type: 'private',
@@ -266,21 +281,37 @@ export async function requestStandingPrivate(formData: FormData) {
   const allowed = await canPlayerBookCoach(supabase, player_id, coach_id)
   if (!allowed) redirect('/parent/bookings?error=Coach+not+available+for+this+player')
 
+  // Match the one-off path's 24h-notice + in-term constraint check.
+  // The standing path skipped this previously — same constraint applies
+  // (same chokepoint, same parent-facing UI, no reason to differ).
+  const constraints = validateBookingConstraints(date, start_time, coach.is_owner ?? false)
+  if (!constraints.valid) {
+    redirect(`/parent/bookings?error=${encodeURIComponent(constraints.error!)}`)
+  }
+
   const autoApprove = await isAutoApproved(supabase, player_id, coach_id)
   const priceCents = await getPrivatePrice(supabase, familyId, coach_id, duration_minutes)
   const endMinutes = timeToMinutes(start_time) + duration_minutes
   const endTime = minutesToTime(endMinutes)
 
+  // Service-role for the writes — see requestPrivateBooking for the full
+  // rationale. Same pattern: JWT validates ownership above; service-role
+  // performs the inserts that RLS doesn't permit on the parent role.
+  const service = createServiceClient()
+
   // Create the first session + parent standing booking
-  const { data: firstSession } = await supabase
+  const { data: firstSession, error: firstSessionError } = await service
     .from('sessions')
     .insert({ session_type: 'private', date, start_time, end_time: endTime, coach_id, status: 'scheduled', duration_minutes })
     .select('id')
     .single()
 
-  if (!firstSession) redirect('/parent/bookings?error=Failed+to+create+session')
+  if (firstSessionError || !firstSession) {
+    console.error('Failed to create standing first session:', firstSessionError)
+    redirect('/parent/bookings?error=Failed+to+create+session')
+  }
 
-  const { data: parentBooking } = await supabase
+  const { data: parentBooking, error: parentBookingError } = await service
     .from('bookings')
     .insert({
       family_id: familyId, player_id, session_id: firstSession.id,
@@ -295,13 +326,14 @@ export async function requestStandingPrivate(formData: FormData) {
     .select('id')
     .single()
 
-  if (!parentBooking) {
-    await supabase.from('sessions').delete().eq('id', firstSession.id)
+  if (parentBookingError || !parentBooking) {
+    console.error('Failed to create standing parent booking:', parentBookingError)
+    await service.from('sessions').delete().eq('id', firstSession.id)
     redirect('/parent/bookings?error=Failed+to+create+booking')
   }
 
   // Create charge for first instance
-  await createCharge(supabase, {
+  await createCharge(service, {
     familyId, playerId: player_id, type: 'private', sourceType: 'enrollment',
     sessionId: firstSession.id, bookingId: parentBooking.id,
     description: formatChargeDescription({
@@ -324,7 +356,7 @@ export async function requestStandingPrivate(formData: FormData) {
   const futureDates = getStandingDates(dayOfWeek, date)
 
   for (const futureDate of futureDates) {
-    const { data: sess } = await supabase
+    const { data: sess } = await service
       .from('sessions')
       .insert({ session_type: 'private', date: futureDate, start_time, end_time: endTime, coach_id, status: 'scheduled', duration_minutes })
       .select('id')
@@ -332,7 +364,7 @@ export async function requestStandingPrivate(formData: FormData) {
 
     if (!sess) continue
 
-    const { data: bk } = await supabase
+    const { data: bk } = await service
       .from('bookings')
       .insert({
         family_id: familyId, player_id, session_id: sess.id,
@@ -345,7 +377,7 @@ export async function requestStandingPrivate(formData: FormData) {
       .single()
 
     if (bk) {
-      await createCharge(supabase, {
+      await createCharge(service, {
         familyId, playerId: player_id, type: 'private', sourceType: 'enrollment',
         sessionId: sess.id, bookingId: bk.id,
         description: formatChargeDescription({
